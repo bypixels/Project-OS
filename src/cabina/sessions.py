@@ -126,35 +126,36 @@ def _merge_lines(state, lines):
     return state
 
 
-def _git_project_fallback(cwd, cfg_roots, roots):
+def _git_project_fallback(cwd, cfg_roots):
     """Fallback for a session whose cwd matches no scanned project (scan.py only registers a
     project when it finds a `.claude/` dir there): walk up from `cwd` looking for a git repo
     root (a `.git` dir or file, e.g. a worktree) while still inside one of `cfg_roots`. Found ->
     attribute the session to that repo, so cabina never silently hides real work just because
-    the repo has no cabina-visible assets yet. Name follows scan._unique_name's convention:
-    basename, or — if that basename is already a DIFFERENT project in `roots` — the path
-    relative to the containing cfg root. None if no `.git` turns up before leaving every cfg
+    the repo has no cabina-visible assets yet. Name is ALWAYS the path relative to the
+    containing cfg root (e.g. root ~/Documents, repo ~/Documents/Webs/cabina -> "Webs/cabina") —
+    deterministic regardless of what else happens to be scanned; a repo directly under a root
+    naturally reduces to its basename. Returns (name, git_root) so the caller can also
+    relativize files_touched against it, or None if no `.git` turns up before leaving every cfg
     root (or cwd/cfg_roots is empty)."""
     if not cwd:
         return None
     cfg_roots_r = [os.path.realpath(r) for r in (cfg_roots or [])]
     if not cfg_roots_r:
         return None
-    cur = os.path.realpath(cwd)
+    cur = os.path.realpath(cwd)         # walked/matched in realpath form (robust to symlinked roots)
+    raw_cur = cwd                       # walked in lockstep, kept in `cwd`'s own form: files_touched
+                                         # entries come from the same raw domain as cwd, so the
+                                         # returned git_root must match it or relativizing them fails
     while True:
         containing = next((r for r in cfg_roots_r if cur == r or cur.startswith(r.rstrip("/") + "/")), None)
         if containing is None:
             return None
         if os.path.exists(os.path.join(cur, ".git")):
-            name = os.path.basename(cur)
-            existing = roots.get(name)
-            if existing is not None and os.path.realpath(existing) != cur:
-                name = os.path.relpath(cur, containing)
-            return name
-        parent = os.path.dirname(cur)
+            return os.path.relpath(cur, containing), raw_cur
+        parent, raw_parent = os.path.dirname(cur), os.path.dirname(raw_cur)
         if parent == cur:
             return None
-        cur = parent
+        cur, raw_cur = parent, raw_parent
 
 
 def _guess_project_from_encoded_dir(source_path, roots):
@@ -336,12 +337,15 @@ def _finalize(state, source_path, roots, offset, cfg_roots=()):
     from datetime import datetime
     roots = roots or {}
     counts = state["cwd_counts"]
+    fallback_root = None
     if counts:
         cwd = max(counts, key=counts.get)
         cwd_changed = len(counts) > 1
         project = usage._project_of(cwd, roots)
         if project is None and cwd:
-            project = _git_project_fallback(cwd, cfg_roots, roots)
+            fb = _git_project_fallback(cwd, cfg_roots)
+            if fb:
+                project, fallback_root = fb
     else:
         cwd, cwd_changed = None, False
         project = _guess_project_from_encoded_dir(source_path, roots)
@@ -354,7 +358,7 @@ def _finalize(state, source_path, roots, offset, cfg_roots=()):
         pass
     project = project or "unknown"                        # one sentinel for "no project", never None (R8)
     files = state["files_touched"]
-    base = roots.get(project) if project else None
+    base = fallback_root or (roots.get(project) if project else None)
     if base:
         files = [os.path.relpath(f, base) if os.path.isabs(f) and (f == base or f.startswith(base + os.sep)) else f for f in files]
     try:

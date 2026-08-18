@@ -229,5 +229,28 @@ class TestGitProjectFallback(unittest.TestCase):
         outside_summary = S._finalize(outside_state, "/fake/source2.jsonl", roots, 0, cfg_roots=[self.env.projects])
         self.assertEqual(outside_summary["project"], "unknown")   # one sentinel for "no project", never None
 
+    def test_nested_git_repo_gets_a_deterministic_relative_name(self):
+        # Naming is now ALWAYS path-relative-to-the-containing-root, never basename-with-a-
+        # collision-branch: deterministic regardless of what other projects happen to be
+        # scanned first. A repo directly under a root still reduces to its basename.
+        gamma = os.path.join(self.env.projects, "sub", "gamma")
+        os.makedirs(os.path.join(gamma, ".git"))
+        roots = scan.project_roots(self.env.cfg, scan.run(self.env.cfg))
+        state = S._new_state()
+        state["cwd_counts"] = {gamma: 1}
+        summary = S._finalize(state, "/fake/source3.jsonl", roots, 0, cfg_roots=[self.env.projects])
+        self.assertEqual(summary["project"], os.path.join("sub", "gamma"))
+
+    def test_fallback_repo_files_touched_are_relative_to_its_git_root(self):
+        beta = os.path.join(self.env.projects, "beta")
+        os.makedirs(os.path.join(beta, ".git"))
+        roots = scan.project_roots(self.env.cfg, scan.run(self.env.cfg))
+        state = S._new_state()
+        state["cwd_counts"] = {beta: 1}
+        state["files_touched"] = [os.path.join(beta, "src", "x.py")]
+        summary = S._finalize(state, "/fake/source4.jsonl", roots, 0, cfg_roots=[self.env.projects])
+        self.assertEqual(summary["project"], "beta")
+        self.assertEqual(summary["files_touched"], [os.path.join("src", "x.py")])
+
 if __name__ == "__main__":
     unittest.main()
