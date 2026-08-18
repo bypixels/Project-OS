@@ -7,7 +7,7 @@
   cabina brief   SessionStart — a few lines of context: health, who is working, this project's memory age.
   cabina hooks   print (or --write) the settings.json entries.
 """
-import os, sys, json, time, shutil
+import os, sys, json, time, shutil, shlex
 from datetime import datetime
 from .contract import Contract
 from . import scan, live as LIVE, check as CHECK
@@ -158,14 +158,80 @@ def hooks_snippet(cmd="cabina"):
     }}
 
 
-def hooks_write(settings_path, cmd="cabina"):
-    """Merge our two hooks into an existing settings.json (backup first). Idempotent."""
+def _cmd_resolves(cmd):
+    """First whitespace token of `cmd` resolves on PATH (shutil.which), or is itself an
+    existing, executable absolute path. Returns (bool, path|None). Never raises — a
+    malformed cmd string just fails to resolve."""
+    try:
+        tok = shlex.split(cmd)[0] if cmd else ""
+    except Exception:
+        return False, None
+    if not tok:
+        return False, None
+    if os.path.isabs(tok) and os.path.isfile(tok) and os.access(tok, os.X_OK):
+        return True, tok
+    found = shutil.which(tok)
+    return (found is not None), found
+
+
+def hooks_status(settings_path, cmd="cabina"):
+    """Read-only: what's on disk at settings_path, and whether our two hooks are already
+    wired there. Never writes."""
+    exists = os.path.isfile(settings_path)
+    valid_json, error, d = True, None, {}
+    if exists:
+        try:
+            d = json.load(open(settings_path))
+        except Exception as e:
+            valid_json, error = False, str(e)
+    hooks = d.get("hooks") if isinstance(d, dict) else None
+    hooks = hooks if isinstance(hooks, dict) else {}
+
+    def _has(event, needle):
+        for grp in hooks.get(event) or []:
+            for h in grp.get("hooks") or []:
+                if needle in (h.get("command") or ""):
+                    return True
+        return False
+
+    resolves, path = _cmd_resolves(cmd)
+    return {
+        "settings_path": settings_path, "exists": exists, "valid_json": valid_json, "error": error,
+        "guard_installed": _has("PreToolUse", f"{cmd} guard"),
+        "brief_installed": _has("SessionStart", f"{cmd} brief"),
+        "cmd_resolves": resolves, "cmd_path": path,
+        "snippet": hooks_snippet(cmd),
+    }
+
+
+def _unique_backup_path(path):
+    """`path` already carries a microsecond-resolution timestamp suffix, but a frozen or
+    coarse clock can still repeat it (two writes in the same instant). Never overwrite an
+    existing backup: append -1, -2, ... until a free name is found."""
+    if not os.path.exists(path):
+        return path
+    i = 1
+    while True:
+        cand = f"{path}-{i}"
+        if not os.path.exists(cand):
+            return cand
+        i += 1
+
+
+def hooks_write(settings_path, cmd="cabina", force=False):
+    """Merge our two hooks into an existing settings.json (backup first). Idempotent.
+    Guard: refuses to wire a `cmd` that does not resolve on PATH (the exact "dead hook"
+    problem cabina flags elsewhere) unless the caller passes force=True."""
+    resolves, _ = _cmd_resolves(cmd)
+    if not resolves and not force:
+        return False, (f"{cmd} is not on PATH: installing it would wire a dead hook (the exact thing "
+                        "cabina flags). Install cabina where Claude Code can find it, or pass the full path.")
     try:
         d = json.load(open(settings_path)) if os.path.isfile(settings_path) else {}
     except Exception as e:
         return False, f"cannot parse {settings_path}: {e}"
     if os.path.isfile(settings_path):
-        shutil.copy2(settings_path, settings_path + ".bak-" + datetime.now().strftime("%Y%m%d-%H%M%S"))
+        shutil.copy2(settings_path, _unique_backup_path(settings_path + ".bak-" + datetime.now().strftime("%Y%m%d-%H%M%S-%f")))
     hooks = d.setdefault("hooks", {})
     for ev, groups in hooks_snippet(cmd)["hooks"].items():
         lst = hooks.setdefault(ev, [])

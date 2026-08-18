@@ -306,6 +306,77 @@ class TestServer(unittest.TestCase):
         self.assertGreater(len(hits), 0)
         for m in hits:
             self.assertIn("esc(", m.group(1), f"unescaped interpolation: ${{{m.group(1)}}}")
+    # ---------- S2-b: /api/hooks, /api/hooks-install ----------
+    def test_hooks_status_endpoint_shape(self):
+        d = self.get("/api/hooks")
+        self.assertEqual(d["settings_path"], os.path.join(self.env.claude, "settings.json"))
+        for k in ("exists", "valid_json", "guard_installed", "brief_installed", "cmd_resolves", "cmd_path", "snippet"):
+            self.assertIn(k, d)
+
+    def test_hooks_status_endpoint_accepts_cmd_query(self):
+        from unittest import mock
+        with mock.patch("cabina.guard.shutil.which", return_value=None):
+            d = self.get("/api/hooks?cmd=definitely-not-a-real-cmd-xyz")
+        self.assertFalse(d["cmd_resolves"])
+        self.assertIsNone(d["cmd_path"])
+
+    def test_hooks_install_refused_when_cmd_does_not_resolve_no_backup(self):
+        from unittest import mock
+        settings = os.path.join(self.env.claude, "settings.json")
+        self.assertFalse(os.path.isfile(settings))
+        with mock.patch("cabina.guard.shutil.which", return_value=None):
+            code, r = self.post("/api/hooks-install", {"cmd": "definitely-not-a-real-cmd-xyz"})
+        self.assertFalse(r["ok"], r)
+        self.assertIn("not on PATH", r["message"])
+        self.assertFalse(os.path.isfile(settings))
+        self.assertFalse(any(f.startswith("settings.json.bak-") for f in os.listdir(self.env.claude)))
+
+    def test_hooks_install_ok_and_idempotent(self):
+        from unittest import mock
+        settings = os.path.join(self.env.claude, "settings.json")
+        try:
+            with mock.patch("cabina.guard.shutil.which", return_value="/usr/local/bin/cabina"):
+                code, r = self.post("/api/hooks-install", {"cmd": "cabina"})
+            self.assertTrue(r["ok"], r)
+            self.assertTrue(os.path.isfile(settings))
+            d = json.load(open(settings))
+            self.assertTrue(any("cabina guard" in h["command"] for grp in d["hooks"]["PreToolUse"] for h in grp["hooks"]))
+            self.assertTrue(any("cabina brief" in h["command"] for grp in d["hooks"]["SessionStart"] for h in grp["hooks"]))
+            self.assertTrue(r["status"]["guard_installed"]); self.assertTrue(r["status"]["brief_installed"])
+            with mock.patch("cabina.guard.shutil.which", return_value="/usr/local/bin/cabina"):
+                code2, r2 = self.post("/api/hooks-install", {"cmd": "cabina"})
+            self.assertTrue(r2["ok"], r2)
+            self.assertTrue(any(f.startswith("settings.json.bak-") for f in os.listdir(self.env.claude)))   # 2nd write backs up the 1st
+            d2 = json.load(open(settings))
+            self.assertEqual(sum(1 for grp in d2["hooks"]["PreToolUse"] for h in grp["hooks"] if "cabina guard" in h["command"]), 1)
+        finally:
+            if os.path.isfile(settings):
+                os.remove(settings)
+            for f in os.listdir(self.env.claude):
+                if f.startswith("settings.json.bak-"):
+                    os.remove(os.path.join(self.env.claude, f))
+
+    def test_hooks_install_requires_token(self):
+        code, _ = self.post("/api/hooks-install", {"cmd": "cabina"}, token="wrong")
+        self.assertEqual(code, 403)
+
+    # ---------- S2-c: Harness tab, Cabina hooks panel ----------
+    def test_hooks_block_fields_always_escaped(self):
+        import re
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        start = html.index("// ---------- HOOKS ----------")
+        end = html.index("// ---------- DOCS ----------")
+        body = html[start:end]
+        pattern = re.compile(r"\$\{([^{}]*\b(?:s\.(?:settings_path|cmd_path|error)|j\.message)\b[^{}]*)\}")
+        hits = list(pattern.finditer(body))
+        self.assertGreater(len(hits), 0)
+        for m in hits:
+            self.assertIn("esc(", m.group(1), f"unescaped interpolation: ${{{m.group(1)}}}")
+
+    def test_hooks_install_button_hidden_in_hub_mode_by_source_guard(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        self.assertIn('HUB?"":renderHooksPanel()', html)
+
     def test_health_i18n_keys_present_in_both_languages(self):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
         start = html.index("const I18N={")

@@ -1,4 +1,5 @@
-import io, json, os, tempfile, unittest
+import io, json, os, shutil, tempfile, unittest
+from datetime import datetime
 from unittest import mock
 import _helpers  # noqa
 from _env import Env
@@ -87,12 +88,104 @@ class TestHooksInstall(unittest.TestCase):
             settings = os.path.join(d, "settings.json"); json.dump({"hooks": {"Stop": [{"hooks": [{"command": "x"}]}]}}, open(settings, "w"))
             snip = G.hooks_snippet("cabina")
             self.assertIn("PreToolUse", snip["hooks"]); self.assertIn("SessionStart", snip["hooks"])
-            ok, msg = G.hooks_write(settings, "cabina")
+            with mock.patch.object(G, "_cmd_resolves", return_value=(True, "/usr/local/bin/cabina")):
+                ok, msg = G.hooks_write(settings, "cabina")
             self.assertTrue(ok); d2 = json.load(open(settings))
             self.assertIn("Stop", d2["hooks"])                    # existing hooks kept
             self.assertTrue(any("cabina guard" in h["command"] for grp in d2["hooks"]["PreToolUse"] for h in grp["hooks"]))
             self.assertTrue(any(f.startswith("settings.json.bak-") for f in os.listdir(d)))
-            ok2, msg2 = G.hooks_write(settings, "cabina")        # idempotent
+            with mock.patch.object(G, "_cmd_resolves", return_value=(True, "/usr/local/bin/cabina")):
+                ok2, msg2 = G.hooks_write(settings, "cabina")        # idempotent
             self.assertTrue(ok2); d3 = json.load(open(settings))
             self.assertEqual(sum(1 for grp in d3["hooks"]["PreToolUse"] for h in grp["hooks"] if "cabina guard" in h["command"]), 1)
+
+    def test_write_refused_when_cmd_does_not_resolve_no_backup(self):
+        with tempfile.TemporaryDirectory() as d:
+            settings = os.path.join(d, "settings.json")
+            with mock.patch.object(G, "_cmd_resolves", return_value=(False, None)):
+                ok, msg = G.hooks_write(settings, "definitely-not-a-real-cmd-xyz")
+            self.assertFalse(ok)
+            self.assertIn("not on PATH", msg)
+            self.assertFalse(os.path.isfile(settings))
+            self.assertEqual(os.listdir(d), [])
+
+    def test_write_allowed_with_force_even_if_cmd_missing(self):
+        with tempfile.TemporaryDirectory() as d:
+            settings = os.path.join(d, "settings.json")
+            with mock.patch.object(G, "_cmd_resolves", return_value=(False, None)):
+                ok, msg = G.hooks_write(settings, "definitely-not-a-real-cmd-xyz", force=True)
+            self.assertTrue(ok)
+            self.assertTrue(os.path.isfile(settings))
+
+    def test_write_ok_when_cmd_resolves(self):
+        with tempfile.TemporaryDirectory() as d:
+            settings = os.path.join(d, "settings.json")
+            with mock.patch.object(shutil, "which", return_value="/usr/local/bin/cabina"):
+                ok, msg = G.hooks_write(settings, "cabina")
+            self.assertTrue(ok)
+            self.assertTrue(os.path.isfile(settings))
+
+    def test_backup_names_never_collide_within_the_same_second(self):
+        # Two writes landing in the same wall-clock second (double click, or two POSTs back
+        # to back) must never produce the same backup filename — the second write would
+        # silently clobber the first backup otherwise. Freeze the clock to the same instant
+        # for both calls to force the collision that a bare %Y%m%d-%H%M%S suffix would hit.
+        with tempfile.TemporaryDirectory() as d:
+            settings = os.path.join(d, "settings.json")
+            json.dump({"hooks": {"Stop": [{"hooks": [{"command": "pre-hooks"}]}]}}, open(settings, "w"))
+            fixed = datetime(2026, 8, 18, 12, 0, 0, 123456)
+            with mock.patch.object(G, "datetime") as mdt, mock.patch.object(G, "_cmd_resolves", return_value=(True, "/usr/local/bin/cabina")):
+                mdt.now.return_value = fixed
+                ok1, _ = G.hooks_write(settings, "cabina")
+                ok2, _ = G.hooks_write(settings, "cabina")
+            self.assertTrue(ok1); self.assertTrue(ok2)
+            baks = sorted(f for f in os.listdir(d) if f.startswith("settings.json.bak-"))
+            self.assertEqual(len(baks), 2)                 # two writes -> two distinct backups, never one clobbering the other
+            self.assertNotEqual(baks[0], baks[1])
+            first = json.load(open(os.path.join(d, baks[0])))
+            self.assertEqual(first["hooks"]["Stop"][0]["hooks"][0]["command"], "pre-hooks")
+            self.assertNotIn("PreToolUse", first["hooks"])   # first backup is the PRE-hooks content
+
+
+class TestHooksStatus(unittest.TestCase):
+    def test_status_nonexistent_settings(self):
+        with tempfile.TemporaryDirectory() as d:
+            settings = os.path.join(d, "settings.json")
+            with mock.patch.object(shutil, "which", return_value="/usr/local/bin/cabina"):
+                s = G.hooks_status(settings, "cabina")
+            self.assertEqual(s["settings_path"], settings)
+            self.assertFalse(s["exists"])
+            self.assertTrue(s["valid_json"])
+            self.assertFalse(s["guard_installed"])
+            self.assertFalse(s["brief_installed"])
+            self.assertTrue(s["cmd_resolves"])
+            self.assertEqual(s["cmd_path"], "/usr/local/bin/cabina")
+            self.assertIn("PreToolUse", s["snippet"]["hooks"])
+
+    def test_status_valid_with_both_hooks_installed(self):
+        with tempfile.TemporaryDirectory() as d:
+            settings = os.path.join(d, "settings.json")
+            json.dump(G.hooks_snippet("cabina"), open(settings, "w"))
+            with mock.patch.object(shutil, "which", return_value="/usr/local/bin/cabina"):
+                s = G.hooks_status(settings, "cabina")
+            self.assertTrue(s["exists"]); self.assertTrue(s["valid_json"])
+            self.assertTrue(s["guard_installed"]); self.assertTrue(s["brief_installed"])
+
+    def test_status_invalid_json(self):
+        with tempfile.TemporaryDirectory() as d:
+            settings = os.path.join(d, "settings.json")
+            open(settings, "w").write("{not valid json")
+            s = G.hooks_status(settings, "cabina")
+            self.assertTrue(s["exists"])
+            self.assertFalse(s["valid_json"])
+            self.assertTrue(s.get("error"))
+            self.assertFalse(s["guard_installed"]); self.assertFalse(s["brief_installed"])
+
+    def test_status_cmd_does_not_resolve(self):
+        with tempfile.TemporaryDirectory() as d:
+            settings = os.path.join(d, "settings.json")
+            with mock.patch.object(shutil, "which", return_value=None):
+                s = G.hooks_status(settings, "definitely-not-a-real-cmd-xyz")
+            self.assertFalse(s["cmd_resolves"])
+            self.assertIsNone(s["cmd_path"])
 if __name__ == "__main__": unittest.main()
