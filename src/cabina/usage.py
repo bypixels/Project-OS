@@ -42,13 +42,16 @@ def _lines(history_dir, needle):
 
 
 def _project_of(cwd, roots):
-    """roots: {project_name: abs_root}. Longest matching root wins."""
+    """roots: {project_name: abs_root}. Longest matching root wins. Both sides go through
+    os.path.realpath first, so a symlinked root or a symlinked cwd still matches."""
     if not cwd:
         return None
+    cwd = os.path.realpath(cwd)
     best, best_len = None, -1
     for name, root in roots.items():
-        if (cwd == root or cwd.startswith(root.rstrip("/") + "/")) and len(root) > best_len:
-            best, best_len = name, len(root)
+        r = os.path.realpath(root)
+        if (cwd == r or cwd.startswith(r.rstrip("/") + "/")) and len(r) > best_len:
+            best, best_len = name, len(r)
     return best
 
 

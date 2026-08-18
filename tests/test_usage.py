@@ -52,6 +52,13 @@ class TestUsage(unittest.TestCase):
             self.assertEqual(U.load(p)["a"]["last"], "2026-08-01")
         self.assertEqual(U.load("/no/x.json"), {})
 
+    @unittest.skipIf(os.name == "nt", "symlinks need admin rights on Windows")
+    def test_project_of_resolves_symlinks(self):
+        with tempfile.TemporaryDirectory() as d:
+            real = os.path.join(d, "real"); os.makedirs(real)
+            link = os.path.join(d, "link"); os.symlink(real, link)
+            self.assertEqual(U._project_of(os.path.join(link, "sub"), {"p": real}), "p")
+
     def test_for_agent_view(self):
         items = {"cr": {"n_total": 10, "last": "2026-08-01", "by_project": {"alpha": 7, "beta": 3}}}
         self.assertEqual(U.for_agent(items, "cr", "alpha"), {"total": 10, "last": "2026-08-01", "here": 7, "attributed": True})
