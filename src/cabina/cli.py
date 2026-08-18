@@ -1,12 +1,21 @@
 """cabina — one entrypoint, subcommands.
 
-  cabina                 open the UI (local server + browser)
-  cabina check           health check; exit 1 on critical findings   [--quick] [--json] [--notify]
-  cabina agents          agent roster                                 [--invalid] [--unused] [--project P]
-  cabina agents archive NAME --project P [--force]
-  cabina scan            rebuild the cache                            [--mcp]
-  cabina fleet           terminal TUI (live provider + roster)
-  cabina config          print the effective config / write an example
+  cabina                  open the UI (default; same as `cabina ui`)
+  cabina ui               open the web UI                              [--port] [--no-open]
+  cabina check            health check; exit 1 on critical findings     [--quick] [--json] [--notify] [--repo PATH]
+  cabina agents           agent roster / archive / references           [list|archive|refs] [--invalid] [--unused] [--project P] [--tool claude|codex] [--json] [--force]
+  cabina scan             rebuild the environment cache                 [--mcp] [--worktrees]
+  cabina fleet            terminal TUI (live provider + roster)
+  cabina export           export this environment as JSON               [-o PATH] [--activity] [--detail] [--titles] [--project P]
+  cabina compare A B      compare two exports (two machines, or then vs now)
+  cabina init             print an example .cabina.toml (or the CI workflow)   [--ci]
+  cabina mcp              run the read-only MCP server over stdio       [--install]
+  cabina guard            hook: PreToolUse on Edit|Write — validate agent files (reads stdin JSON)
+  cabina brief            hook: SessionStart — print a short health/context brief   [--cwd PATH]
+  cabina hooks            print (or write) the settings.json entries for guard+brief   [--write] [--settings PATH] [--cmd NAME]
+  cabina config           print the effective config / write an example   [--example]
+  cabina activity         session activity read from Claude Code transcripts   [--project P] [--days N] [--json]
+  cabina hub DIR          serve the UI, read-only, over N `cabina export --activity` files   [--port] [--no-open]
 """
 import argparse, json, os, sys, textwrap
 from . import __version__, config as CFG
