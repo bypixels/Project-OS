@@ -49,7 +49,7 @@ def main(argv=None):
     br = sub.add_parser("brief", help="hook: SessionStart — print a short health/context brief"); br.add_argument("--cwd")
     hk = sub.add_parser("hooks", help="print the settings.json entries for guard+brief; --write merges them")
     hk.add_argument("--write", action="store_true"); hk.add_argument("--settings", help="path to settings.json (default: ~/.claude/settings.json)")
-    hk.add_argument("--cmd", default="cabina", help="command name to wire (default: cabina)")
+    hk.add_argument("--cmd", dest="hook_cmd", default="cabina", help="command name to wire (default: cabina)")
     cf = sub.add_parser("config", help="show effective config"); cf.add_argument("--example", action="store_true", help="print an example config.toml")
 
     ac = sub.add_parser("activity", help="session activity read from Claude Code transcripts")
@@ -128,8 +128,8 @@ def main(argv=None):
         from . import guard
         sp = a.settings or os.path.join(cfg["claude_home"], "settings.json")
         if a.write:
-            ok, msg = guard.hooks_write(sp, a.cmd); print(msg); return 0 if ok else 1
-        print(json.dumps(guard.hooks_snippet(a.cmd), indent=2)); print(f"\n# to apply:  cabina hooks --write   (merges into {sp}, keeps a backup)"); return 0
+            ok, msg = guard.hooks_write(sp, a.hook_cmd); print(msg); return 0 if ok else 1
+        print(json.dumps(guard.hooks_snippet(a.hook_cmd), indent=2)); print(f"\n# to apply:  cabina hooks --write   (merges into {sp}, keeps a backup)"); return 0
     if a.cmd == "activity":
         from . import sessions
         items = sessions.refresh(cfg, days=a.days)

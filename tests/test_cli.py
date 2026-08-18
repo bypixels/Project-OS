@@ -1,4 +1,5 @@
-import json, os, subprocess, sys, tempfile, unittest
+import io, json, os, subprocess, sys, tempfile, unittest
+from contextlib import redirect_stdout
 from unittest import mock
 import _helpers  # noqa
 from _env import Env
@@ -45,6 +46,45 @@ class TestHubCommand(unittest.TestCase):
             with mock.patch("cabina.hub.serve_hub", fake):
                 CLI.main(["hub", d, "--port", "9999", "--no-open"])
         self.assertEqual(called["dir"], d); self.assertEqual(called["port"], 9999); self.assertFalse(called["open_browser"])
+
+class TestHooksCommand(unittest.TestCase):
+    """H1: `--cmd` on the hooks subparser used to share argparse's own `dest="cmd"` with the
+    top-level subcommand selector, so `a.cmd` got overwritten and `cabina hooks` fell through
+    to the final `server.serve(...)` branch instead of running the hooks branch at all."""
+    def test_hooks_prints_snippet_and_never_starts_the_server(self):
+        from cabina import cli as CLI
+        buf = io.StringIO()
+        with mock.patch("cabina.server.serve") as srv:
+            with redirect_stdout(buf):
+                rc = CLI.main(["hooks"])
+        self.assertEqual(rc, 0)
+        srv.assert_not_called()
+        self.assertIn("PreToolUse", buf.getvalue())
+        self.assertIn("SessionStart", buf.getvalue())
+
+    def test_hooks_cmd_flag_is_reflected_in_the_snippet(self):
+        from cabina import cli as CLI
+        buf = io.StringIO()
+        with mock.patch("cabina.server.serve") as srv:
+            with redirect_stdout(buf):
+                CLI.main(["hooks", "--cmd", "mycab"])
+        srv.assert_not_called()
+        self.assertIn("mycab guard", buf.getvalue())
+
+    def test_hooks_write_writes_the_settings_file(self):
+        from cabina import cli as CLI
+        with tempfile.TemporaryDirectory() as d:
+            sp = os.path.join(d, "settings.json")
+            buf = io.StringIO()
+            with mock.patch("cabina.server.serve") as srv:
+                with redirect_stdout(buf):
+                    rc = CLI.main(["hooks", "--write", "--settings", sp])
+            srv.assert_not_called()
+            self.assertEqual(rc, 0)
+            self.assertTrue(os.path.isfile(sp))
+            written = json.load(open(sp))
+            self.assertIn("PreToolUse", written["hooks"])
+
 
 if __name__ == "__main__":
     unittest.main()
