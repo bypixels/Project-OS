@@ -1,6 +1,7 @@
 """Permanent break-tests: each test removes ONE guard in memory and asserts a canary
 test would notice. If a guard is ever deleted from the code, these go red first."""
 import os, tempfile, unittest
+from datetime import datetime, timedelta
 from unittest import mock
 import _helpers  # noqa
 from cabina import contract as C, docs as D, harness as H, sessions as SESS, usage as U
@@ -60,4 +61,16 @@ class TestBreaks(unittest.TestCase):
         self.assertNotIn("prompt_text", SESS._redact_partial_state(leak_state))                # guard present
         with mock.patch.object(SESS, "PARTIAL_STATE_FIELDS", SESS.PARTIAL_STATE_FIELDS + ("prompt_text",)):
             self.assertIn("prompt_text", SESS._redact_partial_state(leak_state))                # guard removed -> leaks
+
+    def test_sessions_retention_prune_guard(self):
+        now_local = datetime.now().astimezone()
+        old_ended = (now_local - timedelta(days=400)).isoformat()
+        reg = {"old.jsonl": {"summary": {"ended": old_ended}}}
+        self.assertEqual(SESS._prune_by_retention(reg, 365, now_local), {})                     # guard present: pruned
+        with mock.patch.object(SESS, "_age_days", return_value=0):                              # guard disabled: "everything is fresh"
+            self.assertIn("old.jsonl", SESS._prune_by_retention(reg, 365, now_local))            # over-age entry survives -> canary red
+        # R4: existence is irrelevant to this guard — a deleted file's cached summary survives
+        # as long as it is within retention (no os.path.exists check anywhere in here)
+        fresh_reg = {"/no/such/file/deleted.jsonl": {"summary": {"ended": now_local.isoformat()}}}
+        self.assertIn("/no/such/file/deleted.jsonl", SESS._prune_by_retention(fresh_reg, 365, now_local))
 if __name__ == "__main__": unittest.main()

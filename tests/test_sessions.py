@@ -125,5 +125,45 @@ class TestSessionsRegistry(unittest.TestCase):
             self.assertEqual(S._load_registry(p)["a.jsonl"]["summary"]["session_id"], "a")
         self.assertEqual(S._load_registry("/no/such/file.json"), {})
 
+class TestSessionsRefresh(unittest.TestCase):
+    def setUp(self):
+        self.env = Env()
+    def tearDown(self):
+        self.env.cleanup()
+
+    def test_refresh_finds_the_session(self):
+        items = S.refresh(self.env.cfg, days=30)
+        self.assertTrue(any(s["session_id"] == "sess-1" for s in items))
+
+    def test_refresh_is_truly_incremental_on_appended_bytes(self):
+        S.refresh(self.env.cfg, days=30)
+        reg = S._load_registry(S.registry_path(self.env.cfg))
+        off1 = reg[self.env.session_file]["offset"]
+        open(self.env.session_file, "a").write(
+            '{"type":"assistant","timestamp":"2026-08-10T09:04:00Z","cwd":"%s","message":{"role":"assistant","content":[{"type":"tool_use","name":"Write","input":{"file_path":"%s/src/new.py"}}],"usage":{"input_tokens":5,"output_tokens":5,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}\n'
+            % (self.env.alpha, self.env.alpha))
+        items = S.refresh(self.env.cfg, days=30)
+        reg2 = S._load_registry(S.registry_path(self.env.cfg))
+        self.assertGreater(reg2[self.env.session_file]["offset"], off1)
+        s = next(s for s in items if s["session_id"] == "sess-1")
+        self.assertIn("Write", s["tool_calls"])
+
+    def test_refresh_survives_source_deletion_but_prunes_by_retention_age(self):
+        S.refresh(self.env.cfg, days=30)
+        os.remove(self.env.session_file)
+        items = S.refresh(self.env.cfg, days=30)
+        self.assertTrue(any(s["session_id"] == "sess-1" for s in items))     # R4: NOT pruned just because deleted
+        cfg2 = dict(self.env.cfg, activity={"retention_days": 0})            # everything is "too old" now
+        items2 = S.refresh(cfg2, days=30)
+        self.assertFalse(any(s["session_id"] == "sess-1" for s in items2))   # pruned by age, not by existence
+
+    def test_refresh_writes_a_registry_file_that_never_contains_prompt_text(self):
+        # CRITICAL finding from adversarial review: Tarea 15 only checked the in-memory
+        # summary dict. This checks the ACTUAL bytes written to sessions.json on disk — the
+        # full registry, partial_state included, not just the redacted summary copy.
+        S.refresh(self.env.cfg, days=30)
+        raw = open(S.registry_path(self.env.cfg), encoding="utf-8").read()
+        self.assertNotIn("PROMPT_MARKER_DO_NOT_LEAK", raw)
+
 if __name__ == "__main__":
     unittest.main()

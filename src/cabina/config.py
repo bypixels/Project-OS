@@ -25,6 +25,7 @@ DEFAULTS = {
         "skip_dirs": ["node_modules", ".git", ".next", "dist", "build", ".venv", "__pycache__", "worktrees", "_archive"],
     },
     "live": {"provider": "auto"},                       # "auto" | "herdr" | "none"
+    "activity": {"retention_days": 365},
     "docs": {"backup_retention_days": 30, "max_per_dir": 60},
     "check": {"worktree_stale_days": 14, "memory_stale_days": 30},
 }

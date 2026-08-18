@@ -13,9 +13,9 @@ Retention: summaries survive their source file disappearing (rotation is normal;
 the point, same as usage.py). They are pruned only once `ended` is older than
 cfg.activity.retention_days (default 365).
 """
-import json, os, re
+import json, os, re, time
 
-from . import usage
+from . import scan, usage
 
 _COMMIT = re.compile(r"\bgit\s+commit\b")
 FILE_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
@@ -203,6 +203,81 @@ def _save_registry(path, reg):
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(reg, f, ensure_ascii=False, indent=1, sort_keys=True)
     os.replace(tmp, path)
+
+
+def _iter_session_files(claude_home):
+    """Every <claude_home>/projects/<encoded-cwd>/<sessionId>.jsonl — flat, NOT the
+    subagents/ ones (R3: subagent transcripts are never sessions on their own)."""
+    pdir = os.path.join(claude_home, "projects")
+    if not os.path.isdir(pdir):
+        return
+    for enc in os.listdir(pdir):
+        edir = os.path.join(pdir, enc)
+        if not os.path.isdir(edir):
+            continue
+        for f in os.listdir(edir):
+            if f.endswith(".jsonl"):
+                yield os.path.join(edir, f)
+
+
+def _age_days(ended, now_local):
+    """Days between `ended` (a local-aware ISO string) and `now_local`. 0 if `ended` is
+    missing or unparsable — never ages out something we cannot date."""
+    if not ended:
+        return 0
+    try:
+        from datetime import datetime
+        return (now_local - datetime.fromisoformat(ended)).days
+    except Exception:
+        return 0
+
+
+def _prune_by_retention(reg, retention_days, now_local):
+    """Guard (R4): keep an entry unless its summary's `ended` is older than retention_days.
+    Whether the SOURCE FILE still exists on disk is never part of this decision — rotation is
+    normal, history is the point (same spirit as usage.py's accumulating registry)."""
+    return {k: v for k, v in reg.items()
+            if _age_days((v.get("summary") or {}).get("ended"), now_local) <= retention_days}
+
+
+def refresh(cfg, days=30):
+    """Parse new/changed bytes of every session file (bounded to `days` for files never seen
+    before), merge into the registry, prune by retention, save, return every kept summary —
+    newest first. Never call this on an HTTP request thread (see server.py, Fase 1b Tarea 22)."""
+    path = registry_path(cfg)
+    reg = _load_registry(path)
+    roots = scan.project_roots(cfg)
+    cutoff = time.time() - days * 86400
+    retention_days = (cfg.get("activity") or {}).get("retention_days", 365)
+    for fp in _iter_session_files(cfg["claude_home"]):
+        try:
+            st = os.stat(fp)
+        except Exception:
+            continue
+        cached = reg.get(fp)
+        if cached is None:
+            if st.st_mtime < cutoff:
+                continue
+            offset, state = 0, _new_state()
+        elif st.st_mtime == cached.get("mtime") and st.st_size == cached.get("size"):
+            continue
+        elif st.st_size < cached.get("offset", 0):
+            offset, state = 0, _new_state()             # rotated/rewritten: reparse from scratch
+        else:
+            offset, state = cached["offset"], cached["partial_state"]
+        try:
+            new_lines, new_offset = _read_new_lines(fp, offset)
+            state = _redact_partial_state(_merge_lines(state, new_lines))
+            summary = _redact_unknown_fields(_finalize(state, fp, roots, new_offset))
+            reg[fp] = {"offset": new_offset, "size": st.st_size, "mtime": st.st_mtime,
+                       "partial_state": state, "summary": summary}
+        except Exception:
+            continue                                     # one unreadable/corrupt transcript never aborts the rest
+    from datetime import datetime
+    now_local = datetime.now().astimezone()
+    kept = _prune_by_retention(reg, retention_days, now_local)
+    _save_registry(path, kept)
+    return sorted((e["summary"] for e in kept.values()), key=lambda s: s.get("started") or "", reverse=True)
 
 
 def _finalize(state, source_path, roots, offset):
