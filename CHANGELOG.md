@@ -26,6 +26,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `cabina hub DIR`: a read-only server that merges N `cabina export --activity` files from a
   shared folder into the same UI — no Live/Docs tabs, no write buttons, agent/project/harness
   rows keyed by name + machine so two machines with a same-named project or agent don't collide.
+- **Health tab** in the UI: the same findings `cabina check` prints (severity, detail, exact
+  fix with a Copy button), first tab and default view; hidden in hub mode. `GET /api/health`.
+- **Install hooks from the Harness tab**: status of `guard`/`brief` in `settings.json`, editable
+  command with live PATH resolution, Preview of the exact JSON to be merged, confirmation, backup.
+  Guarded: refuses to wire a command that does not resolve on PATH (a dead hook) unless forced.
+  `GET /api/hooks`, `POST /api/hooks-install`; break-tested. Backup names never collide.
+- **Rescan with options** (`--mcp`, `--worktrees`) from the UI, plus `GET /api/scan-status`: the
+  UI polls until the scan really finishes (no more fixed 45 s wait) and shows "scan: N ago".
+- **Export** (`GET /api/export?activity&detail`, downloads a JSON; `--titles` deliberately not
+  exposed) and **Compare** (upload another machine's export, see the delta) from the UI.
+
 
 ### Fixed
 
