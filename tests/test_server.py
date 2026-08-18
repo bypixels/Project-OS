@@ -136,6 +136,13 @@ class TestServer(unittest.TestCase):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
         self.assertIn("(x.critical||[])", html)
         self.assertIn("(x.warnings||[])", html)
+    def test_project_detail_keyed_by_name_and_machine(self):
+        # E2: renderProjDetail found a row with `find(y=>y.name===S.sel)` — in hub mode two
+        # machines can both have a project called "alpha", so the detail always showed the
+        # first one, no matter which row was clicked.
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        self.assertIn("function projKey", html)
+        self.assertIn("projKey(y)===S.sel", html)
     def test_unknown_routes(self):
         with self.assertRaises(urllib.error.HTTPError): self.get("/api/nope")
         code, _ = self.post("/api/nope", {}); self.assertEqual(code, 404)
