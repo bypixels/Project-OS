@@ -131,3 +131,36 @@ def for_agent(items, name, project=None):
     bp = e.get("by_project") or {}
     return {"total": e.get("n_total", 0), "last": e.get("last"),
             "here": bp.get(project) if project else None, "attributed": bool(bp)}
+
+
+# ---------------------------------------------------------------- Codex
+# Codex transcripts (~/.codex/sessions/YYYY/MM/DD/*.jsonl) carry the cwd once, in the first
+# session_meta line. As of the versions observed, they record NO agent/skill invocations at all —
+# only exec_command and MCP calls — so per-agent usage for Codex is genuinely 0. What we can
+# attribute is session activity per project, which is still useful (last time Codex worked there).
+
+def codex_sessions(sessions_dir, roots=None):
+    """{project: {"sessions": n, "last": "YYYY-MM-DD"}} from session_meta cwd."""
+    out = {}
+    roots = roots or {}
+    if not os.path.isdir(sessions_dir):
+        return out
+    for dp, dn, fn in os.walk(sessions_dir):
+        for f in fn:
+            if not f.endswith(".jsonl"):
+                continue
+            try:
+                with open(os.path.join(dp, f), encoding="utf-8", errors="replace") as fh:
+                    head = fh.readline()
+            except Exception:
+                continue
+            m = _CWD.search(head); ts = _TS.search(head)
+            proj = _project_of(m.group(1) if m else None, roots)
+            if not proj:
+                continue
+            e = out.setdefault(proj, {"sessions": 0, "last": None})
+            e["sessions"] += 1
+            d = ts.group(1) if ts else None
+            if d and (e["last"] is None or d > e["last"]):
+                e["last"] = d
+    return out

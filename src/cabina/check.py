@@ -2,7 +2,7 @@
 Every detector encodes a failure that once went unnoticed for weeks."""
 import os, re, json, sys, time
 from datetime import datetime
-from . import scan, harness as HAR, usage
+from . import scan, harness as HAR, usage, drift as DR
 from .contract import Contract
 from .i18n import t
 from . import host
@@ -77,6 +77,30 @@ def run(cfg, quick=False):
         add("warn", t(L, "check.warn_agents", n=len(wrn)), t(L, "check.warn_agents.d", kinds=", ".join(f"{v} {k}" for k, v in sorted(kinds.items(), key=lambda x: -x[1]))), t(L, "fix.agents_invalid"))
     if docs:
         add("info", t(L, "check.docs_in_agents", n=len(docs)), t(L, "check.docs_in_agents.d") + "\n    " + ", ".join(f"{p}/{r.name}" for p, r in docs[:6]) + (" …" if len(docs) > 6 else ""))
+
+    # 4b. Codex agents (TOML) against the codex contract
+    cx = cfg.get("codex_home") or ""
+    if os.path.isdir(os.path.join(cx, "agents")):
+        cres = Contract(cfg, tool="codex").validate_dir(os.path.join(cx, "agents"))
+        cinv = [r for r in cres if r.category in ("invalid", "error")]
+        if cinv:
+            add("crit", t(L, "check.codex_invalid", n=len(cinv)), "\n    ".join(f"{r.name}: {(r.critical or ['?'])[0]}" for r in cinv[:8]))
+
+    # 4c. drift between Claude Code and Codex
+    if data and os.path.isdir(cx):
+        dr = DR.report(cfg, data)
+        tw = [x for x in dr["twins"] if x["status"] == "diverged"]
+        if tw:
+            add("warn", t(L, "check.twins", n=len(tw)), "\n    ".join(f"{x['name']}  similarity {x['similarity']}" for x in tw), t(L, "fix.twins"))
+        dv = [x for x in dr["rules"] if x["status"] == "diverged"]
+        cp = [x for x in dr["rules"] if x["status"] == "copy"]
+        if dv:
+            add("warn", t(L, "check.rules_diverged", n=len(dv)), "\n    ".join(f"{x['project']}: {x.get('diff_lines', '?')} lines differ" for x in dv), t(L, "fix.rules"))
+        if cp:
+            add("info", t(L, "check.rules_copy", n=len(cp)), ", ".join(x["project"] for x in cp), t(L, "fix.rules"))
+        sk = [x for x in dr["skills"] if x["status"] == "diverged"]
+        if sk:
+            add("warn", t(L, "check.skill_copies", n=len(sk)), ", ".join(x["name"] for x in sk))
 
     # 5. harness hooks
     if data:

@@ -29,6 +29,7 @@ def main(argv=None):
     ag.add_argument("action", nargs="?", choices=["list", "archive", "refs"], default="list")
     ag.add_argument("name", nargs="?"); ag.add_argument("--project"); ag.add_argument("--force", action="store_true")
     ag.add_argument("--invalid", action="store_true"); ag.add_argument("--unused", action="store_true"); ag.add_argument("--json", action="store_true")
+    ag.add_argument("--tool", choices=["claude", "codex"], help="only agents of one tool")
 
     sc = sub.add_parser("scan", help="rebuild the environment cache")
     sc.add_argument("--mcp", action="store_true", help="also check MCP servers (needs the claude CLI; slow)")
@@ -74,35 +75,37 @@ def _agents(cfg, a):
         return 0
     if a.action == "archive":
         if not a.name or not a.project: print("usage: cabina agents archive NAME --project P [--force]"); return 2
-        ok, msg, refs = R.archive(a.name, a.project, a.force)
+        ok, msg, refs = R.archive(a.name, a.project, a.force, tool=a.tool or "claude")
         print(msg)
         for r in refs[:12]: print("   ", r)
         return 0 if ok else 1
     rows, items = R.load()
     hom = Roster.homonyms(rows)
     out = []
-    for proj, r, path in rows:
-        u = usage.for_agent(items, r.name, proj)
+    for proj, r, path, tool in rows:
+        u = usage.for_agent(items, r.name, proj) if tool == "claude" else {"total": 0, "here": None, "last": None, "attributed": True}
+        if a.tool and tool != a.tool: continue
         if a.project and proj.lower() != a.project.lower(): continue
         if a.invalid and r.category not in ("invalid", "warnings"): continue
         if a.unused and (u["total"] > 0 or not r.is_agent): continue
-        out.append((proj, r, u, path))
+        out.append((proj, r, u, path, tool))
     if a.json:
-        print(json.dumps([{"name": r.name, "project": p, "category": r.category, "model": r.fields.get("model", ""),
-                           "uses": u["total"], "uses_here": u["here"], "last": u["last"], "critical": r.critical, "warnings": r.warnings, "path": path} for p, r, u, path in out], ensure_ascii=False, indent=1)); return 0
+        print(json.dumps([{"name": r.name, "project": p, "tool": t, "category": r.category, "model": r.fields.get("model", ""),
+                           "uses": u["total"], "uses_here": u["here"], "last": u["last"], "critical": r.critical, "warnings": r.warnings, "path": path} for p, r, u, path, t in out], ensure_ascii=False, indent=1)); return 0
     order = {"invalid": 0, "warnings": 1, "valid": 2, "document": 3, "error": 4}
-    out.sort(key=lambda x: (order[x[1].category], -(x[2]["total"]), x[0], x[1].name))
-    print(f"\n{'agent':<28} {'where':<20} {'model':<7} {'last':<11} {'uses':>5}  state")
-    print("─" * 92)
-    for proj, r, u, path in out:
+    out.sort(key=lambda x: (order[x[1].category], x[4], -(x[2]["total"]), x[0], x[1].name))
+    print(f"\n{'agent':<28} {'where':<20} {'tool':<7} {'model':<7} {'last':<11} {'uses':>5}  state")
+    print("─" * 100)
+    for proj, r, u, path, tool in out:
         n = u["here"] if u["attributed"] and u["here"] is not None else u["total"]
         mark = "" if u["attributed"] or hom.get(r.name, 0) < 2 else "≈"
         det = (r.critical or r.warnings or [""])[0][:38]
-        print(f"{r.name:<28} {proj[:20]:<20} {(r.fields.get('model') or '—'):<7} {(u['last'] or '—'):<11} {n:>4}{mark:1} {r.category:<9} {det}")
-    ag = [r for _, r, _, _ in out if r.is_agent]
-    print("─" * 92)
-    print(f"  {len(ag)} agents · {sum(1 for r in ag if r.category=='invalid')} invalid · {sum(1 for r in ag if r.category=='warnings')} warnings · "
-          f"{sum(1 for _, r, u, _ in out if r.is_agent and u['total']==0)} unused · {sum(1 for _, r, _, _ in out if r.category=='document')} documents\n")
+        print(f"{r.name:<28} {proj[:20]:<20} {tool:<7} {(r.fields.get('model') or '—')[:6]:<7} {(u['last'] or '—'):<11} {n:>4}{mark:1} {r.category:<9} {det}")
+    ag = [r for _, r, _, _, _ in out if r.is_agent]
+    nc = sum(1 for _, _, _, _, t in out if t == "codex")
+    print("─" * 100)
+    print(f"  {len(ag)} agents ({nc} codex) · {sum(1 for r in ag if r.category=='invalid')} invalid · {sum(1 for r in ag if r.category=='warnings')} warnings · "
+          f"{sum(1 for _, r, u, _, t in out if r.is_agent and t=='claude' and u['total']==0)} unused · {sum(1 for _, r, _, _, _ in out if r.category=='document')} documents\n")
     return 0
 
 

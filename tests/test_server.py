@@ -34,11 +34,15 @@ class TestServer(unittest.TestCase):
         self.assertTrue(by[("alpha", "reviewer")]["attributed"])
         self.assertEqual(by[("alpha", "guide")]["category"], "document")
         self.assertTrue(any("overrides" in w for w in by[("alpha", "reviewer")]["warnings"]))  # shadows global undeclared
+        self.assertEqual({a["tool"] for a in d["agents"]}, {"claude", "codex"})
+        self.assertTrue(d["codex_present"])
     def test_skills_projects_harness_docs_live(self):
-        s = self.get("/api/skills"); self.assertEqual({x["name"] for x in s["skills"]}, {"gsk", "deploy"})
+        s = self.get("/api/skills"); self.assertEqual({(x["name"], x["tool"]) for x in s["skills"]}, {("gsk", "claude"), ("deploy", "claude"), ("gsk", "codex")})
         self.assertEqual(next(x for x in s["skills"] if x["name"] == "deploy")["uses"], 1)
         p = self.get("/api/projects"); self.assertEqual(p["projects"][0]["name"], "alpha")
         h = self.get("/api/harness"); self.assertEqual(h["states"][0]["hooks_dead"], ["dead.sh"])
+        self.assertEqual(h["drift"]["twins"][0]["status"], "same")                       # reviewer.md ≡ reviewer.toml
+        self.assertEqual({x["project"]: x["status"] for x in h["drift"]["rules"]}, {"alpha": "diverged"})
         d = self.get("/api/docs"); self.assertTrue(any(x["rel"] == ".claude/MEMORY.md" for x in d["docs"]))
         l = self.get("/api/live"); self.assertFalse(l["ok"]); self.assertEqual(l["provider"], "none")
     def test_post_requires_token(self):

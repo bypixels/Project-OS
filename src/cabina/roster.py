@@ -13,7 +13,9 @@ class Roster:
         self.cfg = cfg
         self.data = data or scan.ensure(cfg)
         self.contract = Contract(cfg)
+        self.codex_contract = Contract(cfg, tool="codex")
         self.global_dir = os.path.join(cfg["claude_home"], "agents")
+        self.codex_dir = os.path.join(cfg.get("codex_home") or "", "agents")
         self.roots = scan.project_roots(cfg, self.data)
         self.usage_path = os.path.join(cfg["state_dir"], "usage-agents.json")
         self.history = os.path.join(cfg["claude_home"], "projects")
@@ -27,22 +29,27 @@ class Roster:
         return out
 
     def load(self, refresh_usage=True):
-        """[(project, Result, path)], usage items"""
+        """[(project, Result, path, tool)], usage items. tool ∈ {claude, codex}."""
         glob = self.contract.validate_dir(self.global_dir)
         gnames = frozenset(r.name for r in glob if r.is_agent)
-        rows = [("global", r, os.path.join(self.global_dir, r.name + ".md")) for r in glob]
+        rows = [("global", r, os.path.join(self.global_dir, r.name + ".md"), "claude") for r in glob]
         for proj, d in self.agent_dirs()[1:]:
             for r in self.contract.validate_dir(d, gnames):
-                rows.append((proj, r, os.path.join(d, r.name + ".md")))
+                rows.append((proj, r, os.path.join(d, r.name + ".md"), "claude"))
+        if os.path.isdir(self.codex_dir):
+            for r in self.codex_contract.validate_dir(self.codex_dir):
+                ext = ".toml" if os.path.exists(os.path.join(self.codex_dir, r.name + ".toml")) else ".md"
+                rows.append(("global", r, os.path.join(self.codex_dir, r.name + ext), "codex"))
         roots = {k: v for k, v in self.roots.items() if k != "global"}
         items = usage.refresh(self.usage_path, self.history, "agents", roots)[0] if refresh_usage else usage.load(self.usage_path)
         return rows, items
 
     @staticmethod
-    def homonyms(rows):
+    def homonyms(rows, tool="claude"):
         h = {}
-        for _, r, _ in rows:
-            if r.is_agent:
+        for row in rows:
+            _, r = row[0], row[1]
+            if r.is_agent and (len(row) < 4 or row[3] == tool):
                 h[r.name] = h.get(r.name, 0) + 1
         return h
 
@@ -87,18 +94,19 @@ class Roster:
                     pass
         return sorted(hits)
 
-    def archive(self, name, project, force=False):
+    def archive(self, name, project, force=False, tool="claude"):
         rows, _ = self.load(refresh_usage=False)
-        hit = [(p, r, path) for p, r, path in rows if r.name == name and p.lower() == project.lower()]
+        hit = [(p, r, path) for p, r, path, t in rows if r.name == name and p.lower() == project.lower() and t == tool]
         if not hit:
-            return False, f"no {name!r} in {project}", []
+            return False, f"no {name!r} in {project} ({tool})", []
         proj, r, path = hit[0]
         refs = self.references(name)
         if refs and not force:
             return False, f"{len(refs)} file(s) reference {name!r}", refs
-        dest_dir = os.path.join(self.cfg["claude_home"], "_archive", date.today().isoformat(), "agents", proj)
+        home = self.cfg["claude_home"] if tool == "claude" else self.cfg["codex_home"]
+        dest_dir = os.path.join(home, "_archive", date.today().isoformat(), "agents", proj)
         os.makedirs(dest_dir, exist_ok=True)
-        dest = os.path.join(dest_dir, name + ".md")
+        dest = os.path.join(dest_dir, os.path.basename(path))
         shutil.move(path, dest)
         items = usage.load(self.usage_path)
         items.setdefault(name, {"last": None, "n_total": 0})["archived"] = date.today().isoformat()

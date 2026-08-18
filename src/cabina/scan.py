@@ -30,6 +30,20 @@ def find_claude_dirs(roots, skip):
 
 
 def _assets(cdir, kind):
+    if kind == "agents_toml":                        # Codex: <home>/agents/*.toml
+        d = cdir; out = []
+        if not os.path.isdir(d):
+            return out
+        for e in sorted(os.listdir(d)):
+            if e.endswith(".toml"):
+                try:
+                    import tomllib
+                    t = tomllib.loads(_read(os.path.join(d, e)))
+                except Exception:
+                    t = {}
+                out.append({"name": t.get("name", e[:-5]), "file": e, "desc": str(t.get("description", ""))[:300],
+                            "model": str(t.get("model", "")), "lines": _read(os.path.join(d, e)).count("\n"), "frontmatter": bool(t)})
+        return out
     d = os.path.join(cdir, kind)
     out = []
     if not os.path.isdir(d):
@@ -162,6 +176,10 @@ def run(cfg):
     data = {"generated": datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M"),
             "claude_home": ch, "global": {}, "projects": [], "sessions": sessions(ch)}
     data["global"] = {k: _assets(ch, k) for k in ("agents", "skills", "commands", "rules")}
+    cx = cfg.get("codex_home") or ""
+    data["codex"] = {"present": os.path.isdir(cx), "home": cx,
+                     "agents": _assets(os.path.join(cx, "agents"), "agents_toml") if os.path.isdir(cx) else [],
+                     "skills": _assets(cx, "skills") if os.path.isdir(cx) else []}
     data["mcp"] = mcp_servers(ch) if sc.get("check_mcp") else {"checked": False, "servers": []}
     seen_names = set()
     for cdir in sorted(find_claude_dirs(cfg["roots"], set(sc["skip_dirs"]))):
@@ -172,10 +190,12 @@ def run(cfg):
                  "agents": _assets(cdir, "agents"), "skills": _assets(cdir, "skills"),
                  "commands": _assets(cdir, "commands"), "rules": _assets(cdir, "rules"),
                  "git": _git_info(root, sc.get("measure_worktrees", True)),
-                 "claude_md": os.path.isfile(os.path.join(root, "CLAUDE.md"))}
+                 "claude_md": os.path.isfile(os.path.join(root, "CLAUDE.md")),
+                 "agents_md": os.path.lexists(os.path.join(root, "AGENTS.md")),
+                 "agents_md_link": os.path.islink(os.path.join(root, "AGENTS.md"))}
         has_assets = any(entry[k] for k in ("agents", "skills", "commands", "rules"))
         has_harness = any(os.path.exists(os.path.join(cdir, x)) for x in ("MEMORY.md", "HARNESS.md", "hooks", "settings.json"))
-        if has_assets or has_harness or entry["claude_md"]:
+        if has_assets or has_harness or entry["claude_md"] or entry["agents_md"]:
             data["projects"].append(entry)
     return data
 

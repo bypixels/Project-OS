@@ -28,7 +28,14 @@ class Env:
             f'{{"timestamp":"2026-08-02T00:00:00Z","cwd":"{a}","x":{{"subagent_type":"reviewer"}}}}\n'
             f'{{"timestamp":"2026-08-03T00:00:00Z","cwd":"/elsewhere","x":{{"subagent_type":"reviewer"}}}}\n'
             f'{{"timestamp":"2026-08-03T00:00:00Z","cwd":"{a}","x":{{"name":"Skill","input":{{"skill":"deploy"}}}}}}\n')
-        self.cfg = CFG._merge(CFG.DEFAULTS, {"claude_home": self.claude, "roots": [self.projects], "state_dir": self.state,
+        # synthetic Codex home: one twin agent (same as claude reviewer), one copied skill
+        self.codex = os.path.join(t, "codex"); os.makedirs(os.path.join(self.codex, "agents")); os.makedirs(os.path.join(self.codex, "skills", "gsk"))
+        open(os.path.join(self.codex, "agents", "reviewer.toml"), "w").write('name = "reviewer"\ndescription = "Reviews things carefully"\ndeveloper_instructions = "Body."\n')
+        open(os.path.join(self.codex, "skills", "gsk", "SKILL.md"), "w").write("---\nname: gsk\ndescription: g\n---\n")
+        os.makedirs(os.path.join(self.codex, "sessions", "2026", "08"))
+        open(os.path.join(self.codex, "sessions", "2026", "08", "r.jsonl"), "w").write(f'{{"timestamp":"2026-08-04T00:00:00Z","type":"session_meta","payload":{{"cwd":"{a}"}}}}\n')
+        open(os.path.join(a, "AGENTS.md"), "w").write("# AGENTS.md\nThis file provides guidance to Codex.\n")   # a copy, not a link
+        self.cfg = CFG._merge(CFG.DEFAULTS, {"claude_home": self.claude, "codex_home": self.codex, "roots": [self.projects], "state_dir": self.state,
                                              "live": {"provider": "none"}, "scan": {"measure_worktrees": False, "check_mcp": False}})
         self.alpha = a
     def cleanup(self): self.tmp.cleanup()

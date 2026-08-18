@@ -66,6 +66,26 @@ Cabina writes in exactly four places, each behind a guard:
 
 The server binds `127.0.0.1` only and every POST needs a per-session token.
 
+### Claude Code and Codex, side by side
+
+If Codex CLI is installed (`~/.codex`), cabina reads its environment too: agents (`*.toml`, validated
+against a per-tool contract), skills, `AGENTS.md` per project, and session activity. Every row carries a
+`claude` / `codex` chip; `cabina agents --tool codex`.
+
+More useful than seeing both is seeing **where they drift apart**. The same content copied by hand into
+two tools diverges silently, so cabina checks:
+
+- **Twin agents** — same name in both tools, different instruction bodies.
+- **`CLAUDE.md` ↔ `AGENTS.md`** — per project: `linked` (a symlink, ideal), `copy` (identical today,
+  will drift), `bridge` (a short AGENTS.md that points at CLAUDE.md as canonical — deliberate),
+  `diverged` (Codex and Claude read different rules here — with the diff).
+- **Copied skills** — Codex skills copied from the shared skills dir that no longer match.
+
+`cabina check` reports drift; the Harness tab shows it with the fix (`ln -sf CLAUDE.md AGENTS.md`).
+
+> Codex transcripts record no agent or skill invocations (only shell and MCP calls), so per-agent
+> usage for Codex is genuinely not measurable today. Cabina says so instead of showing zeros as fact.
+
 ## Install
 
 ```sh

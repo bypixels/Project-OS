@@ -4,7 +4,7 @@ save doc (guarded), open path, rescan cache."""
 import os, sys, json, secrets, threading, webbrowser, time
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
-from . import scan, skills as SK, projects as PROJ, harness as HAR, usage, live as LIVE, host
+from . import scan, skills as SK, projects as PROJ, harness as HAR, usage, live as LIVE, host, drift as DR
 from .roster import Roster
 from .docs import Docs
 from .i18n import STRINGS
@@ -45,22 +45,28 @@ class App:
         R, rows, items = self.roster()
         hom = Roster.homonyms(rows)
         out = []
-        for proj, r, path in rows:
-            u = usage.for_agent(items, r.name, proj)
-            out.append({"name": r.name, "project": proj, "category": r.category, "model": r.fields.get("model", ""),
+        for proj, r, path, tool in rows:
+            u = usage.for_agent(items, r.name, proj) if tool == "claude" else {"last": None, "total": 0, "here": None, "attributed": True}
+            out.append({"name": r.name, "project": proj, "tool": tool, "category": r.category, "model": r.fields.get("model", ""),
                         "tools": r.fields.get("tools", ""), "description": r.fields.get("description", ""),
                         "critical": r.critical, "warnings": r.warnings, "last": u["last"], "uses": u["total"],
-                        "uses_here": u["here"], "attributed": u["attributed"], "homonyms": hom.get(r.name, 0),
+                        "uses_here": u["here"], "attributed": u["attributed"], "homonyms": hom.get(r.name, 0) if tool == "claude" else 0,
                         "path": path, "is_agent": r.is_agent})
         meta = {}
         try:
             meta = json.load(open(R.usage_path)).get("meta", {})
         except Exception:
             pass
-        return {"agents": out, "projects": sorted(self.roots().keys()), "window": meta.get("history_window_from")}
+        return {"agents": out, "projects": sorted(self.roots().keys()), "window": meta.get("history_window_from"),
+                "codex_present": bool(self.data.get("codex", {}).get("present"))}
 
     def api_skills(self):
         rows = SK.load(self.cfg, self.data)
+        for r in rows: r["tool"] = "claude"
+        cx = self.data.get("codex", {})
+        if cx.get("present"):
+            for r in SK.scan_dir(os.path.join(cx["home"], "skills"), "global"):
+                r["tool"] = "codex"; rows.append(r)
         p = os.path.join(self.cfg["state_dir"], "usage-skills.json")
         items, meta = usage.refresh(p, os.path.join(self.cfg["claude_home"], "projects"), "skills",
                                     {k: v for k, v in self.roots().items() if k != "global"})
@@ -69,7 +75,7 @@ class App:
         return {"skills": rows, "window": meta.get("history_window_from")}
 
     def api_projects(self): return {"projects": PROJ.load(self.data)}
-    def api_harness(self): return {"states": HAR.states(self.data), "runlogs": HAR.runlogs(self.data)}
+    def api_harness(self): return {"states": HAR.states(self.data), "runlogs": HAR.runlogs(self.data), "drift": DR.report(self.cfg, self.data)}
     def api_live(self): return self.live.list() | {"provider": self.live.name}
     def api_docs(self): return {"docs": self.docs().list_all(), "working": self.working()}
     def api_doc(self, q):
@@ -85,7 +91,7 @@ class App:
     # ---- POST ----
     def api_archive(self, b):
         R, _, _ = self.roster()
-        ok, msg, refs = R.archive(b["name"], b["project"], bool(b.get("force")))
+        ok, msg, refs = R.archive(b["name"], b["project"], bool(b.get("force")), tool=b.get("tool", "claude"))
         if ok: self.roster(fresh=True)
         return {"ok": ok, "message": msg, "references": refs}
     def api_create(self, b):

@@ -8,8 +8,16 @@ Categories:
     error      unreadable
 Severity of each field comes from the config (contract.critical / contract.warn).
 """
-import os, re
+import os, re, tomllib
 from dataclasses import dataclass, field
+
+# Per-tool contract defaults. Claude Code agents are Markdown with YAML frontmatter;
+# Codex agents are TOML (name, description, developer_instructions) with no model/tools.
+TOOL_DEFAULTS = {
+    "claude": {},
+    "codex": {"required": ["name", "description"], "critical": ["name", "description"], "warn": [],
+              "known_fields": ["developer_instructions", "model", "model_reasoning_effort", "sandbox_mode", "approval_policy", "nickname_candidates"]},
+}
 
 _KEBAB = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
@@ -28,8 +36,11 @@ class Result:
 
 
 class Contract:
-    def __init__(self, cfg=None):
-        c = (cfg or {}).get("contract", {}) if cfg else {}
+    def __init__(self, cfg=None, tool="claude"):
+        c = dict((cfg or {}).get("contract", {}) if cfg else {})
+        c.update(TOOL_DEFAULTS.get(tool, {}))              # tool defaults win over the generic ones
+        c.update((cfg or {}).get("contract", {}).get(tool, {}) if cfg else {})   # explicit per-tool config wins over all
+        self.tool = tool
         self.required = tuple(c.get("required", ("name", "description", "model", "tools")))
         self.critical = set(c.get("critical", ("name", "description")))
         self.warn = set(c.get("warn", ("model", "tools")))
@@ -39,8 +50,15 @@ class Contract:
     def _sev(self, fld):
         return "critical" if fld in self.critical else "warn"
 
-    def validate_text(self, text, filename, shadows_global=False):
-        fields, has_fm = parse_frontmatter(text)
+    def validate_text(self, text, filename, shadows_global=False, fmt="md"):
+        if fmt == "toml":
+            try:
+                fields = {k: (v if isinstance(v, str) else str(v)) for k, v in tomllib.loads(text).items()}
+            except Exception as e:
+                return Result(filename, "error", critical=[f"invalid TOML: {e}"])
+            has_fm = True
+        else:
+            fields, has_fm = parse_frontmatter(text)
         if not has_fm:
             return Result(filename, "document", fields=fields)
         crit, warn = [], []
@@ -81,23 +99,39 @@ class Contract:
         return Result(filename, categorize(crit, warn, False), crit, warn, fields)
 
     def validate_file(self, path, shadows_global=False):
-        name = os.path.basename(path)
-        name = name[:-3] if name.endswith(".md") else name
+        name, ext = os.path.splitext(os.path.basename(path))
         try:
             with open(path, encoding="utf-8", errors="replace") as f:
                 text = f.read()
         except Exception as e:
             return Result(name, "error", critical=[f"unreadable: {e}"])
-        return self.validate_text(text, name, shadows_global)
+        return self.validate_text(text, name, shadows_global, fmt="toml" if ext == ".toml" else "md")
 
     def validate_dir(self, agents_dir, global_names=frozenset()):
         out = []
         if not os.path.isdir(agents_dir):
             return out
         for f in sorted(os.listdir(agents_dir)):
-            if f.endswith(".md"):
-                out.append(self.validate_file(os.path.join(agents_dir, f), shadows_global=(f[:-3] in global_names)))
+            name, ext = os.path.splitext(f)
+            if ext in (".md", ".toml"):
+                out.append(self.validate_file(os.path.join(agents_dir, f), shadows_global=(name in global_names)))
         return out
+
+
+def parse_agent_file(path):
+    """(fields, body, has_frontmatter, fmt) for .md (frontmatter) or .toml agents."""
+    ext = os.path.splitext(path)[1]
+    text = open(path, encoding="utf-8", errors="replace").read()
+    if ext == ".toml":
+        try:
+            d = tomllib.loads(text)
+        except Exception:
+            return {}, text, False, "toml"
+        body = str(d.get("developer_instructions") or d.get("instructions") or "")
+        return {k: (v if isinstance(v, str) else str(v)) for k, v in d.items()}, body, True, "toml"
+    fields, has = parse_frontmatter(text)
+    body = text[text.find("\n---", 3) + 4:] if has else text
+    return fields, body, has, "md"
 
 
 def parse_frontmatter(text):
