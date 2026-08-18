@@ -79,6 +79,29 @@ class TestBreaks(unittest.TestCase):
         finally:
             env.cleanup()
 
+    def test_usage_first_scan_finds_full_history_without_a_second_run_guard(self):
+        # constraint (g): agents --unused (check.py, que lee usage.load() del cache) no puede
+        # dar falsos positivos porque el registro nuevo este vacio. Con offsets, un archivo sin
+        # entrada en usage-history.json se lee desde offset=0 — completo — asi que esto deberia
+        # cumplirse "gratis" por construccion; este break-test lo deja demostrado, no asumido.
+        env = Env()
+        try:
+            p = os.path.join(env.state, "usage-agents.json")
+            history_dir = os.path.join(env.claude, "projects")
+            roots = {"alpha": env.alpha}
+            self.assertFalse(os.path.isfile(os.path.join(env.state, "usage-history.json")))
+            self.assertFalse(os.path.isfile(p))
+            with mock.patch.object(U, "_scan_file", lambda *a, **k: ({}, {}, 0)):   # guard disabled: "primer scan" roto
+                items_broken, _ = U.refresh(p, history_dir, "agents", roots)
+                self.assertNotIn("reviewer", items_broken)                          # no lo encontro -> canary red
+            os.remove(os.path.join(env.state, "usage-agents.json"))
+            os.remove(os.path.join(env.state, "usage-skills.json"))
+            os.remove(os.path.join(env.state, "usage-history.json"))
+            items, _ = U.refresh(p, history_dir, "agents", roots)                   # guard presente
+            self.assertGreaterEqual(items["reviewer"]["n_total"], 1)                # lo encontro en UNA sola corrida
+        finally:
+            env.cleanup()
+
     def test_sessions_no_text_leak_guard(self):
         leak = {"session_id": "s1", "prompt_text": "the secret prompt string XYZ123"}
         self.assertNotIn("prompt_text", SESS._redact_unknown_fields(leak))                     # guard present
