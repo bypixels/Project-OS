@@ -1,13 +1,24 @@
 """`cabina fleet` — terminal TUI (curses, stdlib) over the live provider + cached scan."""
-import curses, time, sys, os
+import time, sys, os
+try:
+    import curses
+except ImportError:          # Windows: no curses in the stdlib
+    curses = None
 from . import live as LIVE, scan
 from .roster import Roster
+
+
+def available():
+    return curses is not None
 
 ICON = {"working": "●", "done": "✓", "idle": "○", "unknown": "·"}
 VIEWS = ["Live", "Agents", "Projects"]
 
 
 def run(cfg):
+    if not available():
+        print("cabina fleet needs a curses-capable terminal (not available on this Python/OS). Use `cabina` for the web UI.")
+        return 2
     prov = LIVE.get(cfg)
     data = scan.ensure(cfg)
     rows_agents, items = Roster(cfg, data).load(refresh_usage=False)

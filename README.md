@@ -77,6 +77,21 @@ cabina                       # opens http://127.0.0.1:8930
 Requires Python 3.11+. No other dependencies. `git` is used for project status; `herdr` is optional
 (powers the Live tab).
 
+### Platforms
+
+macOS, Linux and Windows. Claude Code and Codex keep their homes at `~/.claude` and `~/.codex` on
+every OS; cabina's own files follow each platform's convention:
+
+| | config | state (cache, usage, doc backups) |
+|---|---|---|
+| macOS / Linux | `~/.config/cabina/config.toml` (or `$XDG_CONFIG_HOME`) | `~/.local/share/cabina` (or `$XDG_DATA_HOME`) |
+| Windows | `%APPDATA%\cabina\config.toml` | `%LOCALAPPDATA%\cabina` |
+
+`grep` and `du` are used when present and replaced by pure-Python equivalents when not (Windows).
+`cabina fleet` needs a curses terminal and tells you so where there is none; the web UI works everywhere.
+Archiving a **symlinked** skill on Windows needs Developer Mode (symlink privilege) — cabina refuses
+cleanly and moves nothing if it cannot recreate the link.
+
 ## Configure
 
 `~/.config/cabina/config.toml` (or `$CABINA_CONFIG`). Everything is optional:

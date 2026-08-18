@@ -54,7 +54,10 @@ def archive_path(path, project, archive_base):
         target = os.readlink(path)
         if not os.path.isabs(target):
             target = os.path.normpath(os.path.join(os.path.dirname(path), target))
-        os.symlink(target, dest)
+        try:
+            os.symlink(target, dest)          # Windows: needs Developer Mode or admin
+        except OSError as e:
+            return False, f"cannot create the archived link ({e}); nothing was moved"
         os.unlink(path)
     else:
         shutil.move(path, dest)

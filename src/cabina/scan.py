@@ -1,6 +1,6 @@
 """Environment scan: every .claude/ under the configured roots, plus the global one.
 Writes ONE file: <state_dir>/scan.json. Everything else is read-only."""
-import json, os, re, subprocess, hashlib
+import json, os, re, subprocess, hashlib, shutil
 from datetime import datetime, timezone
 from . import host
 from .contract import parse_frontmatter
@@ -53,6 +53,25 @@ def _assets(cdir, kind):
     return out
 
 
+def _dir_mb(path):
+    """Directory size in MB: `du` where available, os.walk elsewhere (Windows)."""
+    if shutil.which("du"):
+        try:
+            r = subprocess.run(["du", "-sk", path], capture_output=True, text=True, timeout=120)
+            if r.returncode == 0:
+                return round(int(r.stdout.split()[0]) / 1024)
+        except Exception:
+            pass
+    total = 0
+    for dp, dn, fn in os.walk(path):
+        for f in fn:
+            try:
+                total += os.path.getsize(os.path.join(dp, f))
+            except OSError:
+                pass
+    return round(total / (1024 * 1024))
+
+
 def _git(path, *a):
     try:
         r = subprocess.run(["git", "-C", path, *a], capture_output=True, text=True, timeout=5)
@@ -67,13 +86,7 @@ def _git_info(path, measure_worktrees):
     wt = []
     for line in _git(path, "worktree", "list").splitlines()[1:]:
         wp = line.split()[0]
-        mb = 0
-        if measure_worktrees:
-            try:
-                r = subprocess.run(["du", "-sk", wp], capture_output=True, text=True, timeout=120)
-                mb = round(int(r.stdout.split()[0]) / 1024) if r.returncode == 0 else 0
-            except Exception:
-                mb = 0
+        mb = _dir_mb(wp) if measure_worktrees else 0
         try:
             mtime = datetime.fromtimestamp(os.path.getmtime(wp)).strftime("%Y-%m-%d")
         except Exception:

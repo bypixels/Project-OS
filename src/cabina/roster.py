@@ -62,13 +62,30 @@ class Roster:
         paths = [p for p in dict.fromkeys(paths) if os.path.exists(p)]
         if not paths:
             return []
-        try:
-            r = subprocess.run(["grep", "-rlE", "--include=*.md", "--exclude-dir=worktrees", "--exclude-dir=_archive",
-                                "--exclude-dir=node_modules", pat, *paths], capture_output=True, text=True, timeout=30)
-            hits = [h for h in r.stdout.splitlines() if os.path.basename(h) != name + ".md"]
-        except Exception:
-            hits = []
-        return sorted(set(hits))
+        if shutil.which("grep"):
+            try:
+                r = subprocess.run(["grep", "-rlE", "--include=*.md", "--exclude-dir=worktrees", "--exclude-dir=_archive",
+                                    "--exclude-dir=node_modules", pat, *paths], capture_output=True, text=True, timeout=30)
+                if r.returncode in (0, 1):     # 1 = no matches; anything else = grep failed -> fall through
+                    return sorted(set(h for h in r.stdout.splitlines() if os.path.basename(h) != name + ".md"))
+            except Exception:
+                pass
+        # Python fallback (Windows, or grep missing). Same patterns, compiled once.
+        rx = re.compile(pat.replace("[[:space:]]", r"\s"), re.M)
+        hits = set()
+        for base in paths:
+            files = [base] if os.path.isfile(base) else [
+                os.path.join(dp, f) for dp, dn, fn in os.walk(base)
+                if not any(x in dp for x in ("worktrees", "_archive", "node_modules")) for f in fn if f.endswith(".md")]
+            for f in files:
+                if os.path.basename(f) == name + ".md":
+                    continue
+                try:
+                    if rx.search(open(f, encoding="utf-8", errors="replace").read()):
+                        hits.add(f)
+                except Exception:
+                    pass
+        return sorted(hits)
 
     def archive(self, name, project, force=False):
         rows, _ = self.load(refresh_usage=False)

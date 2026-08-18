@@ -1,13 +1,16 @@
 """Configuration: ~/.config/cabina/config.toml (or $CABINA_CONFIG). Everything has a default."""
 import os, sys, tomllib, copy
+from . import host
 
 HOME = os.path.expanduser("~")
+_D = host.default_dirs()
 
 DEFAULTS = {
     "language": "en",                                   # "en" | "es"
-    "claude_home": "~/.claude",                         # Claude Code's own directory
-    "roots": ["~/Documents", "~/Desktop"],              # where projects live (any dir with .claude/)
-    "state_dir": "~/.local/share/cabina",               # cache, usage registry, doc backups
+    "claude_home": _D["claude_home"],                   # Claude Code's own directory (~/.claude on every OS)
+    "codex_home": _D["codex_home"],                     # Codex CLI's own directory (~/.codex on every OS)
+    "roots": _D["roots"],                               # where projects live (any dir with .claude/)
+    "state_dir": _D["state"],                           # cache, usage registry, doc backups (platform convention)
     "server": {"host": "127.0.0.1", "port": 8930},
     "contract": {
         "required": ["name", "description", "model", "tools"],
@@ -38,7 +41,7 @@ def _merge(base, over):
 
 
 def config_path():
-    return os.environ.get("CABINA_CONFIG") or os.path.join(HOME, ".config", "cabina", "config.toml")
+    return os.environ.get("CABINA_CONFIG") or os.path.join(_D["config"], "config.toml")
 
 
 def load(path=None):
@@ -50,6 +53,7 @@ def load(path=None):
             user = tomllib.load(f)
     cfg = _merge(DEFAULTS, user)
     cfg["claude_home"] = os.path.expanduser(cfg["claude_home"])
+    cfg["codex_home"] = os.path.expanduser(cfg["codex_home"])
     cfg["state_dir"] = os.path.expanduser(cfg["state_dir"])
     cfg["roots"] = [os.path.expanduser(r) for r in cfg["roots"]]
     return cfg
@@ -57,10 +61,13 @@ def load(path=None):
 
 def example_toml():
     return '''# cabina configuration — every key is optional; these are the defaults.
+# Locations: macOS/Linux  ~/.config/cabina/config.toml   state ~/.local/share/cabina
+#            Windows      %APPDATA%\cabina\config.toml   state %LOCALAPPDATA%\cabina
 language = "en"                 # "en" | "es"
-claude_home = "~/.claude"
+claude_home = "~/.claude"       # same on every OS
+codex_home = "~/.codex"
 roots = ["~/Documents", "~/Desktop"]
-state_dir = "~/.local/share/cabina"
+# state_dir = ...               # defaults to the platform convention above
 
 [server]
 host = "127.0.0.1"

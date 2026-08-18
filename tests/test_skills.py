@@ -1,5 +1,13 @@
 import os, tempfile, unittest
 import _helpers  # noqa
+
+def _can_symlink():
+    import os, tempfile
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            os.symlink(d, os.path.join(d, "l")); return True
+    except (OSError, NotImplementedError):
+        return False
 from cabina import skills as SK
 
 def mk(d, name, fm=True, link_to=None):
@@ -12,6 +20,7 @@ class TestSkills(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             mk(d, "a"); mk(d, "b"); r = SK.scan_dir(d, "global")
             self.assertEqual(sorted(x["name"] for x in r), ["a", "b"]); self.assertTrue(all(x["state"] == "ok" for x in r))
+    @unittest.skipUnless(_can_symlink(), "symlinks not available")
     def test_states(self):
         with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as t:
             os.makedirs(os.path.join(d, "empty")); mk(d, "raw", fm=False); mk(d, "broken", link_to="/no/x")
@@ -22,6 +31,7 @@ class TestSkills(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as a:
             p = mk(d, "go"); ok, _ = SK.archive_path(p, "global", a)
             self.assertTrue(ok); self.assertFalse(os.path.exists(p))
+    @unittest.skipUnless(_can_symlink(), "symlinks not available")
     def test_archive_symlink_keeps_target(self):
         with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as t, tempfile.TemporaryDirectory() as a:
             real = mk(t, "origin"); p = mk(d, "link", link_to=real)

@@ -8,7 +8,7 @@ Attribution: each transcript line carries the session `cwd`, so an invocation of
 `code-reviewer` is credited to the project whose root contains that cwd. This is what
 tells apart six homonymous `code-reviewer` agents.
 """
-import json, os, re, subprocess
+import json, os, re, subprocess, shutil
 from datetime import date
 
 _AGENT = re.compile(r'"subagent_type":"([a-zA-Z0-9_-]+)"')
@@ -20,11 +20,15 @@ _CWD = re.compile(r'"cwd":"([^"]+)"')
 def _lines(history_dir, needle):
     if not os.path.isdir(history_dir):
         return []
-    try:
-        r = subprocess.run(["grep", "-rhF", needle, history_dir, "--include=*.jsonl"],
-                           capture_output=True, text=True, timeout=180)
-        return r.stdout.splitlines()
-    except Exception:
+    if shutil.which("grep"):
+        try:
+            r = subprocess.run(["grep", "-rhF", needle, history_dir, "--include=*.jsonl"],
+                               capture_output=True, text=True, timeout=180)
+            return r.stdout.splitlines()
+        except Exception:
+            pass
+    # Python fallback (Windows, or grep missing): slower but same result
+    if True:
         out = []
         for dp, dn, fn in os.walk(history_dir):
             for f in fn:
