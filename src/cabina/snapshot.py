@@ -2,8 +2,10 @@
 (two machines, or the same machine over time). Read-only."""
 import json, os, platform, socket
 from datetime import datetime
-from . import scan, skills as SK, harness as HAR
+from . import scan, skills as SK, harness as HAR, projects as PROJ
 from .roster import Roster
+
+_PROJECT_DETAIL_FIELDS = ("name", "branch", "dirty", "worktrees", "docs", "memory_days", "last_commit", "agents", "skills")
 
 _LOCAL_ONLY_FIELDS = ("cwd", "source_path", "mtime", "size", "offset")
 
@@ -65,15 +67,22 @@ def export_activity(cfg, projects=None, detail=False, titles=False):
     return out
 
 
-def export(cfg):
+def export(cfg, activity=None):
     data = scan.ensure(cfg)
     R = Roster(cfg, data); rows, items = R.load(refresh_usage=False)
     agents = [{"name": r.name, "project": p, "tool": t, "category": r.category, "model": r.fields.get("model", ""),
                "uses": items.get(r.name, {}).get("n_total", 0)} for p, r, path, t in rows if r.is_agent]
     sk = [{"name": s["name"], "project": s["project"], "state": s["state"], "symlink": s["symlink"]} for s in SK.load(cfg, data)]
     hs = [{"project": e["name"], "level": e["level"], "hooks_dead": e["hooks_dead"], "hooks_broken": e["hooks_broken"]} for e in HAR.states(data)]
-    return {"cabina": 1, "machine": socket.gethostname(), "os": platform.system(), "when": datetime.now().isoformat(timespec="minutes"),
-            "agents": agents, "skills": sk, "harness": hs, "projects": sorted(p["name"] for p in data.get("projects", []))}
+    # projects_detail: per-project fields from projects.load(), whitelisted to _PROJECT_DETAIL_FIELDS —
+    # "path" (local-only, like cwd/source_path above) never leaves this machine.
+    pd = [{k: p[k] for k in _PROJECT_DETAIL_FIELDS} for p in PROJ.load(data)]
+    out = {"cabina": 1, "machine": socket.gethostname(), "os": platform.system(), "when": datetime.now().isoformat(timespec="minutes"),
+           "agents": agents, "skills": sk, "harness": hs, "projects": sorted(p["name"] for p in data.get("projects", [])),
+           "projects_detail": pd}
+    if activity is not None:
+        out["activity"] = activity
+    return out
 
 
 def _key(x): return f'{x.get("tool", "claude")}:{x["project"]}/{x["name"]}'

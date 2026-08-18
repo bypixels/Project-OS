@@ -38,6 +38,10 @@ def main(argv=None):
 
     sub.add_parser("fleet", help="terminal TUI")
     ex = sub.add_parser("export", help="export this environment as JSON (agents, skills, harness, projects)"); ex.add_argument("-o", "--out")
+    ex.add_argument("--activity", action="store_true", help="also export session activity (aggregated per project by default)")
+    ex.add_argument("--detail", action="store_true", help="with --activity: add per-session rows")
+    ex.add_argument("--titles", action="store_true", help="with --activity --detail: add session titles")
+    ex.add_argument("--project", action="append", help="with --activity: restrict to this project (repeatable)")
     cp = sub.add_parser("compare", help="compare two exports (two machines, or then vs now)"); cp.add_argument("a"); cp.add_argument("b")
     ini = sub.add_parser("init", help="print an example .cabina.toml (--ci: the GitHub Actions workflow)"); ini.add_argument("--ci", action="store_true")
     mc = sub.add_parser("mcp", help="run the read-only MCP server over stdio (register with --install)"); mc.add_argument("--install", action="store_true", help="print how to register it in Claude Code and Codex")
@@ -77,9 +81,17 @@ def main(argv=None):
         return _agents(cfg, a)
     if a.cmd == "export":
         from . import snapshot
-        d = snapshot.export(cfg); txt = json.dumps(d, indent=1, ensure_ascii=False)
+        activity = None
+        if a.activity:
+            try:
+                activity = snapshot.export_activity(cfg, projects=a.project, detail=a.detail, titles=a.titles)
+            except ValueError as e:
+                print(f"usage: {e}", file=sys.stderr); return 2
+        d = snapshot.export(cfg, activity=activity); txt = json.dumps(d, indent=1, ensure_ascii=False)
         if a.out:
-            open(a.out, "w", encoding="utf-8").write(txt); print(f"exported {len(d['agents'])} agents, {len(d['skills'])} skills, {len(d['projects'])} projects -> {a.out}")
+            open(a.out, "w", encoding="utf-8").write(txt)
+            print(f"exported {len(d['agents'])} agents, {len(d['skills'])} skills, {len(d['projects'])} projects"
+                  + (" + activity" if activity else "") + f" -> {a.out}")
         else:
             print(txt)
         return 0

@@ -34,5 +34,20 @@ class TestExportActivity(unittest.TestCase):
         self.assertNotIn("source_path", dumped)
         self.assertNotIn('"cwd"', dumped)
 
+class TestExportProjectsDetail(unittest.TestCase):
+    # Orchestrator amendment to Tarea 28 (plan Concern 2): export() also embeds
+    # "projects_detail" — per-project fields from projects.load(), never "path" (local-only).
+    def test_export_includes_projects_detail_without_path(self):
+        env = Env()
+        try:
+            out = SNAP.export(env.cfg)
+            self.assertIn("projects_detail", out)
+            row = next(p for p in out["projects_detail"] if p["name"] == "alpha")
+            self.assertEqual(set(row.keys()),
+                              {"name", "branch", "dirty", "worktrees", "docs", "memory_days", "last_commit", "agents", "skills"})
+            self.assertTrue(all("path" not in p for p in out["projects_detail"]))
+        finally:
+            env.cleanup()
+
 if __name__ == "__main__":
     unittest.main()
