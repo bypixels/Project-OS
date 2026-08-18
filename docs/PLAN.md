@@ -2438,6 +2438,324 @@ Registro de lo que cambió respecto al texto original de las Tareas 26-39, con s
 
 ---
 
+# Fase 4 — usage incremental: dejar de releer 1.4 GB por cada "cabina agents" (H2 raíz)
+
+## Contexto y medición
+
+`src/cabina/usage.py` responde "¿qué tanto se usó este agente/skill?" cada vez que alguien corre
+`cabina agents`, abre la UI (`server.py::api_skills`, `App.roster()`), o consulta por MCP. Para
+responder, `extract()`/`refresh()` no llevan ninguna cuenta de lo que ya leyeron: cada llamada
+grepea (`grep -rhF <needle> --include=*.jsonl`, con un fallback en Python puro para Windows) **todo**
+`~/.claude/projects` de arriba a abajo, de nuevo, sin memoria de la corrida anterior. Es como si cada
+vez que alguien preguntara "¿cuántas veces se usó el archivero X?" la respuesta fuera ir a la bodega
+y releer expediente por expediente desde la primera página — en vez de mirar el separador de
+página (el "bookmark") que se dejó la última vez y leer solo lo que se agregó después. Medido sobre
+el entorno real de Danny (1.4 GB, 2 044 archivos `.jsonl`): 8.6-11 segundos por llamada.
+
+`sessions.py` (Fase 1, Tarea 10/17) ya resolvió exactamente este problema para el mismo directorio:
+un registro en `<state_dir>/sessions.json` guarda, por archivo fuente, el `offset` de bytes ya
+leídos, así que `refresh()` solo procesa lo nuevo desde la última corrida — medido, 0.09 segundos.
+La diferencia de dos órdenes de magnitud no es casualidad: es la MISMA idea (bookmark de bytes) que
+`usage.py` nunca adoptó porque se escribió antes, en la Fase original del proyecto. Este plan lleva
+esa misma idea a `usage.py`, sin heredar sus tests ni su alcance — son problemas hermanos, no el
+mismo problema.
+
+## Decisión de diseño
+
+Tres formas de cerrar esto, de la más simple (y descartada) a la recomendada:
+
+- **Opción B — derivar `usage` de `sessions.json` en vez de releer las transcripciones.**
+  `sessions.py` ya extrae, por sesión, cuántas veces se invocó cada agente/skill
+  (`state["agents"]`/`state["skills"]`, Tarea 12) con el proyecto ya atribuido. En teoría `usage`
+  podría sumarse desde ahí sin abrir un solo `.jsonl` más. **Descartada** por tres razones
+  concretas: (1) `sessions.py` solo recorre `<claude_home>/projects/<enc>/<sessionId>.jsonl` — a
+  propósito NO entra a las carpetas `subagents/` (R3: "un subagente nunca es una sesión por sí
+  sola"), pero el `grep` recursivo de `usage.py` HOY sí las escanea, así que invocaciones de
+  agentes hechas dentro de un subagente se contarían hoy y se perderían con esta opción — una
+  regresión silenciosa de alcance, no solo de rendimiento; (2) `sessions.json` se poda por
+  `activity.retention_days` (default 365) porque para la pestaña Actividad "sesión vieja" no
+  importa — pero `usage.py` tiene la garantía contraria, ACUMULAR fechas para siempre sin
+  regresión (rule (a) de este encargo); derivar de un archivo que se poda exigiría un acumulador
+  paralelo alimentado en cada `sessions.refresh()`, es decir, la MISMA cantidad de código nuevo que
+  la Opción A pero con el acoplamiento añadido de depender de la forma interna de otro módulo; (3)
+  hoy nada llama a `sessions.refresh()` desde `cabina agents`/`roster.py` — habría que añadir esa
+  llamada igual, así que el ahorro de "una sola lectura" no es gratis, es una integración nueva.
+- **Opción C — filtrar por `mtime` sin offset real (releer completo solo los archivos que
+  cambiaron).** Más simple que A, pero insuficiente: un archivo de sesión activo crece durante
+  horas y con esta opción se releería completo en cada refresh mientras esté "tocado" — exactamente
+  el patrón que un usuario con una sesión larga golpea más. No resuelve el H2 raíz, solo lo
+  atenúa.
+- **Opción A (RECOMENDADA) — `usage.py` lleva su propio bookmark de bytes, igual que
+  `sessions.py`, pero independiente.** Nuevo registro `<state_dir>/usage-history.json`, clave
+  `source_path`, con `{offset, size, mtime, agents, skills}` — donde `agents`/`skills` son los
+  conteos (`{name: {"n": int, "by_project": {...}}}`) que ESE archivo aportó hasta ahora. En cada
+  refresh: leer solo los bytes nuevos desde `offset` (reutilizando la MISMA lógica de
+  `_read_new_lines` que ya existe en `sessions.py`, línea por línea, nunca una línea a medias),
+  recalcular los conteos de ese archivo, y sumar al acumulador global la DIFERENCIA entre los
+  conteos nuevos y los que ya se habían guardado para ese archivo — no el conteo bruto. Por qué la
+  resta y no la suma directa del delta de líneas: si un archivo se trunca o se reescribe (caso raro
+  pero cubierto, mismo criterio que Tarea 17: `size < offset` ⇒ reparsear desde cero), sin la resta
+  se contarían dos veces las invocaciones que ya estaban adentro antes del truncado. Con la resta,
+  el archivo simplemente "corrige" su propio aporte al total, sin tocar el de los demás.
+  Sencillo en la analogía: cada archivo tiene su propia notita de "yo ya aporté 7 usos de
+  `code-reviewer`"; si se relee de cero y ahora aporta 5, el total baja en 2 — no se duplica nada.
+  Es más código que la Opción B, pero cada pieza es acotada, no depende de la forma interna de
+  `sessions.py`, y preserva EXACTO el alcance de hoy (incluye `subagents/`, needles idénticos).
+  **Consecuencia necesaria:** `merge()` deja de ser "quedarse con el máximo" (`max(n_total, n)`,
+  correcto solo cuando `fresh` es un recuento total de una relectura completa) y pasa a ser "sumar
+  el delta" (correcto cuando `fresh` es incremental) — un cambio de contrato interno de `merge`,
+  detallado en la Tarea 42. La garantía de fechas nunca-regresan (rule (a), break-test existente)
+  no cambia: sigue siendo `max(last_previo, last_nuevo)`, ajena a este cambio.
+
+Con offsets reales por archivo, el `grep` externo (y su fallback Windows) deja de aportar nada: ya
+no se busca un texto en un directorio completo, se abren archivos puntuales y se leen bytes
+puntuales. La Tarea 44 elimina `_lines()` y unifica todo en un solo camino Python, sin rama
+POSIX/Windows — constraint (e) resuelta por diseño, no por decisión adicional.
+
+### Tarea 40: Fixtures — transcripciones sintéticas para probar offset, truncado y alcance de subagentes
+**Archivos:** Modificar `tests/_env.py`
+
+- [ ] Paso 1: `tests/_env.py` no tiene hoy ningún helper para "hacer crecer" o "truncar" un archivo
+      de historial de USO (el que existe, `touch_session`, solo cambia `mtime`, no contenido) — un
+      test que llame a un método `env.grow_usage_history(...)` inexistente falla con
+      `AttributeError`.
+- [ ] Paso 2: confirmar el `AttributeError` con
+      `python3 -m unittest discover -s tests -p "test_usage.py" -v` (test nuevo de la Tarea 41
+      referenciándolo).
+- [ ] Paso 3: agregar a `Env`: (a) `append_usage_line(text)` — escribe una línea `.jsonl` más al
+      archivo de historial ya existente (`-x/s.jsonl`), simulando una sesión que sigue creciendo
+      entre dos corridas de `refresh()`; (b) `truncate_usage_history(new_content)` — reemplaza el
+      contenido completo del mismo archivo por algo más chico, simulando rotación/reescritura; (c)
+      un archivo NUEVO bajo `<claude_home>/projects/-x/<sid>/subagents/sub.jsonl` con una línea que
+      contiene `"subagent_type":"nested-from-subagent"` — preserva el caso "un subagente invoca
+      otro agente", que hoy el grep recursivo de `usage.py` sí cuenta y la Fase 4 no debe perder.
+- [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_usage.py" -v` → verde una vez escrita
+      la Tarea 41 (esta tarea sola no tiene aserciones propias, solo prepara el terreno).
+- [ ] Paso 5: `git add tests/_env.py && git commit -m "test: _env.py — fixtures de usage incremental (crecimiento, truncado, invocación anidada en subagents/)"`
+
+### Tarea 41: `usage._read_new_lines` + extracción de agentes y skills en una sola pasada por archivo
+**Archivos:** Modificar `src/cabina/usage.py`, `tests/test_usage.py`
+
+Duplicar (no importar) el lector de bytes-por-offset de `sessions.py`: importar `sessions` desde
+`usage` crearía un ciclo (`sessions.py` ya hace `from . import scan, usage`). Son ~10 líneas y solo
+dos sitios de uso — por la regla propia de YAGNI/DRY ("extraer duplicación solo con 3+ repeticiones
+reales"), duplicar acá es la decisión correcta, no un descuido.
+
+- [ ] Paso 1: test que falla:
+  ```python
+  def test_scan_file_extracts_both_needles_in_one_pass(self):
+      with tempfile.TemporaryDirectory() as d:
+          p = os.path.join(d, "f.jsonl")
+          open(p, "w").write(
+              '{"timestamp":"2026-08-01","cwd":"/x","subagent_type":"reviewer"}\n'
+              '{"timestamp":"2026-08-01","cwd":"/x","name":"Skill","input":{"skill":"deploy"}}\n')
+          agents, skills, new_offset = U._scan_file(p, 0, roots={})
+          self.assertEqual(agents["reviewer"]["n"], 1)
+          self.assertEqual(skills["deploy"]["n"], 1)
+          self.assertGreater(new_offset, 0)
+  ```
+- [ ] Paso 2: `python3 -m unittest discover -s tests -p "test_usage.py" -v` →
+      `AttributeError: module 'cabina.usage' has no attribute '_scan_file'`.
+- [ ] Paso 3: en `usage.py`, agregar `_read_new_lines` (copia literal de la de `sessions.py`) y
+      `_scan_file(path, offset, roots)`: lee las líneas nuevas, corre `_AGENT`/`_SKILL` sobre cada
+      una (misma lógica que `extract()` hoy, sin el needle-prefiltro de `grep` porque ya no hace
+      falta), devuelve `(agents_delta, skills_delta, new_offset)` con la MISMA forma de entrada que
+      `extract()` devuelve hoy (`{name: {"n", "last", "by_project"}}`) — pero acá representa solo lo
+      leído en ESTA pasada, no un total.
+- [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_usage.py" -v` → `OK`.
+- [ ] Paso 5: `git commit -am "feat: usage.py — _read_new_lines + _scan_file, extracción de agentes y skills en una sola pasada"`
+
+### Tarea 42: Registro por archivo (`usage-history.json`) y `merge()` pasa de máximo a suma de deltas
+**Archivos:** Modificar `src/cabina/usage.py`, `tests/test_usage.py`, `tests/test_breaks.py`
+
+El corazón del diseño: cada entrada de `usage-history.json` guarda, además de `offset/size/mtime`,
+los conteos que ESE archivo aportó la última vez (`"agents"`, `"skills"`). En cada refresh se
+recalculan los conteos de ese archivo (desde `offset` si creció, desde cero si se truncó) y se suma
+al acumulador global la diferencia contra lo guardado — nunca el conteo bruto de la pasada.
+
+- [ ] Paso 1: tests que fallan:
+  ```python
+  def test_accumulates_across_two_incremental_refreshes(self):
+      # dos refresh() sucesivos con una línea nueva en medio deben SUMAR, no promediar ni pisar
+      env = Env(); items1, _ = U.refresh(P, HIST, "agents", ROOTS)
+      env.append_usage_line('{"timestamp":"2026-08-05","cwd":"...", "subagent_type":"reviewer"}')
+      items2, _ = U.refresh(P, HIST, "agents", ROOTS)
+      self.assertEqual(items2["reviewer"]["n_total"], items1["reviewer"]["n_total"] + 1)
+
+  def test_truncated_file_does_not_double_count(self):
+      env = Env(); U.refresh(P, HIST, "agents", ROOTS)
+      env.truncate_usage_history(SHORTER_CONTENT_WITH_ONE_HIT)
+      items, _ = U.refresh(P, HIST, "agents", ROOTS)
+      self.assertEqual(items["reviewer"]["n_total"], 1)     # no se suma lo viejo + lo nuevo
+  ```
+  Break-test en `tests/test_breaks.py` (junto a `test_usage_never_regresses`, que sigue intacto):
+  ```python
+  def test_usage_history_diff_guard(self):
+      # si el registro por archivo se ignorara (se sumara el conteo bruto en vez del delta),
+      # una relectura completa del mismo archivo duplicaría el conteo
+      with mock.patch.object(U, "_file_delta", lambda new, old: new):   # guard disabled: delta = new, ignora old
+          out = U._accumulate({"reviewer": {"n_total": 7}}, {"reviewer": {"n": 7}})   # ya se había contado
+          self.assertEqual(out["reviewer"]["n_total"], 14)                             # duplicado -> canary red
+      out2 = U._accumulate({"reviewer": {"n_total": 7}}, {"reviewer": {"n": 7}})       # guard presente
+      self.assertEqual(out2["reviewer"]["n_total"], 7)                                 # sin cambio: ya estaba contado
+  ```
+- [ ] Paso 2: `AttributeError: module 'cabina.usage' has no attribute '_accumulate'` /
+      `'_file_delta'`.
+- [ ] Paso 3: agregar `_file_delta(new_counts, old_counts)` (resta por clave, nunca negativo hacia
+      fechas) y `_accumulate(registry_items, delta)` (aplica el delta al acumulador global,
+      preservando el `max()` SOLO para `last`, y suma para `n_total`/`by_project`); reescribir
+      `merge()` para usarlos por dentro sin romper su firma pública.
+- [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_usage.py" -v` y
+      `-p "test_breaks.py"` → ambos verdes.
+- [ ] Paso 5: `git commit -am "feat: usage.py — registro por archivo con diff, merge() acumula deltas en vez de tomar el maximo (evita doble conteo en truncado)"`
+
+### Tarea 43: `refresh()`/`extract_agents`/`extract_skills` sobre el camino incremental; eliminar `_lines()` (grep + fallback)
+**Archivos:** Modificar `src/cabina/usage.py`, `tests/test_usage.py`
+
+- [ ] Paso 1: test que falla — mockear `shutil.which` para que devuelva `None` (simula "no hay
+      grep") y confirmar que `refresh()` sigue encontrando los usos igual: si el código todavía
+      dependiera de la rama grep para el camino "rápido", este test no fallaría distinto de antes,
+      así que el test real es estructural: `self.assertFalse(hasattr(U, "_lines"))` una vez hecho
+      el cambio (verificando que la función vieja ya no existe, no solo que no se llama).
+- [ ] Paso 2: correr el test antes del cambio → falla (`_lines` todavía existe).
+- [ ] Paso 3: reescribir `extract_agents`/`extract_skills`/`refresh` para recorrer los archivos de
+      `history_dir` (mismo `os.walk` recursivo de hoy, incluye `subagents/`), llamar a `_scan_file`
+      por archivo con el offset guardado en `usage-history.json`, y pasar el delta por `_accumulate`.
+      Borrar `_lines()` y los imports `subprocess`/`shutil` que ya no se usan.
+- [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_usage.py" -v` → `OK`; medir con `time`
+      sobre el fixture de `Env` (no sobre el disco real de Danny, eso es la Tarea 47).
+- [ ] Paso 5: `git commit -am "refactor: usage.py — camino unico Python por offset, elimina grep y el fallback Windows"`
+
+### Tarea 44: Compatibilidad — cargar un `usage-agents.json`/`usage-skills.json` viejo (formato max-based) sin perder nada
+**Archivos:** Modificar `tests/test_usage.py`
+
+No hace falta migrar el FORMATO de `usage-agents.json`/`usage-skills.json` — el esquema
+(`{last, n_total, by_project, n_window}`) no cambia, solo la aritmética interna con la que se
+actualiza. Lo que hay que probar es que un archivo escrito por la versión vieja (con un `n_total`
+que venía de tomar el máximo entre corridas) sigue sirviendo de punto de partida correcto: el
+primer `refresh()` con el código nuevo debe SUMAR sobre ese `n_total` existente, nunca resetearlo a
+cero ni recontar desde el inicio de la historia.
+
+- [ ] Paso 1: test que falla — sembrar `usage-agents.json` a mano con `{"reviewer": {"n_total": 40,
+      "last": "2026-07-01", "by_project": {"alpha": 40}}}` (sin ninguna entrada en
+      `usage-history.json`, simulando "todavía no existe el registro nuevo"), correr `refresh()`
+      con un historial que tiene 2 usos nuevos, y confirmar `n_total == 42` (no `2`, no `40`).
+- [ ] Paso 2: falla porque hoy `refresh()` (antes de la Tarea 42/43) recontaría desde cero y el
+      `max()` viejo lo dejaría en el mayor de los dos, no en la suma — comportamiento distinto al
+      esperado tras el cambio.
+- [ ] Paso 3: sin cambios de código nuevos — este test valida que las Tareas 42/43 ya lo resuelven
+      (arrancar con `usage-history.json` vacío es exactamente "primer archivo, offset 0" para cada
+      archivo, y el `n_total` viejo entra como base del acumulador porque `merge()` sigue
+      arrancando desde el registro cargado con `load()`).
+- [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_usage.py" -v` → `OK` (si falla, revisar
+      la Tarea 42: probablemente `_accumulate` está pisando en vez de sumar sobre el registro
+      previo).
+- [ ] Paso 5: `git commit -am "test: usage.py — compatibilidad con usage-agents.json escrito por el esquema max-based anterior"`
+
+### Tarea 45: Break-test — primer arranque sin `usage-history.json` procesa el historial completo una sola vez
+**Archivos:** Modificar `tests/test_breaks.py`
+
+Constraint (g): `agents --unused` (el detector de `check.py`, que lee `usage.load()` del caché) no
+puede dar falsos positivos porque el registro nuevo esté vacío. Con el diseño de offsets, un
+archivo sin entrada en `usage-history.json` se lee desde `offset=0` — es decir, completo — así que
+esto debería cumplirse "gratis" por construcción; el break-test existe para que quede demostrado,
+no asumido.
+
+- [ ] Paso 1: test que falla: con un `Env` fresco (sin ningún `usage-history.json` ni
+      `usage-agents.json` previos), llamar `usage.refresh(...)` UNA vez y confirmar que el agente
+      `reviewer` (invocado en la fixture del historial sintético) aparece con `n_total >= 1` — es
+      decir, el primer refresh ya lo encontró, no hizo falta una segunda corrida.
+- [ ] Paso 2: correr contra el código de la Tarea 41 sin la 42/43 (registro roto a propósito con
+      `mock.patch.object(U, "_scan_file", lambda *a, **k: ({}, {}, 0))`) → el agente NO aparece,
+      confirmando que el test detecta la falla si el "primer scan completo" se rompe.
+- [ ] Paso 3: sin código nuevo — el comportamiento correcto ya lo dan las Tareas 41-43; este paso
+      es la prueba formal.
+- [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_breaks.py" -v` → `OK`, y con el mock
+      del Paso 2 reinsertado manualmente se confirma el rojo (canary).
+- [ ] Paso 5: `git commit -am "test: test_breaks.py — primer arranque sin registro de usage lee el historial completo, agents --unused no da falsos positivos"`
+
+### Tarea 46: Break-test — un archivo truncado/rotado no duplica conteos
+**Archivos:** Modificar `tests/test_breaks.py`
+
+Formaliza como break-test lo que la Tarea 42 ya prueba en `test_usage.py`, pero apuntando
+específicamente a que alguien podría "simplificar" `_accumulate` de vuelta a una suma ingenua del
+conteo bruto (no del delta) sin que ningún test de comportamiento normal lo note — solo se ve con
+un archivo que se encoge.
+
+- [ ] Paso 1: test que falla — con `env.truncate_usage_history(...)` (Tarea 40), desactivar la resta
+      por delta con `mock.patch.object(U, "_file_delta", lambda new, old: new)` y confirmar que el
+      total DUPLICA lo esperado tras dos refresh (uno antes y uno después del truncado).
+- [ ] Paso 2: correr con el guard activo → el test de "duplica" falla (no duplica, que es lo
+      correcto) — confirma que hoy el guard está funcionando antes de escribir el canary invertido.
+- [ ] Paso 3: sin código nuevo — el break-test usa `_file_delta` de la Tarea 42 tal cual.
+- [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_breaks.py" -v` → `OK` con el guard
+      activo; con `mock.patch.object` deshabilitándolo, el canary da rojo como se espera.
+- [ ] Paso 5: `git commit -am "test: test_breaks.py — archivo de historial truncado no duplica conteos de uso"`
+
+### Tarea 47: Medición final antes/después + nota en CLAUDE.md si el comportamiento observable cambia
+**Archivos:** ninguno de código; posible edición de `CLAUDE.md` (sección "Usage is best-effort...")
+
+- [ ] Paso 1: sobre el disco real de Danny (1.4 GB / 2 044 archivos), medir el ANTES: `git stash`
+      (o checkout a un commit previo a la Tarea 41) + `time PYTHONPATH=src python3 -m cabina agents
+      --json > /dev/null`, tres corridas, promedio.
+- [ ] Paso 2: `git stash pop` (o vuelta al HEAD de esta fase), correr `cabina agents` UNA vez para
+      poblar `usage-history.json` desde cero (el "primer arranque lento" es esperado y se mide
+      aparte), y luego medir el DESPUÉS con tres corridas más — debería acercarse al orden de
+      magnitud de `sessions.py` (~0.1 s) una vez poblado el registro.
+- [ ] Paso 3: si el número de `"invocations"`/`"here"` que muestra `cabina agents` para algún agente
+      real cambia respecto al ANTES (posible por el paso de `max()` a suma — ver Tarea 44), anotarlo
+      explícitamente en el resultado de esta tarea, no en silencio.
+- [ ] Paso 4: si `CLAUDE.md` (sección "Usage is best-effort and attributed by cwd") sigue siendo
+      precisa tras el cambio, no tocarla; si el mecanismo que describe (grep + fallback) ya no
+      existe, actualizarla para reflejar el registro por offset — coherencia con la regla del propio
+      repo de mantener los docstrings/CLAUDE.md honestos.
+- [ ] Paso 5: `git commit -am "docs: CLAUDE.md — usage.py ahora incremental por offset, ya no relee history_dir completo"` (solo si el Paso 4 tocó el archivo).
+
+# Concerns (Fase 4)
+
+1. **`usage-history.json` es un archivo más para retener/podar.** A diferencia de
+   `usage-agents.json`/`usage-skills.json` (que acumulan para siempre a propósito), el registro por
+   archivo (`offset`/conteos-por-archivo) podría crecer indefinidamente si Claude Code nunca borra
+   transcripciones viejas en algún entorno atípico. `sessions.py` no tiene este problema porque poda
+   por `retention_days`; esta fase no propone poda equivalente para `usage-history.json` — queda
+   como pregunta abierta, no como tarea, porque podar mal ahí SÍ arriesga perder el punto de partida
+   de la resta por delta (Tarea 42) y duplicar conteos.
+2. **El `n_window` de hoy pierde su significado y no se redefine.** Hoy representa "cuántas veces
+   apareció en la última relectura completa" — con lectura incremental, "la última pasada" es solo
+   el delta desde la vez anterior, un número mucho menos útil. Verificado por grep que ningún
+   consumidor (CLI/servidor/UI) lee `n_window` fuera de `usage.py` mismo, así que no hay UI que
+   reparar — pero el campo queda huérfano en el JSON de salida hasta que alguien decida
+   redefinirlo o quitarlo.
+3. **El escenario de truncado real nunca se observó en producción.** El diseño (Tarea 42) asume que
+   un archivo `.jsonl` de Claude Code puede encogerse bajo el mismo `source_path` (mismo criterio
+   defensivo que ya usa `sessions.py`, Tarea 17) — pero no hay evidencia de que esto ocurra alguna
+   vez en la práctica; es una guardia defensiva, no una reparación de un bug observado.
+4. **Cambiar `merge()` de máximo a suma es una diferencia de comportamiento observable, no solo
+   interna.** Si `usage-agents.json` tenía guardado un `n_total` que ya estaba "inflado" por algún
+   historial de relecturas completas anteriores a esta fase (posible bajo el esquema viejo si el
+   mismo archivo de historial se contó completo en dos corridas distintas sin que nada lo evitara),
+   el primer `refresh()` con el código nuevo parte de esa base sin corregirla — la Tarea 44 prueba
+   que no se pierde nada, no que el número viejo fuera exacto.
+
+# Preguntas abiertas (Fase 4)
+
+- ¿`usage-history.json` necesita su propia poda (por ejemplo, olvidar archivos cuyo `source_path`
+  ya no existe en disco Y superó cierta antigüedad), o el riesgo de perder la base de la resta por
+  delta (Concern 1) pesa más que el archivo crezca sin límite? `sessions.py` no es un buen espejo
+  acá porque ahí la poda es de RESÚMENES (reemplazables), no de bases de conteo acumulativo.
+- ¿Vale la pena, en una fase posterior, resolver el Concern 4 recalculando `usage-agents.json` desde
+  cero UNA vez al adoptar el esquema nuevo (con el costo de una relectura completa, pagada una sola
+  vez y documentada) en vez de partir de un `n_total` potencialmente inflado?
+- ¿El campo huérfano `n_window` (Concern 2) se elimina del esquema de salida, o se redefine como
+  "invocaciones en este refresh" y se expone en la UI como una señal de actividad reciente distinta
+  de "última fecha de uso"?
+- La Opción B (derivar de `sessions.json`) fue descartada para esta fase por el hueco de alcance en
+  `subagents/` — ¿ese hueco importa en la práctica (cuántas invocaciones reales pasan por ahí), o es
+  aceptable cerrarlo más adelante y sí converger `usage.py` sobre `sessions.py` para eliminar la
+  lectura duplicada de los mismos archivos por dos módulos distintos?
+
+---
+
 # Concerns
 
 1. **El costo de `TranscriptProvider.active_projects()` en entornos grandes.** Cada llamada a
