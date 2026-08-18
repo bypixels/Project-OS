@@ -71,6 +71,7 @@ en:{tabs:{health:"Health",agents:"Agents",live:"Live",skills:"Skills",projects:"
  harHint:"Harness state per project. Below, the run log.",complete:"complete",partial:"partial",noHar:"no harness",problem:"problem(s)",runlog:"RUN LOG",runs:"runs",consq:"consq.",kPer:"{k}k/consq.",
  pieces:"pieces",hooks:"hooks",activeOf:"{a} active of {n}",none:"none",runlogL:"run log",yesRl:"yes, harness-runs.md",no:"no",
  hkBroken:"<b>{n} wired hook(s) that do not exist</b>: settings.json calls them on every event and they fail.",hkDead:"<b>{n} unwired hook(s)</b>: on disk but no settings.json calls them — they never run.",hkDeadFix:"Wire it in <code>.claude/settings.json</code> under the right event, or archive it.",hkActive:"Active hooks",helpers:"helpers (not wired):",missing:"Missing",noneMsg:"This project has no harness: no persistent memory and no automatic guards.",openClaude:"Open .claude",
+ hkInstallTitle:"Cabina hooks",hkCmd:"command",hkCmdFound:"found at",hkCmdMissing:"not on PATH",hkForceHint:"Install anyway — Claude Code would run a command that does not exist, and the hook would always fail silently.",hkPreview:"Preview",hkPreviewHint:"A backup is kept next to settings.json; existing hooks are preserved (merge, never overwrite).",hkInstall:"Install hooks",hkConfirm:"This merges cabina's guard + brief hooks into settings.json:",hkBothIn:"Both hooks are already installed.",
  rlTitle:"Run log · {p}",runsN:"runs",consqL:"consequential",consqD:"(critical + high confirmed that ended in a change)",tokMeas:"tokens measured",inRuns:"{a}k in {b} of {c} runs",unmeasured:"· {n} unmeasured",cost:"cost",kPerL:"{k}k tokens per consequential finding",
  rlHint:"The metric from your harness rule: a harness is judged by findings that end in a commit, not by findings produced.",agentsL:"agents",tokNd:"· tokens n/a",funnel:"· funnel",openRl:"Open run log",
  docsHint:"documents",older:"> 30 days",memHar:"MEMORY / HARNESS",claudeMd:"CLAUDE.md",agentWorking:"● agent working · editing blocked",docsFoot:"{s} of {n} documents · {p} projects",oldFoot:"· {n} untouched for over 30 days",blockedFoot:"· {p}: editing blocked",
@@ -108,13 +109,15 @@ es:{tabs:{health:"Salud",agents:"Agentes",live:"En vivo",skills:"Skills",project
  harHint:"Estado del harness por proyecto. Abajo, la bitácora de corridas.",complete:"completo",partial:"parcial",noHar:"sin harness",problem:"problema(s)",runlog:"BITÁCORA DE CORRIDAS",runs:"corridas",consq:"consec.",kPer:"{k}k/consec.",
  pieces:"piezas",hooks:"hooks",activeOf:"{a} activos de {n}",none:"ninguno",runlogL:"bitácora",yesRl:"sí, harness-runs.md",no:"no",
  hkBroken:"<b>{n} hook(s) cableados que no existen</b>: settings.json los llama en cada evento y fallan.",hkDead:"<b>{n} hook(s) sin cablear</b>: existen en disco pero ningún settings.json los llama — nunca se ejecutan.",hkDeadFix:"Cablearlo en <code>.claude/settings.json</code> bajo el evento que corresponda, o archivarlo.",hkActive:"Hooks activos",helpers:"helpers (no se cablean):",missing:"Falta",noneMsg:"Este proyecto no tiene harness: no hay memoria persistente ni guardas automáticas.",openClaude:"Abrir .claude",
+ hkInstallTitle:"Hooks de cabina",hkCmd:"comando",hkCmdFound:"encontrado en",hkCmdMissing:"no está en el PATH",hkForceHint:"Instalar igual — Claude Code intentaría correr un comando que no existe, y el hook fallaría siempre en silencio.",hkPreview:"Vista previa",hkPreviewHint:"Se guarda un respaldo junto a settings.json; los hooks existentes se preservan (mezcla, nunca sobrescritura).",hkInstall:"Instalar hooks",hkConfirm:"Esto mezcla los hooks guard + brief de cabina en settings.json:",hkBothIn:"Los dos hooks ya están instalados.",
  rlTitle:"Bitácora · {p}",runsN:"corridas",consqL:"consecuentes",consqD:"(critical + high confirmados que terminaron en cambio)",tokMeas:"tokens medidos",inRuns:"{a}k en {b} de {c} corridas",unmeasured:"· {n} sin medir",cost:"costo",kPerL:"{k}k tokens por hallazgo consecuente",
  rlHint:"La métrica de tu regla de harness: un harness se juzga por hallazgos que terminan en commit, no por hallazgos producidos.",agentsL:"agentes",tokNd:"· tokens n/d",funnel:"· embudo",openRl:"Abrir bitácora",
  docsHint:"documentos",older:"> 30 días",memHar:"MEMORY / HARNESS",claudeMd:"CLAUDE.md",agentWorking:"● agente trabajando · edición bloqueada",docsFoot:"{s} de {n} documentos · {p} proyectos",oldFoot:"· {n} sin tocar en más de 30 días",blockedFoot:"· {p}: edición bloqueada",
  modified:"modificado",days:"días",maybeStale:"· posiblemente desactualizado",blockedMsg:"Hay un agente trabajando en <b>{p}</b> ahora mismo. Podés leer, pero la edición está bloqueada hasta que termine — editar ahora podría pisar su trabajo.",edit:"Editar",openExt:"Abrir en el editor",reload:"Recargar",editing:"editando",
  editHint:"Antes de guardar se verifica que nadie haya tocado el archivo mientras editabas, y se guarda una copia de la versión anterior.",save:"Guardar",noChanges:"sin cambios",saving:"guardando…",seeCurrent:"Ver la versión actual",loseEdit:"Vas a perder tu edición actual. ¿Recargar?",discard:"Estás editando otro documento. ¿Descartar los cambios?"}};
 const T=(k,v)=>{let s=(I18N[LANG]||I18N.en)[k]??I18N.en[k]??k; if(typeof s==="object")return s; return v?s.replace(/\{(\w+)\}/g,(_,x)=>v[x]??""):s;};
-const S={view:HUB?"agents":"health",data:null,live:null,skills:null,projs:null,har:null,docs:null,doc:null,activity:null,hub:null,health:null,healthChecking:false,editing:false,sel:null,q:"",chips:new Set(),mode:null,focus:null,loaded:new Set()};
+const S={view:HUB?"agents":"health",data:null,live:null,skills:null,projs:null,har:null,docs:null,doc:null,activity:null,hub:null,health:null,healthChecking:false,editing:false,sel:null,q:"",chips:new Set(),mode:null,focus:null,loaded:new Set(),
+ hooks:null,hooksCmd:"",hooksForce:false,hooksPreview:false};
 const $=id=>document.getElementById(id);const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 async function GET(u){return (await fetch(u)).json();}async function POST(u,b){return (await fetch(u,{method:"POST",headers:{"Content-Type":"application/json","X-Cabina-Token":TOKEN},body:JSON.stringify(b)})).json();}
 let tt;function toast(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(tt);tt=setTimeout(()=>t.classList.remove("show"),2600);}
@@ -126,7 +129,7 @@ document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{S.view=t.dataset.v;S
 async function loadAgents(){S.data=await GET("/api/agents");render();if(S.view==="agents"){if(S.mode==="create")renderCreate();else if(S.sel)renderAgentDetail();}}
 async function loadSkills(){S.skills=await GET("/api/skills");if(S.view==="skills")render();}
 async function loadProjs(){S.projs=await GET("/api/projects");if(S.view==="projects")render();}
-async function loadHar(){S.har=await GET("/api/harness");if(S.view==="harness")render();}
+async function loadHar(){S.har=await GET("/api/harness");if(!HUB)S.hooks=await GET("/api/hooks"+(S.hooksCmd?"?cmd="+encodeURIComponent(S.hooksCmd):""));if(S.view==="harness")render();}
 async function loadDocs(){S.docs=await GET("/api/docs");if(S.view==="docs")render();}
 async function loadActivity(){S.activity=await GET("/api/activity?days=30");if(S.view==="activity")render();}
 async function loadHub(){if(!HUB)return;S.hub=await GET("/api/hub");renderHubBanner();}
@@ -292,12 +295,12 @@ function renderProjDetail(){const x=(S.projs?.projects||[]).find(y=>projKey(y)==
 function harKey(x){return x.name+"|"+(x.machine||"");}   // G1: mirror projKey — name alone collides when two hub machines share a project name
 function renderHarness(){if(!S.har){$("rows").innerHTML=`<div class="empty">${T("loading")}</div>`;$("filters").innerHTML="";return;}const es=S.har.states,bs=S.har.runlogs;
  $("filters").innerHTML=`<span class="muted">${T("harHint")}</span>`+chipFocus();bindFocus();const lvl={complete:T("complete"),partial:T("partial"),none:T("noHar")};
- let rows=es.filter(e=>!S.focus||e.name===S.focus).map(e=>{const prob=e.hooks_dead.length+e.hooks_broken.length;return `<button class="row ${S.sel==="e:"+harKey(e)?"sel":""}" data-k="e:${esc(harKey(e))}"><span class="dot d-${e.level}"></span><span class="n">${esc(e.name)} <span class="muted" style="font-family:var(--sans)">${lvl[e.level]}</span></span><span class="w">${e.hooks_active.length}/${e.hooks.length} hooks${prob?` · <span style="color:var(--amber)">${prob} ${T("problem")}</span>`:""}${e.memory_days!==null?` · MEM ${e.memory_days}d`:""}${mchip(e)}</span></button>`;}).join("");
+ let rows=(HUB?"":renderHooksPanel())+es.filter(e=>!S.focus||e.name===S.focus).map(e=>{const prob=e.hooks_dead.length+e.hooks_broken.length;return `<button class="row ${S.sel==="e:"+harKey(e)?"sel":""}" data-k="e:${esc(harKey(e))}"><span class="dot d-${e.level}"></span><span class="n">${esc(e.name)} <span class="muted" style="font-family:var(--sans)">${lvl[e.level]}</span></span><span class="w">${e.hooks_active.length}/${e.hooks.length} hooks${prob?` · <span style="color:var(--amber)">${prob} ${T("problem")}</span>`:""}${e.memory_days!==null?` · MEM ${e.memory_days}d`:""}${mchip(e)}</span></button>`;}).join("");
  if(bs.length){rows+=`<div class="grp">${T("runlog")}</div>`+bs.filter(b=>!S.focus||b.project===S.focus).map(b=>{const r=b.summary;return `<button class="row ${S.sel==="b:"+b.project?"sel":""}" data-k="b:${esc(b.project)}"><span class="dot d-valid"></span><span class="n">${esc(b.project)} <span class="muted" style="font-family:var(--sans)">harness-runs.md</span></span><span class="w">${r.runs} ${T("runs")} · ${r.consequential} ${T("consq")}${r.k_per_consequential?` · ${T("kPer",{k:r.k_per_consequential})}`:""}</span></button>`;}).join("");}
  const dr=S.har.drift;if(dr&&dr.codex_present){const tw=dr.twins,rl=dr.rules,sk=dr.skills;const nd=tw.filter(x=>x.status==="diverged").length,rd=rl.filter(x=>x.status==="diverged").length,rc=rl.filter(x=>x.status==="copy").length,sd=sk.filter(x=>x.status==="diverged").length;
   const dot=(nd||rd||sd)?"invalid":rc?"warnings":"valid";
   rows+=`<div class="grp">${T("drift")}</div><button class="row ${S.sel==="d:all"?"sel":""}" data-k="d:all"><span class="dot d-${dot}"></span><span class="n" style="font-family:var(--sans)">${T("driftTitle")}</span><span class="w">${tw.length} ${T("twins")} · ${rl.length} ${T("rulesD")} · ${sk.length} ${T("skillsD")}</span></button>`;}
- $("rows").innerHTML=rows;document.querySelectorAll(".row").forEach(r=>r.onclick=()=>{S.sel=r.dataset.k;renderHarness();renderHarDetail();});
+ $("rows").innerHTML=rows;if(!HUB)bindHooksPanel();document.querySelectorAll(".row").forEach(r=>r.onclick=()=>{S.sel=r.dataset.k;renderHarness();renderHarDetail();});
  const c={complete:0,partial:0,none:0};es.forEach(e=>c[e.level]++);$("foot").textContent=`${es.length} · ${c.complete} ${T("complete")} · ${c.partial} ${T("partial")} · ${c.none} ${T("noHar")} · ${bs.length} ${T("runlogL")}`;
  if(!S.sel)$("detail").innerHTML=`<div class="muted">${T("pickHar")}</div>`;}
 function renderHarDetail(){if(!S.sel)return;const tipo=S.sel.slice(0,1),name=S.sel.slice(2);
@@ -319,6 +322,36 @@ function renderHarDetail(){if(!S.sel)return;const tipo=S.sel.slice(0,1),name=S.s
   let h=`<div class="h">${T("rlTitle",{p:esc(b.project)})}</div><div class="meta"><span>${T("file")}</span><b><code>${esc(b.path)}</code></b><span>${T("runsN")}</span><b>${r.runs}</b><span>${T("consqL")}</span><b>${r.consequential} <span class="muted">${T("consqD")}</span></b><span>${T("tokMeas")}</span><b>${T("inRuns",{a:r.tokens_k_measured,b:r.runs_with_tokens,c:r.runs})}${r.runs_with_tokens<r.runs?` <span class="muted">${T("unmeasured",{n:r.runs-r.runs_with_tokens})}</span>`:""}</b><span>${T("cost")}</span><b>${r.k_per_consequential?T("kPerL",{k:r.k_per_consequential}):"—"}</b></div><div class="muted">${T("rlHint")}</div><div style="display:flex;flex-direction:column;gap:8px">`+
    b.rows.map(f=>`<div class="box info" style="color:var(--ink)"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><b>${esc(f.date)}</b><span class="muted">${esc(f.vehicle)}</span></div><div>${esc(f.task)}</div><div class="muted" style="margin-top:4px;font-size:12px">${T("agentsL")}: ${esc(f.agents)}${f.tokens_k?` · ${f.tokens_k}k`:" "+T("tokNd")}${f.funnel?` ${T("funnel")} ${f.funnel.join(" → ")}`:""} · <b style="color:${f.consequential?"var(--moss)":"var(--dim)"}">${f.consequential} ${T("consqL")}</b></div></div>`).join("")+`</div><div class="actions"><button class="btn primary" id="bOpen">${T("openRl")}</button></div>`;
   $("detail").innerHTML=h;$("bOpen").onclick=async()=>{toast((await POST("/api/open",{path:b.path})).message);};}}
+// ---------- HOOKS ----------
+function renderHooksPanel(){const s=S.hooks;
+ if(!s)return `<div class="box info" id="hooksPanel">${T("loading")}</div>`;
+ const bothIn=s.guard_installed&&s.brief_installed;
+ const disabled=bothIn||(!s.cmd_resolves&&!S.hooksForce);
+ const resolveTxt=s.cmd_resolves?`${T("hkCmdFound")} <code>${esc(s.cmd_path||"")}</code>`:`<span style="color:var(--rust)">${T("hkCmdMissing")}</span>`;
+ let h=`<div class="box info" id="hooksPanel" style="margin-bottom:10px"><b>${T("hkInstallTitle")}</b><div class="muted"><code>${esc(s.settings_path)}</code></div>`;
+ h+=`<div style="margin-top:4px"><span class="pill p-${s.guard_installed?"valid":"document"}">${s.guard_installed?"✓":"–"}</span> guard &nbsp; <span class="pill p-${s.brief_installed?"valid":"document"}">${s.brief_installed?"✓":"–"}</span> brief</div>`;
+ h+=`<div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap"><label class="muted">${T("hkCmd")}</label><input id="hkCmdInput" value="${esc(S.hooksCmd||"cabina")}" style="width:140px"><span style="font-size:12px">${resolveTxt}</span></div>`;
+ if(!s.cmd_resolves)h+=`<label style="display:flex;gap:6px;align-items:center;font-size:12px;margin-top:6px"><input type="checkbox" id="hkForce" ${S.hooksForce?"checked":""}> ${T("hkForceHint")}</label>`;
+ if(bothIn)h+=`<div class="muted" style="margin-top:6px">${T("hkBothIn")}</div>`;
+ h+=`<div id="hkPreview"></div>`;
+ h+=`<div class="actions" style="margin-top:8px"><button class="btn" id="bHkPreview">${T("hkPreview")}</button><button class="btn primary" id="bHkInstall" ${disabled?"disabled":""}>${T("hkInstall")}</button></div>`;
+ if(s.error)h+=`<div class="box bad" style="margin-top:6px">${esc(s.error)}</div>`;
+ return h+"</div>";}
+function bindHooksPanel(){const s=S.hooks;if(!s)return;
+ const inp=$("hkCmdInput");if(inp)inp.onchange=async()=>{S.hooksCmd=inp.value.trim()||"cabina";S.hooks=await GET("/api/hooks?cmd="+encodeURIComponent(S.hooksCmd));renderHarness();};
+ const fc=$("hkForce");if(fc)fc.onchange=()=>{S.hooksForce=fc.checked;renderHarness();};
+ const bp=$("bHkPreview");if(bp)bp.onclick=()=>{S.hooksPreview=!S.hooksPreview;const pv=$("hkPreview");if(pv)pv.innerHTML=S.hooksPreview?`<pre class="doc">${esc(JSON.stringify(s.snippet,null,2))}</pre><div class="muted" style="margin-top:4px">${T("hkPreviewHint")}</div>`:"";};
+ const bi=$("bHkInstall");if(bi)bi.onclick=()=>{const panel=$("hooksPanel");if(!panel)return;
+  const div=document.createElement("div");div.className="box warn";div.id="hkConfirm";div.style.marginTop="8px";
+  div.innerHTML=`<div>${T("hkConfirm")}</div><pre class="doc">${esc(JSON.stringify(s.snippet,null,2))}</pre><div class="muted" style="margin-top:4px">${T("hkPreviewHint")}</div><div class="actions" style="margin-top:8px"><button class="btn primary" id="bHkOk">${T("hkInstall")}</button><button class="btn" id="bHkNo">${T("cancel")}</button></div>`;
+  panel.appendChild(div);
+  $("bHkNo").onclick=()=>div.remove();
+  $("bHkOk").onclick=async()=>{$("bHkOk").disabled=true;
+   const j=await POST("/api/hooks-install",{cmd:S.hooksCmd||"cabina",force:!!S.hooksForce});
+   toast(j.message);
+   div.outerHTML=`<div class="box ${j.ok?"info":"bad"}" style="margin-top:8px">${esc(j.message)}</div>`;
+   S.hooks=j.status;
+   renderHarness();};};}
 // ---------- DOCS ----------
 function renderDocs(){if(!S.docs){$("rows").innerHTML=`<div class="empty">${T("loading")}</div>`;$("filters").innerHTML="";return;}const a=S.docs.docs,work=new Set(S.docs.working);
  const chips=[["old",T("older")],["mem",T("memHar")],["claude",T("claudeMd")]];$("filters").innerHTML=`<input id="q" placeholder="${T("search")}" value="${esc(S.q)}">`+chips.map(([k,l])=>`<button class="chip ${S.chips.has(k)?"on":""}" data-c="${k}">${l}</button>`).join("")+chipFocus();bindFocus();

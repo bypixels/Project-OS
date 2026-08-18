@@ -1,11 +1,11 @@
 """`cabina` (UI) — local HTTP server on 127.0.0.1 with a per-session CSRF token.
 Reads through the modules; writes only via: create/archive agent, archive skill,
-save doc (guarded), open path, rescan cache."""
+save doc (guarded), open path, rescan cache, install hooks (guarded)."""
 import os, sys, json, secrets, threading, webbrowser, time
 from datetime import datetime
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
-from . import scan, skills as SK, projects as PROJ, harness as HAR, usage, live as LIVE, host, drift as DR, gitops as GO, sessions as SESS, check as CHECK
+from . import scan, skills as SK, projects as PROJ, harness as HAR, usage, live as LIVE, host, drift as DR, gitops as GO, sessions as SESS, check as CHECK, guard as GUARD
 from .roster import Roster
 from .docs import Docs
 from .i18n import STRINGS
@@ -114,6 +114,21 @@ class App:
             return {"findings": [], "error": str(e)}
         return {"findings": findings, "ran_at": datetime.now().isoformat(timespec="seconds"), "quick": False}
 
+    def _hooks_settings_path(self):
+        return os.path.join(self.cfg["claude_home"], "settings.json")
+
+    @staticmethod
+    def _sane_cmd(cmd):
+        """Only ever fed to shutil.which/shlex.split — never executed. Reject anything that
+        isn't a short, single-line string; fall back to the default rather than guessing."""
+        if not isinstance(cmd, str) or not cmd.strip() or len(cmd) > 200 or "\n" in cmd or "\r" in cmd:
+            return "cabina"
+        return cmd.strip()
+
+    def api_hooks(self, q):
+        cmd = self._sane_cmd((q.get("cmd") or ["cabina"])[0])
+        return GUARD.hooks_status(self._hooks_settings_path(), cmd)
+
     # ---- POST ----
     def api_archive(self, b):
         R, _, _ = self.roster()
@@ -174,6 +189,12 @@ class App:
         items = [s for s in items if _recent(s)]
         return {"sessions": items, "days": days, "active_seconds": (self.cfg.get("live") or {}).get("active_seconds", 600)}
 
+    def api_hooks_install(self, b):
+        cmd = self._sane_cmd(b.get("cmd") or "cabina")
+        sp = self._hooks_settings_path()
+        ok, msg = GUARD.hooks_write(sp, cmd, force=bool(b.get("force")))
+        return {"ok": ok, "message": msg, "status": GUARD.hooks_status(sp, cmd)}
+
     def api_rescan(self, b):
         def go():
             d = scan.run(self.cfg); scan.save(self.cfg, d)
@@ -188,9 +209,10 @@ def make_handler(app):
             "/api/projects": lambda q: app.api_projects(), "/api/harness": lambda q: app.api_harness(),
             "/api/live": lambda q: app.api_live(), "/api/docs": lambda q: app.api_docs(),
             "/api/doc": app.api_doc, "/api/references": app.api_references, "/api/in-repo": app.api_in_repo,
-            "/api/activity": app.api_activity, "/api/health": lambda q: app.api_health()}
+            "/api/activity": app.api_activity, "/api/health": lambda q: app.api_health(), "/api/hooks": app.api_hooks}
     POSTS = {"/api/archive": app.api_archive, "/api/create": app.api_create, "/api/archive-skill": app.api_archive_skill,
-             "/api/save-doc": app.api_save_doc, "/api/open": app.api_open, "/api/focus": app.api_focus, "/api/rescan": app.api_rescan, "/api/commit": app.api_commit}
+             "/api/save-doc": app.api_save_doc, "/api/open": app.api_open, "/api/focus": app.api_focus, "/api/rescan": app.api_rescan, "/api/commit": app.api_commit,
+             "/api/hooks-install": app.api_hooks_install}
 
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a): pass
