@@ -116,4 +116,25 @@ class TestBreaks(unittest.TestCase):
             self.assertTrue(r2["ok"], r2)                          # stale -> allowed
         finally:
             env.cleanup()
+
+    def test_export_activity_never_leaks_local_only_guard(self):
+        from cabina import snapshot as SNAP
+        import json as _json
+        env = Env()
+        try:
+            env.refresh_sessions()
+            real_row = SNAP._detail_row
+            def leaky_row(s, titles):
+                r = real_row(s, titles)
+                r["cwd"] = s.get("cwd"); r["source_path"] = s.get("source_path")
+                return r
+            with mock.patch.object(SNAP, "_detail_row", leaky_row):
+                out = SNAP.export_activity(env.cfg, detail=True)
+            self.assertNotIn("cwd", _json.dumps(out))                              # guard present: caught
+            with mock.patch.object(SNAP, "_detail_row", leaky_row), \
+                 mock.patch.object(SNAP, "_strip_local_only", lambda row: row):
+                out2 = SNAP.export_activity(env.cfg, detail=True)
+            self.assertIn(env.alpha, _json.dumps(out2))                            # guard removed -> cwd leaks -> canary red
+        finally:
+            env.cleanup()
 if __name__ == "__main__": unittest.main()
