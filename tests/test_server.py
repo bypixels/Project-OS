@@ -1,4 +1,4 @@
-import json, os, threading, time, unittest, urllib.request
+import copy, json, os, threading, time, unittest, urllib.request
 import _helpers  # noqa
 from _env import Env
 from cabina import server, scan
@@ -80,8 +80,8 @@ class TestServer(unittest.TestCase):
         open(os.path.join(tdir, "SKILL.md"), "w").write("---\nname: rescan-new\ndescription: r\n---\n")
         self.app.api_rescan({})
         for _ in range(150):
-            if self.app._roster is None:
-                break
+            if not self.app._scanning:      # S3-a: the authoritative "this rescan finished" signal —
+                break                        # _roster alone can already be None from a PRIOR rescan
             time.sleep(0.02)
         else:
             self.fail("rescan did not complete in time")
@@ -93,9 +93,152 @@ class TestServer(unittest.TestCase):
         shutil.rmtree(tdir)
         self.app.api_rescan({})
         for _ in range(150):
-            if self.app._roster is None:
+            if not self.app._scanning:
                 break
             time.sleep(0.02)
+    # ---------- S3-a: /api/rescan (mcp/worktrees options) + /api/scan-status ----------
+    def test_rescan_gates_check_mcp_and_measure_worktrees_via_copied_cfg(self):
+        from unittest import mock
+        orig_mcp = self.app.cfg["scan"]["check_mcp"]; orig_wt = self.app.cfg["scan"]["measure_worktrees"]
+        captured = {}
+        def fake_run(cfg):
+            captured["cfg"] = cfg
+            return {"projects": [], "global": {"agents": [], "skills": [], "commands": [], "rules": []},
+                    "sessions": [], "codex": {"present": False, "home": "", "agents": [], "skills": []},
+                    "mcp": {"checked": False, "servers": []}, "generated": "x", "claude_home": self.env.cfg["claude_home"]}
+        with mock.patch("cabina.server.scan.run", side_effect=fake_run), mock.patch("cabina.server.scan.save"):
+            r = self.app.api_rescan({"mcp": True, "worktrees": True})
+            self.assertTrue(r["ok"], r)
+            for _ in range(150):
+                if not self.app._scanning: break
+                time.sleep(0.02)
+            else: self.fail("rescan did not finish")
+        try:
+            self.assertTrue(captured["cfg"]["scan"]["check_mcp"])
+            self.assertTrue(captured["cfg"]["scan"]["measure_worktrees"])
+            self.assertEqual(self.app.cfg["scan"]["check_mcp"], orig_mcp)          # self.cfg never mutated
+            self.assertEqual(self.app.cfg["scan"]["measure_worktrees"], orig_wt)
+        finally:
+            # restore the real cache the go() thread overwrote with the fake minimal scan, and
+            # re-warm roster/skills — go()'s own success path already reset both to None, and
+            # leaving them None would make test_rescan_invalidates_skills_cache (which treats
+            # "_roster is None" as "my OWN rescan just completed") pass vacuously.
+            self.app.data = scan.load(self.env.cfg); self.app._roster = None; self.app._skills = None
+            self.app.roster(); self.app.skills()
+    def test_second_rescan_while_running_is_refused(self):
+        from unittest import mock
+        ev = threading.Event()
+        def slow_run(cfg):
+            ev.wait(2); return scan.load(self.env.cfg)
+        with mock.patch("cabina.server.scan.run", side_effect=slow_run), mock.patch("cabina.server.scan.save"):
+            r1 = self.app.api_rescan({})
+            self.assertTrue(r1["ok"], r1)
+            r2 = self.app.api_rescan({})
+            self.assertFalse(r2["ok"]); self.assertIn("already running", r2["message"])
+            ev.set()
+            for _ in range(150):
+                if not self.app._scanning: break
+                time.sleep(0.02)
+        self.app.data = scan.load(self.env.cfg); self.app._roster = None; self.app._skills = None
+        self.app.roster(); self.app.skills()   # re-warm: see comment in the "gates" test above
+    def test_rescan_publishes_data_before_flipping_scanning_and_releasing_lock(self):
+        # S3 fix-up: the go() thread must publish self.data (and clear _roster/_skills) BEFORE
+        # flipping _scanning False and releasing _scan_lock. Otherwise a poller that sees
+        # scanning=False and immediately reloads /api/agents can still get the OLD self.data,
+        # and a second POST /api/rescan landing in the gap between release() and _scanning=False
+        # would be accepted, starting an overlapping scan.
+        from unittest import mock
+        marker = copy.deepcopy(self.app.data)
+        marker["projects"] = list(marker["projects"]) + [{
+            "path": "/tmp/after-rescan", "name": "after-rescan", "agents": [], "skills": [],
+            "commands": [], "rules": [], "git": None, "claude_md": None, "agents_md": None,
+            "agents_md_link": None,
+        }]
+        with mock.patch("cabina.server.scan.run", return_value=marker), mock.patch("cabina.server.scan.save"):
+            r = self.app.api_rescan({})
+            self.assertTrue(r["ok"], r)
+            for _ in range(150):
+                if not self.app._scanning:
+                    # The instant _scanning flips False, self.data must ALREADY be the new
+                    # marker and the lock must ALREADY be released — never observe the old
+                    # order where scanning=False (or lock released) precedes the data swap.
+                    self.assertTrue(
+                        any(p["name"] == "after-rescan" for p in self.app.data["projects"]),
+                        "scanning flipped False (or lock released) before self.data was published")
+                    self.assertFalse(self.app._scan_lock.locked())
+                    break
+                time.sleep(0.001)
+            else:
+                self.fail("rescan did not finish")
+        # restore the real cache/state before other tests in this shared fixture run
+        self.app.data = scan.load(self.env.cfg); self.app._roster = None; self.app._skills = None
+        self.app.roster(); self.app.skills()
+    def test_scan_status_reflects_error_when_scan_run_raises(self):
+        from unittest import mock
+        d0 = self.get("/api/scan-status")
+        for k in ("scanning", "started", "finished", "error", "scanned_at"): self.assertIn(k, d0)
+        def boom(cfg): raise RuntimeError("kaboom")
+        with mock.patch("cabina.server.scan.run", side_effect=boom):
+            r = self.app.api_rescan({})
+            self.assertTrue(r["ok"], r)
+            for _ in range(150):
+                if not self.app._scanning: break
+                time.sleep(0.02)
+            else: self.fail("did not finish")
+        try:
+            d = self.get("/api/scan-status")
+            self.assertFalse(d["scanning"]); self.assertIn("kaboom", d["error"])
+        finally:
+            self.app._scan_error = None
+    def test_scan_status_scanned_at_is_cache_mtime(self):
+        p = scan.cache_path(self.env.cfg)
+        self.assertTrue(os.path.isfile(p))
+        d = self.get("/api/scan-status")
+        self.assertIsNotNone(d["scanned_at"])
+    def test_rescan_ui_polls_scan_status_no_fixed_timeout(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        self.assertNotIn("45000", html)
+        self.assertIn("/api/scan-status", html)
+    # ---------- S3-b: /api/export ----------
+    def test_export_endpoint_returns_snapshot_shape_and_download_headers(self):
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}/api/export")
+        with urllib.request.urlopen(req) as r:
+            headers = dict(r.getheaders()); body = json.loads(r.read())
+        self.assertIn("Content-Disposition", headers)
+        self.assertIn("attachment", headers["Content-Disposition"])
+        for k in ("cabina", "machine", "agents", "skills", "projects"): self.assertIn(k, body)
+        self.assertNotIn("activity", body)
+    def test_export_endpoint_with_activity(self):
+        # snapshot.export_activity() refreshes the sessions registry itself — no need to call
+        # sessions.refresh() here too (and doing so redundantly only widens a pre-existing race
+        # window against other tests' background /api/activity refreshes).
+        d = self.get("/api/export?activity=1")
+        self.assertIn("activity", d); self.assertIn("aggregated", d["activity"])
+    # ---------- S3-c: /api/compare ----------
+    def test_compare_self_export_has_no_diffs(self):
+        a = self.get("/api/export")
+        code, r = self.post("/api/compare", {"other": a})
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(r["delta"]["agents"]["only_a"], []); self.assertEqual(r["delta"]["agents"]["only_b"], [])
+        self.assertIn("text", r)
+    def test_compare_rejects_non_export(self):
+        code, r = self.post("/api/compare", {"other": {}}); self.assertFalse(r["ok"])
+        code, r = self.post("/api/compare", {"other": "not a dict"}); self.assertFalse(r["ok"])
+    def test_compare_rejects_oversized_body(self):
+        big = {"other": {"agents": [{"pad": "x" * 1000} for _ in range(6000)]}}
+        code, r = self.post("/api/compare", big)
+        self.assertFalse(r["ok"])
+    def test_scan_export_compare_block_fields_always_escaped(self):
+        import re
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        start = html.index("// ---------- SCAN / EXPORT / COMPARE ----------")
+        end = html.index("// ---------- HARNESS ----------")
+        body = html[start:end]
+        pattern = re.compile(r"\$\{([^{}]*\btext\b[^{}]*)\}")
+        hits = list(pattern.finditer(body))
+        self.assertGreater(len(hits), 0)
+        for m in hits:
+            self.assertIn("esc(", m.group(1), f"unescaped interpolation: ${{{m.group(1)}}}")
     def test_skills_projects_harness_docs_live(self):
         s = self.get("/api/skills"); self.assertEqual({(x["name"], x["tool"]) for x in s["skills"]}, {("gsk", "claude"), ("deploy", "claude"), ("gsk", "codex")})
         self.assertEqual(next(x for x in s["skills"] if x["name"] == "deploy")["uses"], 1)

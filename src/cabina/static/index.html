@@ -66,6 +66,10 @@ en:{tabs:{health:"Health",agents:"Agents",live:"Live",skills:"Skills",projects:"
  liveHint:"Agents from {p}, refreshed every second. Click to focus the pane.",noLive:"No live provider. cabina works without one; install herdr for this tab.",noAgents:"No live agents.",inWs:"{n} agents in {w} workspaces",waitReview:"Waiting for review",noneDone:"Nothing finished awaiting review.",
  openFolder:"Open folder",linksTo:"links to",size:"size",lines:"lines",brokenLink:"The link points to something that no longer exists. Listed in the catalog, empty in practice.",noSkillMd:"Directory without SKILL.md: Claude Code ignores it.",skArch:"Move the whole directory to",skArchLink:"It is a link: the link moves, the real target is not touched.",skRefs:"<b>{n} file(s) mention it.</b> If any depends on this skill (e.g. an agent that says “apply the skill … rubric”), fix it first.",know:"I know what I am doing. Force.",
  projHint:"Click a project. “Focus” filters the other tabs.",rescan:"Rescan",rescanT:"re-measure agents, skills, worktrees (slow)",focusOn:"Focus",focusOff:"Unfocus",focusChip:"focus: {p} ×",focused:"focus on {p}: other tabs are filtered",unfocused:"focus removed",inFocus:"in focus",
+ scanning:"scanning…",scanAgo:"scan: {t} ago",scanDone:"scan finished",scanFailed:"scan failed: {m}",
+ rescanHint:"Re-measure agents, skills and (optionally) worktrees. The options below can make it slow.",rescanMcpLabel:"also check MCP servers (needs the claude CLI; slow)",rescanWtLabel:"also measure worktree sizes (~2 s each)",
+ exportBtn:"Export…",exportT:"download this environment as JSON",exportTitle:"Export environment",exportActivityLabel:"include session activity (aggregated per project)",exportDetailLabel:"per-session detail",exportConfirm:"Download",
+ compareBtn:"Compare…",compareT:"compare with another machine's export",compareTitle:"Compare with another export",compareHint:"Pick a cabina export .json file from another machine.",compareRun:"Compare",compareParseError:"Could not read that file as JSON.",closeBtn:"Close",
  path:"path",git:"git",clean:"clean",uncommitted:"{n} uncommitted",notRepo:"not a repo",lastCommit:"last commit",assets:"assets",agentsN:"agents",skillsN:"skills",commandsN:"commands",rulesN:"rules",harness:"harness",hooksN:"hooks",wfN:"workflows",docsN:"documents",memDays:"MEMORY.md",today:"today",daysUntouched:"{n} days untouched",maybeDead:"· possibly dead",
  wt:"<b>{n} worktrees · {gb} GB</b> · {c} with no pending changes (their work already lives on a branch; the directory only uses disk).",wtMore:"… and {n} more",wtHow:"Clean with <code>git -C {p} worktree remove &lt;path&gt;</code>. Cabina does not delete them: that is an action on the repo.",
  harHint:"Harness state per project. Below, the run log.",complete:"complete",partial:"partial",noHar:"no harness",problem:"problem(s)",runlog:"RUN LOG",runs:"runs",consq:"consq.",kPer:"{k}k/consq.",
@@ -104,6 +108,10 @@ es:{tabs:{health:"Salud",agents:"Agentes",live:"En vivo",skills:"Skills",project
  liveHint:"Agentes de {p}, actualizado cada segundo. Clic salta al panel.",noLive:"Sin proveedor en vivo. Cabina funciona igual; instalá herdr para esta pestaña.",noAgents:"Sin agentes en vivo.",inWs:"{n} agentes en {w} workspaces",waitReview:"Esperan revisión",noneDone:"Nada terminado esperando revisión.",
  openFolder:"Abrir carpeta",linksTo:"enlaza a",size:"tamaño",lines:"líneas",brokenLink:"El enlace apunta a algo que ya no existe. Aparece en el catálogo pero no tiene contenido.",noSkillMd:"Directorio sin SKILL.md: Claude Code lo ignora.",skArch:"Se mueve el directorio completo a",skArchLink:"Es un enlace: se mueve el enlace, el destino real no se toca.",skRefs:"<b>{n} archivo(s) lo mencionan.</b> Si alguno depende de este skill (p. ej. un agente que dice «aplicá la rúbrica de la skill …»), arreglalo primero.",know:"Sé lo que hago. Forzar.",
  projHint:"Clic en un proyecto. «Enfocar» filtra las demás pestañas.",rescan:"Reescanear",rescanT:"vuelve a medir agentes, skills, worktrees (lento)",focusOn:"Enfocar",focusOff:"Quitar foco",focusChip:"foco: {p} ×",focused:"foco en {p}: las otras pestañas se filtran",unfocused:"foco quitado",inFocus:"en foco",
+ scanning:"escaneando…",scanAgo:"escaneo: hace {t}",scanDone:"escaneo terminado",scanFailed:"el escaneo falló: {m}",
+ rescanHint:"Vuelve a medir agentes, skills y (opcional) worktrees. Con las opciones de abajo puede tardar.",rescanMcpLabel:"también revisar servidores MCP (necesita el CLI de claude; lento)",rescanWtLabel:"también medir tamaño de worktrees (~2 s cada uno)",
+ exportBtn:"Exportar…",exportT:"descarga este entorno como JSON",exportTitle:"Exportar entorno",exportActivityLabel:"incluir actividad de sesiones (agregada por proyecto)",exportDetailLabel:"detalle por sesión",exportConfirm:"Descargar",
+ compareBtn:"Comparar…",compareT:"comparar con el export de otra máquina",compareTitle:"Comparar con otro export",compareHint:"Elegí un archivo .json exportado desde otra máquina.",compareRun:"Comparar",compareParseError:"No se pudo leer ese archivo como JSON.",closeBtn:"Cerrar",
  path:"ruta",git:"git",clean:"limpio",uncommitted:"{n} sin commit",notRepo:"no es un repo",lastCommit:"último commit",assets:"assets",agentsN:"agentes",skillsN:"skills",commandsN:"comandos",rulesN:"rules",harness:"harness",hooksN:"hooks",wfN:"workflows",docsN:"documentos",memDays:"MEMORY.md",today:"hoy",daysUntouched:"{n} días sin tocar",maybeDead:"· posiblemente muerto",
  wt:"<b>{n} worktrees · {gb} GB</b> · {c} sin cambios pendientes (su trabajo ya está en una rama; el directorio solo ocupa disco).",wtMore:"… y {n} más",wtHow:"Se limpian con <code>git -C {p} worktree remove &lt;ruta&gt;</code>. La Cabina no los borra: es una acción sobre el repo.",
  harHint:"Estado del harness por proyecto. Abajo, la bitácora de corridas.",complete:"completo",partial:"parcial",noHar:"sin harness",problem:"problema(s)",runlog:"BITÁCORA DE CORRIDAS",runs:"corridas",consq:"consec.",kPer:"{k}k/consec.",
@@ -138,8 +146,12 @@ function renderHubBanner(){if(!HUB||!S.hub)return;let el=$("hubBanner");if(!el){
  document.querySelector(".top").after(el);}
  el.innerHTML=S.hub.files.map(f=>`<span>${esc(f.name)} (${esc(f.machine||"?")}) · ${esc(f.status)}</span>`).join("  ·  ");}
 async function loadLive(){S.live=await GET("/api/live");renderStats();if(S.view==="live")renderLive();}
+function relTime(iso){if(!iso)return null;const t=new Date(iso).getTime();if(isNaN(t))return null;const s=Math.max(0,Math.floor((Date.now()-t)/1000));
+ if(s<60)return s+"s";if(s<3600)return Math.floor(s/60)+"m";if(s<86400)return Math.floor(s/3600)+"h";return Math.floor(s/86400)+"d";}
 function renderStats(){const a=S.data?.agents||[],l=S.live?.agents||[];const n=k=>a.filter(x=>x.category===k).length;const w=l.filter(x=>x.status==="working").length,d=l.filter(x=>x.status==="done").length;
- $("stats").innerHTML=`<span class="stat"><b>${w}</b> ${T("working")}</span>`+(d?`<span class="stat warn"><b>${d}</b> ${T("done")}</span>`:"")+`<span class="stat ok"><b>${n("valid")}</b> ${T("ok")}</span>`+(n("warnings")?`<span class="stat warn"><b>${n("warnings")}</b> ${T("warnings")}</span>`:"")+(n("invalid")?`<span class="stat bad"><b>${n("invalid")}</b> ${T("invalid")}</span>`:"");}
+ let scanStat="";if(!HUB&&S.scanStatus){if(S.scanStatus.scanning)scanStat=`<span class="stat" id="scanStat">${esc(T("scanning"))}</span>`;
+  else{const rt=relTime(S.scanStatus.scanned_at);if(rt)scanStat=`<span class="stat" id="scanStat">${esc(T("scanAgo",{t:rt}))}</span>`;}}
+ $("stats").innerHTML=`<span class="stat"><b>${w}</b> ${T("working")}</span>`+(d?`<span class="stat warn"><b>${d}</b> ${T("done")}</span>`:"")+`<span class="stat ok"><b>${n("valid")}</b> ${T("ok")}</span>`+(n("warnings")?`<span class="stat warn"><b>${n("warnings")}</b> ${T("warnings")}</span>`:"")+(n("invalid")?`<span class="stat bad"><b>${n("invalid")}</b> ${T("invalid")}</span>`:"")+scanStat;}
 function render(){document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("on",t.dataset.v===S.view));renderStats();({health:renderHealth,agents:renderAgents,skills:renderSkills,projects:renderProjects,harness:renderHarness,docs:renderDocs,live:renderLive,activity:renderActivity})[S.view]();}
 async function commitBox(id, path){const r=await GET("/api/in-repo?path="+encodeURIComponent(path));const el=$(id);if(!el)return;el.innerHTML=r.in_repo?`<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--dim)"><input type="checkbox" id="${id}-cb"> ${T("commitToo")}</label>`:`<span class="muted">${T("notRepo2")}</span>`;}
 async function maybeCommit(id, path, message){const cb=$(id+"-cb");if(!cb||!cb.checked)return;const r=await POST("/api/commit",{path,message});toast(r.ok?`${T("committed")} · ${r.message}`:T("commitFail",{m:r.message}));}
@@ -276,8 +288,8 @@ function renderSessionDetail(){const x=(S.activity?.sessions||[]).find(y=>sessKe
 // ---------- PROJECTS ----------
 function projKey(x){return x.name+"|"+(x.machine||"");}   // E2: name alone collides when two hub machines share a project name
 function renderProjects(){if(!S.projs){$("rows").innerHTML=`<div class="empty">${T("loading")}</div>`;$("filters").innerHTML="";return;}const a=S.projs.projects;
- $("filters").innerHTML=`<span class="muted">${T("projHint")}</span>`+chipFocus()+(HUB?"":`<button class="btn" id="bRescan" style="margin-left:auto" title="${T("rescanT")}">${T("rescan")}</button>`);bindFocus();
- if(!HUB)$("bRescan").onclick=async()=>{toast((await POST("/api/rescan",{})).message);setTimeout(()=>{loadAgents();Object.keys(LOADERS).forEach(v=>{if(S.loaded.has(v))LOADERS[v]();});},45000);};
+ $("filters").innerHTML=`<span class="muted">${T("projHint")}</span>`+chipFocus()+(HUB?"":`<button class="btn" id="bRescan" style="margin-left:auto" title="${T("rescanT")}">${T("rescan")}</button><button class="btn" id="bExport" title="${T("exportT")}">${T("exportBtn")}</button><button class="btn" id="bCompare" title="${T("compareT")}">${T("compareBtn")}</button>`);bindFocus();
+ if(!HUB){$("bRescan").onclick=renderRescanDialog;$("bExport").onclick=renderExportDialog;$("bCompare").onclick=renderCompareDialog;updateScanUI();}
  $("rows").innerHTML=a.map(x=>{const wt=x.worktrees?` · ${x.worktrees}wt ${(x.worktrees_mb/1024).toFixed(1)}G`:"";const dot=x.worktrees_mb>5000?"invalid":(x.dirty>20||(x.memory_days!==null&&x.memory_days>30))?"warnings":"valid";
   return `<button class="row ${S.sel===projKey(x)?"sel":""} ${S.focus===x.name?"focus":""}" data-k="${esc(projKey(x))}"><span class="dot d-${dot}"></span><span class="n">${esc(x.name)} <span class="muted">${esc(x.branch||"—")}</span></span><span class="w">${x.agents}ag · ${x.skills}sk${x.dirty?` · ${T("uncommitted",{n:x.dirty})}`:""}${wt}</span></button>`;}).join("");
  document.querySelectorAll(".row").forEach(r=>r.onclick=()=>{S.sel=r.dataset.k;renderProjects();renderProjDetail();});
@@ -291,6 +303,57 @@ function renderProjDetail(){const x=(S.projs?.projects||[]).find(y=>projKey(y)==
  h+=`<div class="actions"><button class="btn primary" id="bFocus">${S.focus===x.name?T("focusOff"):T("focusOn")}</button>`+(HUB?"":`<button class="btn" id="bFolder">${T("openFolder")}</button>`)+`</div>`;$("detail").innerHTML=h;
  $("bFocus").onclick=()=>{S.focus=S.focus===x.name?null:x.name;renderProjects();renderProjDetail();toast(S.focus?T("focused",{p:S.focus}):T("unfocused"));};
  if(!HUB)$("bFolder").onclick=async()=>{toast((await POST("/api/open",{path:x.path})).message);};}
+// ---------- SCAN / EXPORT / COMPARE ----------
+function backToProjDetail(){renderProjects();if(S.sel)renderProjDetail();}
+async function fetchScanStatus(){S.scanStatus=await GET("/api/scan-status");return S.scanStatus;}
+function updateScanUI(){renderStats();const b=$("bRescan");if(!b)return;const scanning=!!(S.scanStatus&&S.scanStatus.scanning);b.disabled=scanning;b.textContent=scanning?T("scanning"):T("rescan");}
+let scanPollTimer=null;
+function startScanPoll(){if(scanPollTimer)return;const startedAt=Date.now();
+ scanPollTimer=setInterval(async()=>{
+  const s=await fetchScanStatus();updateScanUI();
+  if(!s.scanning){clearInterval(scanPollTimer);scanPollTimer=null;toast(s.error?T("scanFailed",{m:s.error}):T("scanDone"));
+   loadAgents();Object.keys(LOADERS).forEach(v=>{if(S.loaded.has(v))LOADERS[v]();});return;}
+  if(Date.now()-startedAt>600000){clearInterval(scanPollTimer);scanPollTimer=null;}   // 10 min cap
+ },2000);}
+function renderRescanDialog(){
+ $("detail").innerHTML=`<div class="h">${T("rescan")}</div><div class="muted">${T("rescanHint")}</div>
+  <label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="cbMcp"> ${T("rescanMcpLabel")}</label>
+  <label style="display:flex;gap:8px;align-items:center;margin-top:6px"><input type="checkbox" id="cbWt"> ${T("rescanWtLabel")}</label>
+  <div class="actions"><button class="btn primary" id="bOk">${T("rescan")}</button><button class="btn" id="bNo">${T("cancel")}</button></div>`;
+ $("bNo").onclick=backToProjDetail;
+ $("bOk").onclick=async()=>{$("bOk").disabled=true;$("bOk").textContent=T("scanning");
+  const mcp=$("cbMcp").checked,worktrees=$("cbWt").checked;
+  const r=await POST("/api/rescan",{mcp,worktrees});
+  toast(r.message);backToProjDetail();
+  if(r.ok)startScanPoll();};}
+function renderExportDialog(){
+ $("detail").innerHTML=`<div class="h">${T("exportTitle")}</div>
+  <label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="cbAct"> ${T("exportActivityLabel")}</label>
+  <label style="display:flex;gap:8px;align-items:center;margin-top:6px"><input type="checkbox" id="cbDet" disabled> ${T("exportDetailLabel")}</label>
+  <div class="actions"><button class="btn primary" id="bOk">${T("exportConfirm")}</button><button class="btn" id="bNo">${T("cancel")}</button></div>`;
+ $("cbAct").onchange=e=>{$("cbDet").disabled=!e.target.checked;if(!e.target.checked)$("cbDet").checked=false;};
+ $("bNo").onclick=backToProjDetail;
+ $("bOk").onclick=()=>{const activity=$("cbAct").checked?1:0,detail=$("cbDet").checked?1:0;
+  window.location=`/api/export?activity=${activity}&detail=${detail}`;backToProjDetail();};}
+function renderCompareDialog(){
+ $("detail").innerHTML=`<div class="h">${T("compareTitle")}</div><div class="muted">${T("compareHint")}</div>
+  <input type="file" id="cmpFile" accept=".json" style="margin-top:10px">
+  <div id="cmpErr" class="box bad" style="display:none;margin-top:8px"></div>
+  <div class="actions"><button class="btn primary" id="bOk" disabled>${T("compareRun")}</button><button class="btn" id="bNo">${T("cancel")}</button></div>`;
+ $("bNo").onclick=backToProjDetail;
+ let other=null;
+ $("cmpFile").onchange=()=>{const f=$("cmpFile").files[0];other=null;$("bOk").disabled=true;$("cmpErr").style.display="none";if(!f)return;
+  const reader=new FileReader();
+  reader.onload=()=>{try{other=JSON.parse(reader.result);$("bOk").disabled=false;}
+   catch(e){$("cmpErr").textContent=T("compareParseError");$("cmpErr").style.display="block";}};
+  reader.readAsText(f);};
+ $("bOk").onclick=async()=>{if(!other)return;$("bOk").disabled=true;$("bOk").textContent=T("checking");
+  const r=await POST("/api/compare",{other});
+  if(!r.ok){toast(r.message);$("bOk").disabled=false;$("bOk").textContent=T("compareRun");return;}
+  renderCompareResult(r.text);};}
+function renderCompareResult(text){
+ $("detail").innerHTML=`<div class="h">${T("compareTitle")}</div><pre class="doc">${esc(text)}</pre><div class="actions"><button class="btn" id="bNo">${T("closeBtn")}</button></div>`;
+ $("bNo").onclick=backToProjDetail;}
 // ---------- HARNESS ----------
 function harKey(x){return x.name+"|"+(x.machine||"");}   // G1: mirror projKey — name alone collides when two hub machines share a project name
 function renderHarness(){if(!S.har){$("rows").innerHTML=`<div class="empty">${T("loading")}</div>`;$("filters").innerHTML="";return;}const es=S.har.states,bs=S.har.runlogs;
@@ -379,6 +442,7 @@ function renderLive(){const l=S.live;$("filters").innerHTML=`<span class="muted"
  $("detail").innerHTML=done.length?`<div class="h">${T("waitReview")}</div>`+done.map(a=>`<div class="box warn"><b>${esc(a.agent)}</b> · ${esc(a.workspace)}<br>${esc(a.task||"—")}</div>`).join(""):`<div class="muted">${T("noneDone")}</div>`;}
 loadAgents();loadHub();
 if(!HUB){loadLive();let liveN=0;setInterval(()=>{if(document.hidden)return;liveN++;if(S.view==="live"||liveN%5===0)loadLive();},1000);
- document.addEventListener("visibilitychange",()=>{if(!document.hidden)loadLive();});}
+ document.addEventListener("visibilitychange",()=>{if(!document.hidden)loadLive();});
+ fetchScanStatus().then(updateScanUI);}
 ensureLoaded(S.view);
 </script></body></html>
