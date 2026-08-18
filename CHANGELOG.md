@@ -40,6 +40,39 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   still being appended to.
 - Hub: skips non-regular files in the shared folder (a FIFO there would hang every endpoint), and
   never crashes on an export missing optional fields.
+- `cabina hooks` (with or without `--write`) reached the web server instead of its own code: the
+  `--cmd` flag shared argparse's `dest="cmd"` with the subcommand name. Renamed to `hook_cmd`.
+- `cabina check --repo PATH` reported `ok`/exit 0 for a path that does not exist (a typo in CI
+  passed the job); now `error` + exit 2. A real repo without `.claude/agents/` still passes.
+- `cabina compare` with a missing or invalid file printed a Python traceback; now a one-line
+  `error:` on stderr and exit 2.
+- The grouped agent-warning summary in `cabina check` cut the `overrides: global` hint at the
+  colon inside the backticks; the `agents` table no longer truncates the detail mid-word.
+- `/api/skills` refreshed usage (a full transcript scan) on every request; now cached for 30 s
+  like the roster and invalidated on skill archive and on rescan.
+- `/api/activity` ignored `days` in its response and always returned every session (~700 KB);
+  it now filters by session start.
+- The Live poll ran every second forever, even with the tab hidden; it now pauses while hidden,
+  refreshes on return, and slows to every 5 s outside the Live view.
+- The UI loaded all seven tabs at boot; Skills/Projects/Harness/Activity/Docs now load the first
+  time their tab is opened (Rescan reloads only what was loaded).
+- `STRINGS["es"]` carried 7 untranslated duplicate keys (silently shadowed); removed, with a
+  structural test that rejects duplicates and enforces en/es parity.
+- `cabina config --example` omitted several `DEFAULTS` keys (`[activity]`, `[hub]`,
+  `contract.known_fields`, `scan.skip_dirs`, `live.active_seconds`, `docs.max_per_dir`) and
+  showed a hardcoded Unix `state_dir`; now complete and per-platform.
+
+### Changed
+
+- Usage (`usage.py`) is incremental: it keeps a per-file byte-offset registry
+  (`<state_dir>/usage-history.json`) and reads only new bytes, updating agents and skills in one
+  pass. `cabina agents` and the first UI load drop from ~9-11 s to ~0.1 s warm (~3-5 s on the
+  first run over 1.4 GB of history). Counts become a sum of per-file deltas (a rotated or truncated
+  file corrects its own share; a deleted one never lowers the total); existing registries migrate
+  without losing dates or counts. `n_window` was removed (no consumers). The `grep` path and its
+  Windows fallback are gone — one reader on every platform.
+- `cabina agents` prints a one-line "scanning usage history…" hint on stderr (TTY only, i18n)
+  before a refresh; README documents `activity`, `hub` and the full command surface.
 
 ## [0.1.0]
 
