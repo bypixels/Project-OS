@@ -129,6 +129,23 @@ measure_worktrees = false                    # ~2 s per worktree when on
 
 `cabina config --example` prints the full file.
 
+### The doorman: hooks for Claude Code
+
+Two hooks turn cabina from a Monday inspection into a guard at the door:
+
+- **`cabina guard`** (PreToolUse on `Edit|Write|MultiEdit`) — validates the agent file that *would
+  result* from the write (for an Edit it reconstructs the file, it does not just look at the new
+  string). Contract not met → the write is blocked and Claude sees why. Warnings → allowed and
+  surfaced. Anything that is not an agent file → ignored in ~60 ms. If the guard itself fails, it
+  allows: a broken guard must never lock you out.
+- **`cabina brief`** (SessionStart) — a few lines of context at session start: health, which projects
+  have an agent working *right now*, and how stale this project's `MEMORY.md` is.
+
+```sh
+cabina hooks            # prints the settings.json entries
+cabina hooks --write    # merges them into ~/.claude/settings.json (backup kept, idempotent)
+```
+
 ### Run the health check on a schedule
 
 ```sh

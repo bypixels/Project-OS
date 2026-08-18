@@ -36,6 +36,11 @@ def main(argv=None):
     sc.add_argument("--worktrees", action="store_true", help="also measure worktree sizes with du (~2 s each)")
 
     sub.add_parser("fleet", help="terminal TUI")
+    sub.add_parser("guard", help="hook: PreToolUse on Edit|Write — validate agent files (reads stdin JSON)")
+    br = sub.add_parser("brief", help="hook: SessionStart — print a short health/context brief"); br.add_argument("--cwd")
+    hk = sub.add_parser("hooks", help="print the settings.json entries for guard+brief; --write merges them")
+    hk.add_argument("--write", action="store_true"); hk.add_argument("--settings", help="path to settings.json (default: ~/.claude/settings.json)")
+    hk.add_argument("--cmd", default="cabina", help="command name to wire (default: cabina)")
     cf = sub.add_parser("config", help="show effective config"); cf.add_argument("--example", action="store_true", help="print an example config.toml")
 
     a = ap.parse_args(argv)
@@ -59,7 +64,24 @@ def main(argv=None):
     if a.cmd == "agents":
         return _agents(cfg, a)
     if a.cmd == "fleet":
-        from . import fleet; fleet.run(cfg); return 0
+        from . import fleet; return fleet.run(cfg) or 0
+    if a.cmd == "guard":
+        from . import guard; return guard.run(cfg, guard.read_stdin_briefly(timeout=5.0))
+    if a.cmd == "brief":
+        from . import guard
+        d = {}
+        if not a.cwd:
+            try:
+                d = json.loads(guard.read_stdin_briefly() or "{}")
+            except Exception:
+                d = {}
+        sys.stdout.write(guard.brief(cfg, cwd=a.cwd or d.get("cwd"))); return 0
+    if a.cmd == "hooks":
+        from . import guard
+        sp = a.settings or os.path.join(cfg["claude_home"], "settings.json")
+        if a.write:
+            ok, msg = guard.hooks_write(sp, a.cmd); print(msg); return 0 if ok else 1
+        print(json.dumps(guard.hooks_snippet(a.cmd), indent=2)); print(f"\n# to apply:  cabina hooks --write   (merges into {sp}, keeps a backup)"); return 0
     from . import server
     port = getattr(a, "port", None); no_open = getattr(a, "no_open", False)
     server.serve(cfg, port=port, open_browser=not no_open); return 0
