@@ -102,6 +102,38 @@ class TestAgentsRosterDetailColumn(unittest.TestCase):
             env.cleanup()
 
 
+class _FakeStderr(io.StringIO):
+    def __init__(self, tty): super().__init__(); self._tty = tty
+    def isatty(self): return self._tty
+
+
+class TestAgentsUsageScanHint(unittest.TestCase):
+    """H2 (CLI part): `cabina agents` refreshes usage history (a grep over every transcript
+    under ~/.claude/projects) with zero feedback, which can take ~10s and looks hung. When
+    stderr is a tty, print a one-line heads-up before R.load() kicks that off; stay silent
+    when stderr is redirected/piped (scripts, tests, CI)."""
+    def _run(self, tty):
+        import argparse
+        from cabina import cli as CLI
+        env = Env()
+        try:
+            scan.save(env.cfg, scan.run(env.cfg))
+            a = argparse.Namespace(action="list", name=None, project=None, force=False,
+                                    invalid=False, unused=False, json=True, tool=None)
+            err = _FakeStderr(tty)
+            with mock.patch("sys.stderr", err), redirect_stdout(io.StringIO()):
+                CLI._agents(env.cfg, a)
+            return err.getvalue()
+        finally:
+            env.cleanup()
+
+    def test_prints_hint_on_a_tty(self):
+        self.assertIn("scanning usage history", self._run(tty=True))
+
+    def test_silent_when_not_a_tty(self):
+        self.assertNotIn("scanning usage history", self._run(tty=False))
+
+
 class TestHooksCommand(unittest.TestCase):
     """H1: `--cmd` on the hooks subparser used to share argparse's own `dest="cmd"` with the
     top-level subcommand selector, so `a.cmd` got overwritten and `cabina hooks` fell through
