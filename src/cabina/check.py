@@ -21,10 +21,17 @@ def _warn_kind(w):
 
 
 def run(cfg, quick=False):
-    """Returns list of findings: {sev, title, detail, fix}."""
+    """Returns list of findings: {sev, title, detail, fix}, plus a `projects` list (names as in
+    scan.project_roots, "global" for the global home) ONLY when the finding is genuinely about
+    one or more specific projects — never guessed from free text. Findings about the environment
+    as a whole (broken symlinks in ~/.claude, mcp, stale scan cache…) carry no `projects` key."""
     L = cfg["language"]; ch = cfg["claude_home"]
     F = []
-    add = lambda sev, title, detail="", fix="": F.append({"sev": sev, "title": title, "detail": detail, "fix": fix})
+    def add(sev, title, detail="", fix="", projects=None):
+        d = {"sev": sev, "title": title, "detail": detail, "fix": fix}
+        if projects:
+            d["projects"] = sorted(set(projects))
+        F.append(d)
     data = scan.load(cfg)
     skills_dir = os.path.join(ch, "skills"); agents_dir = os.path.join(ch, "agents")
 
@@ -78,15 +85,15 @@ def run(cfg, quick=False):
     docs = [(p, r) for p, r in rows if r.category == "document"]
     if inv:
         det = "\n    ".join(f"{p}/{r.name}: {r.critical[0]}" for p, r in inv[:8]) + (f"\n    … +{len(inv)-8}" if len(inv) > 8 else "")
-        add("crit", t(L, "check.invalid_agents", n=len(inv)), t(L, "check.invalid_agents.d") + "\n    " + det, t(L, "fix.agents_invalid"))
+        add("crit", t(L, "check.invalid_agents", n=len(inv)), t(L, "check.invalid_agents.d") + "\n    " + det, t(L, "fix.agents_invalid"), projects=[p for p, _ in inv])
     if wrn:
         kinds = {}
         for _, r in wrn:
             for w in r.warnings:
                 k = _warn_kind(w); kinds[k] = kinds.get(k, 0) + 1
-        add("warn", t(L, "check.warn_agents", n=len(wrn)), t(L, "check.warn_agents.d", kinds=", ".join(f"{v} {k}" for k, v in sorted(kinds.items(), key=lambda x: -x[1]))), t(L, "fix.agents_invalid"))
+        add("warn", t(L, "check.warn_agents", n=len(wrn)), t(L, "check.warn_agents.d", kinds=", ".join(f"{v} {k}" for k, v in sorted(kinds.items(), key=lambda x: -x[1]))), t(L, "fix.agents_invalid"), projects=[p for p, _ in wrn])
     if docs:
-        add("info", t(L, "check.docs_in_agents", n=len(docs)), t(L, "check.docs_in_agents.d") + "\n    " + ", ".join(f"{p}/{r.name}" for p, r in docs[:6]) + (" …" if len(docs) > 6 else ""))
+        add("info", t(L, "check.docs_in_agents", n=len(docs)), t(L, "check.docs_in_agents.d") + "\n    " + ", ".join(f"{p}/{r.name}" for p, r in docs[:6]) + (" …" if len(docs) > 6 else ""), projects=[p for p, _ in docs])
 
     # 4b. Codex agents (TOML) against the codex contract
     cx = cfg.get("codex_home") or ""
@@ -105,9 +112,9 @@ def run(cfg, quick=False):
         dv = [x for x in dr["rules"] if x["status"] == "diverged"]
         cp = [x for x in dr["rules"] if x["status"] == "copy"]
         if dv:
-            add("warn", t(L, "check.rules_diverged", n=len(dv)), "\n    ".join(f"{x['project']}: {x.get('diff_lines', '?')} lines differ" for x in dv), t(L, "fix.rules"))
+            add("warn", t(L, "check.rules_diverged", n=len(dv)), "\n    ".join(f"{x['project']}: {x.get('diff_lines', '?')} lines differ" for x in dv), t(L, "fix.rules"), projects=[x["project"] for x in dv])
         if cp:
-            add("info", t(L, "check.rules_copy", n=len(cp)), ", ".join(x["project"] for x in cp), t(L, "fix.rules"))
+            add("info", t(L, "check.rules_copy", n=len(cp)), ", ".join(x["project"] for x in cp), t(L, "fix.rules"), projects=[x["project"] for x in cp])
         sk = [x for x in dr["skills"] if x["status"] == "diverged"]
         if sk:
             add("warn", t(L, "check.skill_copies", n=len(sk)), ", ".join(x["name"] for x in sk))
@@ -115,12 +122,16 @@ def run(cfg, quick=False):
     # 5. harness hooks
     if data:
         dead, brk = [], []
+        dead_projects, broken_projects = [], []
         for e in HAR.states(data):
-            dead += [f"{e['name']}/{h}" for h in e["hooks_dead"]]; brk += [f"{e['name']}/{h}" for h in e["hooks_broken"]]
+            if e["hooks_dead"]:
+                dead += [f"{e['name']}/{h}" for h in e["hooks_dead"]]; dead_projects.append(e["name"])
+            if e["hooks_broken"]:
+                brk += [f"{e['name']}/{h}" for h in e["hooks_broken"]]; broken_projects.append(e["name"])
         if brk:
-            add("crit", t(L, "check.broken_hooks", n=len(brk)), t(L, "check.broken_hooks.d") + "\n    " + "\n    ".join(brk), t(L, "fix.remove_wire"))
+            add("crit", t(L, "check.broken_hooks", n=len(brk)), t(L, "check.broken_hooks.d") + "\n    " + "\n    ".join(brk), t(L, "fix.remove_wire"), projects=broken_projects)
         if dead:
-            add("warn", t(L, "check.dead_hooks", n=len(dead)), t(L, "check.dead_hooks.d") + "\n    " + "\n    ".join(dead), t(L, "fix.wire_or_archive"))
+            add("warn", t(L, "check.dead_hooks", n=len(dead)), t(L, "check.dead_hooks.d") + "\n    " + "\n    ".join(dead), t(L, "fix.wire_or_archive"), projects=dead_projects)
 
     # 6. stale clean worktrees
     days = cfg["check"]["worktree_stale_days"]
@@ -135,7 +146,7 @@ def run(cfg, quick=False):
                 stale.append((p["name"], w["name"], w["mb"], int(age))); mb += w["mb"]
     if stale:
         top = "\n    ".join(f"{a}/{b}  {c} MB  {d} d" for a, b, c, d in sorted(stale, key=lambda x: -x[2])[:6])
-        add("warn", t(L, "check.stale_worktrees", n=len(stale), days=days, gb=f"{mb/1024:.1f}"), t(L, "check.stale_worktrees.d") + "\n    " + top, t(L, "fix.worktree"))
+        add("warn", t(L, "check.stale_worktrees", n=len(stale), days=days, gb=f"{mb/1024:.1f}"), t(L, "check.stale_worktrees.d") + "\n    " + top, t(L, "fix.worktree"), projects=[a for a, b, c, d in stale])
 
     # 7. MCP (only if the scan checked it)
     if data and data.get("mcp", {}).get("checked"):
@@ -149,10 +160,13 @@ def run(cfg, quick=False):
     # 8. never-invoked agents (slow-ish: reads history)
     if not quick and data:
         items = usage.load(os.path.join(cfg["state_dir"], "usage-agents.json"))
-        defined = {r.name for _, r in rows if r.is_agent}
+        defined_rows = [(p, r) for p, r in rows if r.is_agent]
+        defined = {r.name for _, r in defined_rows}
         never = sorted(defined - {k for k, v in items.items() if v.get("n_total", 0) > 0})
         if never and items:
-            add("info", t(L, "check.unused_agents", n=len(never)), ", ".join(never[:14]) + (" …" if len(never) > 14 else ""))
+            never_set = set(never)
+            add("info", t(L, "check.unused_agents", n=len(never)), ", ".join(never[:14]) + (" …" if len(never) > 14 else ""),
+                projects=[p for p, r in defined_rows if r.name in never_set])
 
     # 9. scan freshness
     cp = scan.cache_path(cfg)

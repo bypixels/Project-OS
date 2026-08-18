@@ -28,6 +28,7 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .box{font-size:13px;padding:10px 12px;border-radius:8px}.box.warn{background:var(--amber-soft);color:var(--amber)}.box.bad{background:var(--rust-soft);color:var(--rust)}.box.info{background:var(--slate-soft);color:var(--slate)}.box ul{margin:4px 0 0 16px}
 .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:auto;padding-top:8px}.btn{font-size:13px;padding:8px 13px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink)}.btn:hover{background:var(--hover)}.btn.primary{background:var(--moss);color:#fff;border-color:var(--moss)}.btn.danger{color:var(--rust);border-color:var(--rust-soft)}.btn[disabled]{opacity:.5;cursor:default}
 .muted{color:var(--dim);font-size:13px}.tl{font-size:10px;padding:1px 6px;border-radius:5px;background:var(--slate-soft);color:var(--slate);font-family:var(--sans);margin-left:6px;vertical-align:middle}.tl.codex{background:var(--amber-soft);color:var(--amber)}.form{display:grid;gap:10px}.form label{display:grid;gap:4px;font-size:12.5px;color:var(--dim)}.form .err{color:var(--rust);font-size:12px;min-height:14px}
+.tilesGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px;margin-bottom:10px;max-height:30vh;overflow:auto}.tile{background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:6px 10px;min-height:48px;display:flex;align-items:center;gap:8px}.tileName{font-weight:600;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}.tilesHead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
 textarea{min-height:90px;resize:vertical;font-family:var(--mono);font-size:12.5px}textarea.editor{width:100%;min-height:52vh;line-height:1.5;tab-size:2}
 pre.doc,pre.preview{font-family:var(--mono);font-size:12.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px 14px;max-height:60vh;overflow:auto}
 .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 14px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw}.toast.show{opacity:1}@media (prefers-reduced-motion:reduce){.toast{transition:none}}
@@ -71,6 +72,7 @@ en:{tabs:{health:"Health",agents:"Agents",live:"Live",skills:"Skills",projects:"
  exportBtn:"Export…",exportT:"download this environment as JSON",exportTitle:"Export environment",exportActivityLabel:"include session activity (aggregated per project)",exportDetailLabel:"per-session detail",exportConfirm:"Download",
  compareBtn:"Compare…",compareT:"compare with another machine's export",compareTitle:"Compare with another export",compareHint:"Pick a cabina export .json file from another machine.",compareRun:"Compare",compareParseError:"Could not read that file as JSON.",closeBtn:"Close",
  path:"path",git:"git",clean:"clean",uncommitted:"{n} uncommitted",notRepo:"not a repo",lastCommit:"last commit",assets:"assets",agentsN:"agents",skillsN:"skills",commandsN:"commands",rulesN:"rules",harness:"harness",hooksN:"hooks",wfN:"workflows",docsN:"documents",memDays:"MEMORY.md",today:"today",daysUntouched:"{n} days untouched",maybeDead:"· possibly dead",
+ tilesTitle:"Projects at a glance",tilesSparkAria:"30-day health trend (critical/warning)",tileActive:"active",tileIdle:"idle",tileNever:"no sessions yet",
  wt:"<b>{n} worktrees · {gb} GB</b> · {c} with no pending changes (their work already lives on a branch; the directory only uses disk).",wtMore:"… and {n} more",wtHow:"Clean with <code>git -C {p} worktree remove &lt;path&gt;</code>. Cabina does not delete them: that is an action on the repo.",
  harHint:"Harness state per project. Below, the run log.",complete:"complete",partial:"partial",noHar:"no harness",problem:"problem(s)",runlog:"RUN LOG",runs:"runs",consq:"consq.",kPer:"{k}k/consq.",
  pieces:"pieces",hooks:"hooks",activeOf:"{a} active of {n}",none:"none",runlogL:"run log",yesRl:"yes, harness-runs.md",no:"no",
@@ -113,6 +115,7 @@ es:{tabs:{health:"Salud",agents:"Agentes",live:"En vivo",skills:"Skills",project
  exportBtn:"Exportar…",exportT:"descarga este entorno como JSON",exportTitle:"Exportar entorno",exportActivityLabel:"incluir actividad de sesiones (agregada por proyecto)",exportDetailLabel:"detalle por sesión",exportConfirm:"Descargar",
  compareBtn:"Comparar…",compareT:"comparar con el export de otra máquina",compareTitle:"Comparar con otro export",compareHint:"Elegí un archivo .json exportado desde otra máquina.",compareRun:"Comparar",compareParseError:"No se pudo leer ese archivo como JSON.",closeBtn:"Cerrar",
  path:"ruta",git:"git",clean:"limpio",uncommitted:"{n} sin commit",notRepo:"no es un repo",lastCommit:"último commit",assets:"assets",agentsN:"agentes",skillsN:"skills",commandsN:"comandos",rulesN:"rules",harness:"harness",hooksN:"hooks",wfN:"workflows",docsN:"documentos",memDays:"MEMORY.md",today:"hoy",daysUntouched:"{n} días sin tocar",maybeDead:"· posiblemente muerto",
+ tilesTitle:"Proyectos de un vistazo",tilesSparkAria:"tendencia de salud de 30 días (crítico/advertencia)",tileActive:"activo",tileIdle:"inactivo",tileNever:"sin sesiones aún",
  wt:"<b>{n} worktrees · {gb} GB</b> · {c} sin cambios pendientes (su trabajo ya está en una rama; el directorio solo ocupa disco).",wtMore:"… y {n} más",wtHow:"Se limpian con <code>git -C {p} worktree remove &lt;ruta&gt;</code>. La Cabina no los borra: es una acción sobre el repo.",
  harHint:"Estado del harness por proyecto. Abajo, la bitácora de corridas.",complete:"completo",partial:"parcial",noHar:"sin harness",problem:"problema(s)",runlog:"BITÁCORA DE CORRIDAS",runs:"corridas",consq:"consec.",kPer:"{k}k/consec.",
  pieces:"piezas",hooks:"hooks",activeOf:"{a} activos de {n}",none:"ninguno",runlogL:"bitácora",yesRl:"sí, harness-runs.md",no:"no",
@@ -125,18 +128,20 @@ es:{tabs:{health:"Salud",agents:"Agentes",live:"En vivo",skills:"Skills",project
  editHint:"Antes de guardar se verifica que nadie haya tocado el archivo mientras editabas, y se guarda una copia de la versión anterior.",save:"Guardar",noChanges:"sin cambios",saving:"guardando…",seeCurrent:"Ver la versión actual",loseEdit:"Vas a perder tu edición actual. ¿Recargar?",discard:"Estás editando otro documento. ¿Descartar los cambios?"}};
 const T=(k,v)=>{let s=(I18N[LANG]||I18N.en)[k]??I18N.en[k]??k; if(typeof s==="object")return s; return v?s.replace(/\{(\w+)\}/g,(_,x)=>v[x]??""):s;};
 const S={view:HUB?"agents":"health",data:null,live:null,skills:null,projs:null,har:null,docs:null,doc:null,activity:null,hub:null,health:null,healthChecking:false,editing:false,sel:null,q:"",chips:new Set(),mode:null,focus:null,loaded:new Set(),
- hooks:null,hooksCmd:"",hooksForce:false,hooksPreview:false};
+ hooks:null,hooksCmd:"",hooksForce:false,hooksPreview:false,tiles:null,healthHistory:null};
 const $=id=>document.getElementById(id);const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 async function GET(u){return (await fetch(u)).json();}async function POST(u,b){return (await fetch(u,{method:"POST",headers:{"Content-Type":"application/json","X-Cabina-Token":TOKEN},body:JSON.stringify(b)})).json();}
 let tt;function toast(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(tt);tt=setTimeout(()=>t.classList.remove("show"),2600);}
 const VIEWS=HUB?["agents","skills","projects","harness","activity"]:["health","agents","live","skills","projects","harness","docs","activity"];
 $("tabs").innerHTML=VIEWS.map(v=>`<button class="tab" data-v="${v}">${esc(T("tabs")[v])}</button>`).join("");
-const LOADERS={health:()=>loadHealth(),skills:()=>loadSkills(),projects:()=>loadProjs(),harness:()=>loadHar(),activity:()=>loadActivity(),docs:()=>loadDocs()};
+const LOADERS={health:()=>loadHealth(),skills:()=>loadSkills(),projects:()=>{loadProjs();loadTiles();loadHealthHistory();},harness:()=>loadHar(),activity:()=>loadActivity(),docs:()=>loadDocs()};
 function ensureLoaded(v){if(S.loaded.has(v))return;const f=LOADERS[v];if(!f)return;S.loaded.add(v);f();}
 document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{S.view=t.dataset.v;S.mode=null;S.sel=null;S.q="";S.chips.clear();ensureLoaded(S.view);render();});
 async function loadAgents(){S.data=await GET("/api/agents");render();if(S.view==="agents"){if(S.mode==="create")renderCreate();else if(S.sel)renderAgentDetail();}}
 async function loadSkills(){S.skills=await GET("/api/skills");if(S.view==="skills")render();}
 async function loadProjs(){S.projs=await GET("/api/projects");if(S.view==="projects")render();}
+async function loadTiles(){if(HUB)return;S.tiles=await GET("/api/tiles");if(S.view==="projects")render();}
+async function loadHealthHistory(){if(HUB)return;S.healthHistory=await GET("/api/health-history?days=30");if(S.view==="projects")render();}
 async function loadHar(){S.har=await GET("/api/harness");if(!HUB)S.hooks=await GET("/api/hooks"+(S.hooksCmd?"?cmd="+encodeURIComponent(S.hooksCmd):""));if(S.view==="harness")render();}
 async function loadDocs(){S.docs=await GET("/api/docs");if(S.view==="docs")render();}
 async function loadActivity(){S.activity=await GET("/api/activity?days=30");if(S.view==="activity")render();}
@@ -287,10 +292,25 @@ function renderSessionDetail(){const x=(S.activity?.sessions||[]).find(y=>sessKe
 // Note: x.title is ALWAYS interpolated through esc() — Fase 2 (hub) depends on this staying true (R10, XSS).
 // ---------- PROJECTS ----------
 function projKey(x){return x.name+"|"+(x.machine||"");}   // E2: name alone collides when two hub machines share a project name
+function relSince(iso){if(!iso)return null;const days=Math.floor((Date.now()-new Date(iso).getTime())/86400000);if(isNaN(days))return null;return days<=0?T("today"):days+" d";}
+function healthSparkline(series){const s=(series||[]).slice(-30);if(!s.length)return "";const w=110,h=24;
+ const maxV=Math.max(1,...s.map(d=>Math.max(d.crit||0,d.warn||0)));const stepX=s.length>1?w/(s.length-1):0;
+ const pts=k=>s.map((d,i)=>`${(i*stepX).toFixed(1)},${(h-((d[k]||0)/maxV)*h).toFixed(1)}`).join(" ");
+ return `<svg width="${w}" height="${h}" style="vertical-align:middle" role="img" aria-label="${esc(T("tilesSparkAria"))}"><polyline points="${pts("crit")}" fill="none" stroke="var(--rust)" stroke-width="1.5"></polyline><polyline points="${pts("warn")}" fill="none" stroke="var(--amber)" stroke-width="1.5"></polyline></svg>`;}
+function healthPills(health){const parts=[];
+ if(health.crit)parts.push(`<span class="pill p-invalid">${health.crit}</span>`);
+ if(health.warn)parts.push(`<span class="pill p-warnings">${health.warn}</span>`);
+ if(health.info)parts.push(`<span class="pill p-document">${health.info}</span>`);
+ return parts.length?parts.join(" "):`<span class="pill p-valid">${esc(T("ok"))}</span>`;}
+function renderProjectTiles(){if(HUB||!S.tiles)return "";const tiles=S.tiles.tiles||[];
+ const spark=S.healthHistory?healthSparkline(S.healthHistory.series):"";
+ const cells=tiles.map(t=>{const since=relSince(t.last_session);
+  return `<div class="tile"><span class="tileName">${esc(t.project)}</span><span class="pill ${t.active?"p-valid":"p-document"}">${t.active?esc(T("tileActive")):esc(T("tileIdle"))}</span><span class="muted" style="font-size:11px">${since!==null?esc(since):esc(T("tileNever"))}</span><span style="margin-left:auto">${healthPills(t.health)}</span></div>`;}).join("");
+ return `<div class="tilesHead"><span class="muted">${T("tilesTitle")}</span>${healthPills(S.tiles.health)}${spark}</div><div class="tilesGrid">${cells}</div>`;}
 function renderProjects(){if(!S.projs){$("rows").innerHTML=`<div class="empty">${T("loading")}</div>`;$("filters").innerHTML="";return;}const a=S.projs.projects;
  $("filters").innerHTML=`<span class="muted">${T("projHint")}</span>`+chipFocus()+(HUB?"":`<button class="btn" id="bRescan" style="margin-left:auto" title="${T("rescanT")}">${T("rescan")}</button><button class="btn" id="bExport" title="${T("exportT")}">${T("exportBtn")}</button><button class="btn" id="bCompare" title="${T("compareT")}">${T("compareBtn")}</button>`);bindFocus();
  if(!HUB){$("bRescan").onclick=renderRescanDialog;$("bExport").onclick=renderExportDialog;$("bCompare").onclick=renderCompareDialog;updateScanUI();}
- $("rows").innerHTML=a.map(x=>{const wt=x.worktrees?` · ${x.worktrees}wt ${(x.worktrees_mb/1024).toFixed(1)}G`:"";const dot=x.worktrees_mb>5000?"invalid":(x.dirty>20||(x.memory_days!==null&&x.memory_days>30))?"warnings":"valid";
+ $("rows").innerHTML=renderProjectTiles()+a.map(x=>{const wt=x.worktrees?` · ${x.worktrees}wt ${(x.worktrees_mb/1024).toFixed(1)}G`:"";const dot=x.worktrees_mb>5000?"invalid":(x.dirty>20||(x.memory_days!==null&&x.memory_days>30))?"warnings":"valid";
   return `<button class="row ${S.sel===projKey(x)?"sel":""} ${S.focus===x.name?"focus":""}" data-k="${esc(projKey(x))}"><span class="dot d-${dot}"></span><span class="n">${esc(x.name)} <span class="muted">${esc(x.branch||"—")}</span></span><span class="w">${x.agents}ag · ${x.skills}sk${x.dirty?` · ${T("uncommitted",{n:x.dirty})}`:""}${wt}</span></button>`;}).join("");
  document.querySelectorAll(".row").forEach(r=>r.onclick=()=>{S.sel=r.dataset.k;renderProjects();renderProjDetail();});
  const wtG=a.reduce((s,x)=>s+x.worktrees_mb,0)/1024;$("foot").textContent=`${a.length} · ${a.reduce((s,x)=>s+x.agents,0)} ${T("agentsN")} · ${a.reduce((s,x)=>s+x.skills,0)} ${T("skillsN")} · ${a.reduce((s,x)=>s+x.worktrees,0)} worktrees (${wtG.toFixed(1)} GB)`;

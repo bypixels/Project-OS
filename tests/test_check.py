@@ -22,5 +22,34 @@ class TestCheckWarnAgentsDetail(unittest.TestCase):
             env.cleanup()
 
 
+class TestCheckProjectAttribution(unittest.TestCase):
+    """Findings that are genuinely about one project (dead hook, a document-shaped file in
+    agents/) carry a `projects` list naming it; findings about the environment as a whole
+    (e.g. a stale/missing scan cache) carry no `projects` key at all — never guessed."""
+    def test_dead_hook_and_docs_in_agents_carry_alpha_project(self):
+        env = Env()
+        try:
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)
+            dead = next(f for f in findings if "settings.json wires" in f["title"] or "ningún settings.json cablea" in f["title"])
+            self.assertIn("projects", dead)
+            self.assertIn("alpha", dead["projects"])
+            docs = next(f for f in findings if "document" in f["title"].lower() or f["title"].endswith("agents/"))
+            self.assertIn("projects", docs)
+            self.assertIn("alpha", docs["projects"])
+        finally:
+            env.cleanup()
+
+    def test_global_finding_has_no_projects_key(self):
+        env = Env()
+        try:
+            # no scan cache saved -> "no scan" is a global finding, never attributed to a project
+            findings = check.run(env.cfg, quick=True)
+            no_scan = next(f for f in findings if "scan" in f["title"].lower())
+            self.assertNotIn("projects", no_scan)
+        finally:
+            env.cleanup()
+
+
 if __name__ == "__main__":
     unittest.main()

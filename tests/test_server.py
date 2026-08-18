@@ -512,6 +512,128 @@ class TestServer(unittest.TestCase):
             d = self.get("/api/health")
         self.assertEqual(d["findings"], [])
         self.assertIn("boom", d["error"])
+    # ---------- Fase 3: /api/health-history ----------
+    def test_health_history_endpoint(self):
+        from cabina import healthlog as HL
+        from datetime import datetime, timedelta
+        now = datetime.now().astimezone()
+        older = now - timedelta(days=3)
+        HL.append(self.env.cfg, [{"sev": "crit"} for _ in range(11)], now=older)
+        HL.append(self.env.cfg, [{"sev": "crit"} for _ in range(22)], now=now)
+        d = self.get("/api/health-history?days=30")
+        self.assertIn("series", d)
+        series = d["series"]
+        self.assertIsInstance(series, list)
+        idx11 = next(i for i, s in enumerate(series) if s.get("crit") == 11)
+        idx22 = next(i for i, s in enumerate(series) if s.get("crit") == 22)
+        self.assertLess(idx11, idx22)             # oldest first
+        for s in series:
+            for k in ("when", "crit", "warn", "info"):
+                self.assertIn(k, s)
+    def test_health_history_endpoint_defaults_and_caps_days(self):
+        d = self.get("/api/health-history")
+        self.assertIn("series", d)
+        d2 = self.get("/api/health-history?days=999999")
+        self.assertIn("series", d2)   # never errors out on an out-of-range days value
+    # ---------- Fase 3: /api/tiles (R13 project dashboard) ----------
+    def test_project_tiles_shape(self):
+        d = self.get("/api/tiles")
+        self.assertIn("tiles", d); self.assertIn("health", d); self.assertIn("ran_at", d)
+        names = {t["project"] for t in d["tiles"]}
+        self.assertIn("alpha", names)
+        allowed = {"project", "last_session", "active", "health", "open_findings_count"}
+        for t in d["tiles"]:
+            self.assertEqual(set(t), allowed)
+            self.assertIsInstance(t["active"], bool)
+            for k in ("crit", "warn", "info"):
+                self.assertIn(k, t["health"])
+            self.assertEqual(t["open_findings_count"], sum(t["health"].values()))
+        alpha = next(t for t in d["tiles"] if t["project"] == "alpha")
+        self.assertGreaterEqual(alpha["health"]["warn"], 1)   # dead hook / shadow warning, attributed per Unit 1
+    def test_project_tiles_calls_check_run_with_quick_false(self):
+        # api_tiles must agree with the Health tab, which runs check.run(quick=False) --
+        # quick=True silently drops the "never invoked agents" info finding.
+        from unittest import mock
+        calls = {}
+        def fake_run(cfg, quick=False):
+            calls["quick"] = quick
+            return []
+        with mock.patch("cabina.server.CHECK.run", side_effect=fake_run):
+            self.get("/api/tiles")
+        self.assertIn("quick", calls)
+        self.assertFalse(calls["quick"])
+    def test_health_totals_counts_each_finding_once_including_global_and_multi_project(self):
+        # Unit fix: top-level `health` must count EVERY finding by severity exactly once --
+        # including ones with no `projects` key (global findings, e.g. broken symlinks/MCP/stale
+        # scan) -- never the SUM of per-tile attributed counts, which double-counts a finding
+        # attributed to more than one project and drops global findings entirely.
+        from cabina import server as SRV
+        findings = [
+            {"sev": "crit"},                          # global: no `projects` key at all
+            {"sev": "warn", "projects": ["a", "b"]},   # attributed to two projects
+            {"sev": "info", "projects": ["a"]},
+            {"sev": "bogus"},                          # unknown severity: never counted
+        ]
+        self.assertEqual(SRV._health_totals(findings), {"crit": 1, "warn": 1, "info": 1})
+    def test_project_tiles_order(self):
+        from cabina import server as SRV
+        tiles = [
+            {"project": "z", "last_session": "2026-08-10T00:00:00", "active": False},
+            {"project": "a", "last_session": None, "active": True},
+            {"project": "b", "last_session": "2026-08-15T00:00:00", "active": True},
+            {"project": "c", "last_session": None, "active": False},
+            {"project": "d", "last_session": "2026-08-01T00:00:00", "active": False},
+        ]
+        ordered = [t["project"] for t in SRV._order_tiles(tiles)]
+        self.assertEqual(ordered, ["b", "a", "z", "d", "c"])
+    def test_project_tiles_never_task_like_fields(self):
+        # R13: tiles are a read-only summary, never a Kanban -- no status/assignee/free text,
+        # neither in the API shape (Unit 2) nor accidentally introduced by the renderer (Unit 3).
+        tile = self.app.api_tiles()["tiles"][0]
+        self.assertEqual(set(tile), {"project", "last_session", "active", "health", "open_findings_count"})
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        start = html.index("function healthPills")
+        end = html.index("function renderProjects(){if(!S.projs)")
+        src = html[start:end]
+        for bad in ("assignee", "todo", "\"status\"", "'status'"):
+            self.assertNotIn(bad, src)
+        # the crit/warn/info pills must actually be built from the health counts (not silently
+        # dropped) -- both per-tile (t.health, passed to healthPills) and in the tiles header
+        # (the global S.tiles.health totals from Unit fix #2).
+        for k in ("health.crit", "health.warn", "health.info"):
+            self.assertIn(k, src)
+        self.assertIn("healthPills(t.health)", src)
+        self.assertIn("healthPills(S.tiles.health)", src)
+        import re
+        pattern = re.compile(r"\$\{([^{}]*\bt\.(?:project|last_session)\b[^{}]*)\}")
+        hits = list(pattern.finditer(src))
+        self.assertGreater(len(hits), 0)
+        for m in hits:
+            self.assertIn("esc(", m.group(1), f"unescaped interpolation: ${{{m.group(1)}}}")
+    def test_project_tiles_grid_is_compact_and_height_capped(self):
+        # Live-check finding: with 21 real projects the tiles grid took 5 rows and pushed the
+        # project list off-screen. Compact row tiles + a capped, scrollable grid area.
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        self.assertIn("minmax(220px,1fr)", html)
+        self.assertIn("max-height:30vh", html)
+        self.assertIn("overflow:auto", html)
+    def test_tiles_and_sparkline_i18n_keys_present_in_both_languages(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        start = html.index("const I18N={")
+        end = html.index("const T=(k,v)=>")
+        block = html[start:end]
+        split = block.index("\nes:{")
+        en_block, es_block = block[:split], block[split:]
+        for key in ("tilesTitle", "tilesSparkAria", "tileActive", "tileIdle", "tileNever"):
+            self.assertIn(key + ":", en_block, key)
+            self.assertIn(key + ":", es_block, key)
+    def test_projects_tab_lazy_loads_tiles_never_in_hub(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        self.assertIn("/api/tiles", html)
+        self.assertIn("/api/health-history", html)
+        # both fetches are guarded the same way every other server-only call is: `if(HUB)return;`
+        loadtiles = html[html.index("async function loadTiles"):html.index("async function loadTiles") + 60]
+        self.assertIn("HUB", loadtiles)
     # ---------- S1-b/c: Health tab ----------
     def test_index_health_tab_is_first_and_default_view_outside_hub(self):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()

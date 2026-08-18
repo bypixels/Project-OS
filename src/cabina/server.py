@@ -89,6 +89,30 @@ def _open_allowed(path, allowed_roots):
     return False
 
 
+def _health_totals(findings):
+    """R13: the tiles header's global {crit,warn,info} -- every finding counted exactly ONCE
+    by severity, including ones with no `projects` key (global findings) and without
+    double-counting one attributed to more than one project. Kept separate from the per-tile
+    sums in api_tiles(), which intentionally count a multi-project finding once per tile."""
+    tot = {"crit": 0, "warn": 0, "info": 0}
+    for f in findings:
+        if f.get("sev") in tot:
+            tot[f["sev"]] += 1
+    return tot
+
+
+def _order_tiles(tiles):
+    """R13: active projects first, then by last_session descending (missing/None last), then
+    by name -- deterministic regardless of dict/set iteration order. Three stable sorts applied
+    least-significant-key first (Python's sort is stable, so each pass only breaks ties left by
+    the previous one)."""
+    out = list(tiles)
+    out.sort(key=lambda t: t["project"])
+    out.sort(key=lambda t: t["last_session"] or "", reverse=True)
+    out.sort(key=lambda t: not t["active"])
+    return out
+
+
 class App:
     def __init__(self, cfg):
         self.cfg = cfg
@@ -192,6 +216,53 @@ class App:
             return {"findings": [], "error": str(e)}
         HEALTHLOG.append(self.cfg, findings)
         return {"findings": findings, "ran_at": datetime.now().isoformat(timespec="seconds"), "quick": False}
+
+    def api_health_history(self, q):
+        """R12/Fase 3: the health.jsonl series for the Health tab's sparkline."""
+        try:
+            days = int((q.get("days") or ["30"])[0])
+        except Exception:
+            days = 30
+        days = max(1, min(days, 365))
+        return {"series": HEALTHLOG.read(self.cfg, days)}
+
+    def api_tiles(self):
+        """R13: read-only "project dashboard" -- one tile per project with last_session,
+        active/idle, health (crit/warn/info attributed by check.py's `projects` key) and
+        open_findings_count. Deliberately NOTHING task-like (no status/assignee/free text).
+        Runs the SAME check.run(quick=False) the Health tab uses, so the two never disagree.
+        Never lets the tab render blank: an exception from CHECK.run() still returns tiles
+        with zero health, plus an `error` string."""
+        try:
+            findings = CHECK.run(self.cfg, quick=False)
+            error = None
+        except Exception as e:
+            findings, error = [], str(e)
+        names = [p["name"] for p in PROJ.load(self.data)]
+        g = self.data.get("global") or {}
+        if g.get("agents") or g.get("skills"):
+            names = ["global"] + names
+        last_by_project = {}
+        for s in SESS.load(self.cfg):
+            proj = s.get("project")
+            when = s.get("ended") or s.get("started")
+            if not proj or not when:
+                continue
+            if proj not in last_by_project or when > last_by_project[proj]:
+                last_by_project[proj] = when
+        working = set(self.working())
+        tiles = []
+        for name in names:
+            h = {"crit": 0, "warn": 0, "info": 0}
+            for f in findings:
+                if name in (f.get("projects") or ()) and f["sev"] in h:
+                    h[f["sev"]] += 1
+            tiles.append({"project": name, "last_session": last_by_project.get(name), "active": name in working,
+                          "health": h, "open_findings_count": h["crit"] + h["warn"] + h["info"]})
+        out = {"tiles": _order_tiles(tiles), "health": _health_totals(findings), "ran_at": datetime.now().isoformat(timespec="seconds")}
+        if error:
+            out["error"] = error
+        return out
 
     def _hooks_settings_path(self):
         return os.path.join(self.cfg["claude_home"], "settings.json")
@@ -359,7 +430,8 @@ def make_handler(app):
             "/api/live": lambda q: app.api_live(), "/api/docs": lambda q: app.api_docs(),
             "/api/doc": app.api_doc, "/api/references": app.api_references, "/api/in-repo": app.api_in_repo,
             "/api/activity": app.api_activity, "/api/health": lambda q: app.api_health(), "/api/hooks": app.api_hooks,
-            "/api/scan-status": lambda q: app.api_scan_status()}
+            "/api/scan-status": lambda q: app.api_scan_status(), "/api/health-history": app.api_health_history,
+            "/api/tiles": lambda q: app.api_tiles()}
     POSTS = {"/api/archive": app.api_archive, "/api/create": app.api_create, "/api/archive-skill": app.api_archive_skill,
              "/api/save-doc": app.api_save_doc, "/api/open": app.api_open, "/api/focus": app.api_focus, "/api/rescan": app.api_rescan, "/api/commit": app.api_commit,
              "/api/hooks-install": app.api_hooks_install, "/api/compare": app.api_compare}
