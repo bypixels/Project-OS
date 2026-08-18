@@ -203,5 +203,44 @@ class TestCliDocstringListsSubcommands(unittest.TestCase):
         self.assertEqual(missing, [], f"subcommands missing from cli.py's module docstring: {missing}")
 
 
+class TestWorktreesCommand(unittest.TestCase):
+    """W2: `cabina worktrees` is a report — it only ever prints a summary + a cleanup script for
+    the user to run themselves (never executes anything). The alpha fixture in tests/_env.py is
+    not a real git repo, so scan sees no worktrees at all: this exercises the "nothing to clean
+    up" path end to end without needing a real git worktree setup (that belongs to
+    test_worktrees.py, which drives the generator directly against synthetic scan data)."""
+
+    def test_worktrees_command_prints_summary_and_script(self):
+        from cabina import cli as CLI
+        env = Env()
+        try:
+            scan.save(env.cfg, scan.run(env.cfg))
+            a = argparse.Namespace(project=None, json=False)
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = CLI._worktrees(env.cfg, a)
+            out = buf.getvalue()
+            self.assertEqual(rc, 0)
+            self.assertIn("nothing to clean up", out)
+        finally:
+            env.cleanup()
+
+    def test_worktrees_command_json(self):
+        from cabina import cli as CLI
+        env = Env()
+        try:
+            scan.save(env.cfg, scan.run(env.cfg))
+            a = argparse.Namespace(project=None, json=True)
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = CLI._worktrees(env.cfg, a)
+            self.assertEqual(rc, 0)
+            d = json.loads(buf.getvalue())
+            self.assertIn("summary", d); self.assertIn("script", d); self.assertIn("rows", d)
+            self.assertEqual(d["summary"]["total"], 0)
+        finally:
+            env.cleanup()
+
+
 if __name__ == "__main__":
     unittest.main()

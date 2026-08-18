@@ -16,6 +16,7 @@
   cabina config           print the effective config / write an example   [--example]
   cabina activity         session activity read from Claude Code transcripts   [--project P] [--days N] [--json]
   cabina hub DIR          serve the UI, read-only, over N `cabina export --activity` files   [--port] [--no-open]
+  cabina worktrees        worktree cleanup report: a script to review and run yourself   [--project P] [--json]
 """
 import argparse, json, os, sys, textwrap
 from . import __version__, config as CFG
@@ -67,6 +68,9 @@ def main(argv=None):
 
     hb = sub.add_parser("hub", help="serve the UI, read-only, over N `cabina export --activity` files in DIR")
     hb.add_argument("dir"); hb.add_argument("--port", type=int); hb.add_argument("--no-open", action="store_true")
+
+    wt = sub.add_parser("worktrees", help="worktree cleanup report: prints a script to review and run yourself (cabina never runs it)")
+    wt.add_argument("--project", help="restrict to this project"); wt.add_argument("--json", action="store_true")
 
     a = ap.parse_args(argv)
     cfg = CFG.load(a.config)
@@ -166,6 +170,8 @@ def main(argv=None):
     if a.cmd == "hub":
         from . import hub
         hub.serve_hub(a.dir, cfg, port=a.port, open_browser=not a.no_open); return 0
+    if a.cmd == "worktrees":
+        return _worktrees(cfg, a)
     from . import server
     port = getattr(a, "port", None); no_open = getattr(a, "no_open", False)
     server.serve(cfg, port=port, open_browser=not no_open); return 0
@@ -215,6 +221,21 @@ def _agents(cfg, a):
     print("─" * 100)
     print(f"  {len(ag)} agents ({nc} codex) · {sum(1 for r in ag if r.category=='invalid')} invalid · {sum(1 for r in ag if r.category=='warnings')} warnings · "
           f"{sum(1 for _, r, u, _, t in out if r.is_agent and t=='claude' and u['total']==0)} unused · {sum(1 for _, r, _, _, _ in out if r.category=='document')} documents\n")
+    return 0
+
+
+def _worktrees(cfg, a):
+    from . import scan, worktrees
+    data = scan.ensure(cfg)
+    s = worktrees.summary(cfg, data, a.project)
+    text = worktrees.script(cfg, data, a.project)
+    if a.json:
+        rs = worktrees.rows(cfg, data, a.project)
+        print(json.dumps({"summary": s, "script": text, "rows": rs}, ensure_ascii=False, indent=1))
+        return 0
+    mb = f"{s['mb']} MB" + ("" if s["mb_measured"] else "+ (some sizes unmeasured — run `cabina scan --worktrees`)")
+    print(f"{s['total']} worktrees · {s['clean']} clean · {s['dirty']} dirty · {s['unknown']} unknown status · {s['prunable']} prunable · {mb}\n")
+    print(text)
     return 0
 
 
