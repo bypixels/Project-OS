@@ -113,6 +113,29 @@ class TestHubLoadDir(unittest.TestCase):
             self.assertEqual(out["merged"]["agents"][0]["machine"], "m1")
 
 
+class TestHubMergedCache(unittest.TestCase):
+    def test_merged_cache_survives_until_a_file_in_dir_changes(self):
+        # D3: HubApp._merged() re-read every export on every request. Cache it keyed by the
+        # (name, mtime, size) fingerprint of DIR's *.json entries; only re-read when that
+        # fingerprint changes.
+        from unittest import mock
+        from cabina import hub as HUB, config as CFG
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "m1.json")
+            open(p, "w").write(json.dumps({"machine": "m1", "agents": [{"name": "x"}], "skills": [], "harness": [], "projects": []}))
+            app = HUB.HubApp(d, CFG.load(None))
+            first = app.api_agents()
+            self.assertEqual(first["agents"][0]["name"], "x")
+            with mock.patch.object(HUB, "load_dir", side_effect=AssertionError("should be served from cache")):
+                second = app.api_agents()                                        # must NOT raise: served from cache
+            self.assertEqual(second["agents"][0]["name"], "x")
+            future = os.stat(p).st_mtime + 5                                     # force a change coarse mtimes can't hide
+            os.utime(p, (future, future))
+            with mock.patch.object(HUB, "load_dir", wraps=HUB.load_dir) as spy:
+                app.api_agents()
+            spy.assert_called_once()                                             # a changed file busts the cache
+
+
 class TestHubServer(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

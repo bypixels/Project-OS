@@ -113,9 +113,34 @@ class HubApp:
         self.dir = dir_
         self.max_mb = (cfg.get("hub") or {}).get("max_file_mb", 5)
         self.lang = cfg["language"] if cfg.get("language") in STRINGS else "en"
+        self._cache_key = None
+        self._cache_val = None
+
+    def _fingerprint(self):
+        """(name, mtime_ns, size) per *.json entry under self.dir — cheap enough to compute on
+        every request, and any change to it means an export was added, removed or rewritten."""
+        try:
+            names = sorted(n for n in os.listdir(self.dir) if n.endswith(".json"))
+        except OSError:
+            return ()
+        key = []
+        for n in names:
+            try:
+                st = os.stat(os.path.join(self.dir, n))
+                key.append((n, st.st_mtime_ns, st.st_size))
+            except OSError:
+                key.append((n, None, None))
+        return tuple(key)
 
     def _merged(self):
-        return load_dir(self.dir, self.max_mb)
+        """Perf: skip re-reading and re-merging every export on every request when DIR hasn't
+        changed since the last call — the fingerprint is the cache key."""
+        key = self._fingerprint()
+        if self._cache_val is not None and key == self._cache_key:
+            return self._cache_val
+        self._cache_val = load_dir(self.dir, self.max_mb)
+        self._cache_key = key
+        return self._cache_val
 
     def api_hub(self, q=None):
         return {"files": self._merged()["files"]}
