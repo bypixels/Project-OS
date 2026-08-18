@@ -7,7 +7,13 @@ from http.server import ThreadingHTTPServer
 class TestServer(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.env = Env(); scan.save(cls.env.cfg, scan.run(cls.env.cfg))
+        cls.env = Env()
+        # S1-a: guarantee at least one "crit" finding for /api/health (the shared fixture's
+        # warn_agents/dead_hooks/rules_diverged only produce warn+info) — an agent missing the
+        # critical `description` field, local to THIS test module only.
+        open(os.path.join(cls.env.alpha, ".claude", "agents", "broken.md"), "w").write(
+            "---\nname: broken\nmodel: sonnet\n---\nBody without a description.\n")
+        scan.save(cls.env.cfg, scan.run(cls.env.cfg))
         cls.app = server.App(cls.env.cfg)
         cls.srv = ThreadingHTTPServer(("127.0.0.1", 0), server.make_handler(cls.app))
         cls.port = cls.srv.server_address[1]
@@ -257,4 +263,57 @@ class TestServer(unittest.TestCase):
     def test_unknown_routes(self):
         with self.assertRaises(urllib.error.HTTPError): self.get("/api/nope")
         code, _ = self.post("/api/nope", {}); self.assertEqual(code, 404)
+    # ---------- S1: /api/health ----------
+    def test_health_endpoint_shape(self):
+        d = self.get("/api/health")
+        self.assertNotIn("error", d)
+        self.assertIn("ran_at", d)
+        self.assertFalse(d["quick"])
+        sevs = {f["sev"] for f in d["findings"]}
+        self.assertIn("crit", sevs)       # the broken.md agent added in setUpClass
+        self.assertIn("warn", sevs)       # the dead hook / shadowing agent in the base fixture
+        for f in d["findings"]:
+            self.assertIn(f["sev"], ("crit", "warn", "info"))
+            for k in ("title", "detail", "fix"):
+                self.assertIn(k, f)
+    def test_health_endpoint_survives_check_run_exception(self):
+        # The tab must never render blank: if check.run() throws, the endpoint still answers
+        # 200 with an empty findings list and the error message, never a 500.
+        from unittest import mock
+        with mock.patch("cabina.server.CHECK.run", side_effect=RuntimeError("boom")):
+            d = self.get("/api/health")
+        self.assertEqual(d["findings"], [])
+        self.assertIn("boom", d["error"])
+    # ---------- S1-b/c: Health tab ----------
+    def test_index_health_tab_is_first_and_default_view_outside_hub(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        # health is the FIRST entry of the non-hub VIEWS array, and the boot default view.
+        self.assertIn(':["health","agents",', html)
+        self.assertIn('view:HUB?"agents":"health"', html)
+        self.assertIn("/api/health", html)
+    def test_hub_view_list_has_no_health_tab(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        # the hub-mode branch of the VIEWS ternary is untouched: no "health" in it.
+        self.assertIn('HUB?["agents","skills","projects","harness","activity"]', html)
+    def test_health_block_fields_always_escaped(self):
+        import re
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        start = html.index("// ---------- HEALTH ----------")
+        end = html.index("// ---------- AGENTS ----------")
+        body = html[start:end]
+        pattern = re.compile(r"\$\{([^{}]*\b(?:f\.(?:title|detail|fix)|H\.error)\b[^{}]*)\}")
+        hits = list(pattern.finditer(body))
+        self.assertGreater(len(hits), 0)
+        for m in hits:
+            self.assertIn("esc(", m.group(1), f"unescaped interpolation: ${{{m.group(1)}}}")
+    def test_health_i18n_keys_present_in_both_languages(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        start = html.index("const I18N={")
+        end = html.index("const T=(k,v)=>")
+        block = html[start:end]
+        split = block.index("\nes:{")
+        en_block, es_block = block[:split], block[split:]
+        for key in ("health", "recheck", "checking", "ranAt", "copy", "copied", "healthOk", "sevCrit", "sevWarn", "sevInfo"):
+            self.assertIn(key + ":", en_block, key)
+            self.assertIn(key + ":", es_block, key)
 if __name__ == "__main__": unittest.main()
