@@ -21,6 +21,7 @@ class App:
         self.data = scan.ensure(cfg)
         self.live = LIVE.get(cfg)
         self._roster = None; self._rows = None; self._items = None; self._t = 0
+        self._skills = None; self._skills_t = 0
 
     # ---- helpers ----
     def roster(self, fresh=False):
@@ -30,6 +31,25 @@ class App:
                 self._rows, self._items = self._roster.load(refresh_usage=fresh or self._rows is None)
                 self._t = time.time()
             return self._roster, self._rows, self._items
+
+    def skills(self, fresh=False):
+        """Same TTL-cached pattern as roster(): usage.refresh() greps every transcript under
+        ~/.claude/projects, so a request thread must not pay that cost on every GET."""
+        with self.lock:
+            if fresh or self._skills is None or time.time() - self._skills_t > 30:
+                rows = SK.load(self.cfg, self.data)
+                for r in rows: r["tool"] = "claude"
+                cx = self.data.get("codex", {})
+                if cx.get("present"):
+                    for r in SK.scan_dir(os.path.join(cx["home"], "skills"), "global"):
+                        r["tool"] = "codex"; rows.append(r)
+                p = os.path.join(self.cfg["state_dir"], "usage-skills.json")
+                items, meta = usage.refresh(p, os.path.join(self.cfg["claude_home"], "projects"), "skills",
+                                            {k: v for k, v in self.roots().items() if k != "global"})
+                for r in rows:
+                    u = usage.for_agent(items, r["name"], r["project"]); r["uses"] = u["total"]; r["last"] = u["last"]; r["uses_here"] = u["here"]
+                self._skills = (rows, meta); self._skills_t = time.time()
+            return self._skills
 
     def roots(self):
         return scan.project_roots(self.cfg, self.data)
@@ -67,17 +87,7 @@ class App:
                 "codex_present": bool(self.data.get("codex", {}).get("present"))}
 
     def api_skills(self):
-        rows = SK.load(self.cfg, self.data)
-        for r in rows: r["tool"] = "claude"
-        cx = self.data.get("codex", {})
-        if cx.get("present"):
-            for r in SK.scan_dir(os.path.join(cx["home"], "skills"), "global"):
-                r["tool"] = "codex"; rows.append(r)
-        p = os.path.join(self.cfg["state_dir"], "usage-skills.json")
-        items, meta = usage.refresh(p, os.path.join(self.cfg["claude_home"], "projects"), "skills",
-                                    {k: v for k, v in self.roots().items() if k != "global"})
-        for r in rows:
-            u = usage.for_agent(items, r["name"], r["project"]); r["uses"] = u["total"]; r["last"] = u["last"]; r["uses_here"] = u["here"]
+        rows, meta = self.skills()
         return {"skills": rows, "window": meta.get("history_window_from")}
 
     def api_projects(self): return {"projects": PROJ.load(self.data)}
@@ -111,6 +121,7 @@ class App:
         if refs and not b.get("force"):
             return {"ok": False, "message": f"{len(refs)} file(s) reference {b['name']!r}", "references": refs}
         ok, msg = SK.archive_path(b["path"], b["project"], os.path.join(self.cfg["claude_home"], "_archive"))
+        if ok: self.skills(fresh=True)
         return {"ok": ok, "message": msg, "references": refs}
     def api_save_doc(self, b):
         return self.docs().save(b["project"], b["rel"], b["content"], b["hash"], working=self.working())
@@ -140,13 +151,24 @@ class App:
         items = SESS.load(self.cfg)
         if proj:
             items = [s for s in items if s.get("project") == proj]
+        cutoff = time.time() - days * 86400
+        def _recent(s):
+            started = s.get("started")
+            if not started:
+                return False
+            try:
+                from datetime import datetime
+                return datetime.fromisoformat(started).timestamp() >= cutoff
+            except Exception:
+                return False
+        items = [s for s in items if _recent(s)]
         return {"sessions": items, "days": days, "active_seconds": (self.cfg.get("live") or {}).get("active_seconds", 600)}
 
     def api_rescan(self, b):
         def go():
             d = scan.run(self.cfg); scan.save(self.cfg, d)
             with self.lock:
-                self.data = d; self._roster = None
+                self.data = d; self._roster = None; self._skills = None
         threading.Thread(target=go, daemon=True).start()
         return {"ok": True, "message": "rescanning in the background"}
 

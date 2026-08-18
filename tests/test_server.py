@@ -1,4 +1,4 @@
-import json, os, threading, unittest, urllib.request
+import json, os, threading, time, unittest, urllib.request
 import _helpers  # noqa
 from _env import Env
 from cabina import server, scan
@@ -43,6 +43,53 @@ class TestServer(unittest.TestCase):
         self.assertTrue(any("overrides" in w for w in by[("alpha", "reviewer")]["warnings"]))  # shadows global undeclared
         self.assertEqual({a["tool"] for a in d["agents"]}, {"claude", "codex"})
         self.assertTrue(d["codex_present"])
+    def test_skills_endpoint_caches_usage_refresh_and_invalidates_on_archive(self):
+        # H2: api_skills used to call usage.refresh() (a grep over ~/.claude/projects) on
+        # every request, unlike api_agents' cached, TTL'd roster(). Mirror that pattern for
+        # skills: two consecutive GETs must refresh usage only once; archiving a skill must
+        # invalidate the cache so the next GET refreshes again.
+        from cabina import usage
+        from unittest import mock
+        tdir = os.path.join(self.env.alpha, ".claude", "skills", "throwaway")
+        os.makedirs(tdir, exist_ok=True)
+        open(os.path.join(tdir, "SKILL.md"), "w").write("---\nname: throwaway\ndescription: t\n---\n")
+        self.app._skills = None                      # force a real recompute inside the patched block below
+        with mock.patch("cabina.server.usage.refresh", wraps=usage.refresh) as m:
+            s1 = self.get("/api/skills")
+            self.assertTrue(any(x["name"] == "throwaway" for x in s1["skills"]))
+            self.get("/api/skills")
+            self.assertEqual(m.call_count, 1)                 # second GET served from cache: no re-refresh
+            code, r = self.post("/api/archive-skill", {"name": "throwaway", "path": tdir, "project": "alpha"})
+            self.assertTrue(r["ok"], r)
+            s2 = self.get("/api/skills")
+            self.assertEqual(m.call_count, 2)                 # archive invalidated the cache: refreshes again
+            self.assertFalse(any(x["name"] == "throwaway" for x in s2["skills"]))
+    def test_rescan_invalidates_skills_cache(self):
+        # Reviewer-verified regression: api_rescan's background go() clears self._roster but
+        # not self._skills, so Skills could show up to 30s of stale data after a rescan even
+        # though Agents (via roster()) refreshes instantly.
+        self.app.skills()                                   # warm the cache with the pre-existing skill set
+        tdir = os.path.join(self.env.alpha, ".claude", "skills", "rescan-new")
+        os.makedirs(tdir, exist_ok=True)
+        open(os.path.join(tdir, "SKILL.md"), "w").write("---\nname: rescan-new\ndescription: r\n---\n")
+        self.app.api_rescan({})
+        for _ in range(150):
+            if self.app._roster is None:
+                break
+            time.sleep(0.02)
+        else:
+            self.fail("rescan did not complete in time")
+        rows, _ = self.app.skills()                          # still within the 30s TTL: must reflect the rescan
+        self.assertTrue(any(x["name"] == "rescan-new" for x in rows))
+        # cleanup: this fixture is shared across the whole TestServer class (setUpClass), so
+        # remove the added skill and re-sync data/caches before the next test reads them.
+        import shutil
+        shutil.rmtree(tdir)
+        self.app.api_rescan({})
+        for _ in range(150):
+            if self.app._roster is None:
+                break
+            time.sleep(0.02)
     def test_skills_projects_harness_docs_live(self):
         s = self.get("/api/skills"); self.assertEqual({(x["name"], x["tool"]) for x in s["skills"]}, {("gsk", "claude"), ("deploy", "claude"), ("gsk", "codex")})
         self.assertEqual(next(x for x in s["skills"] if x["name"] == "deploy")["uses"], 1)
@@ -60,6 +107,24 @@ class TestServer(unittest.TestCase):
         self.assertIn("active_seconds", d)
         d2 = self.get("/api/activity?project=alpha&days=30")
         self.assertTrue(d2["sessions"]); self.assertTrue(all(s["project"] == "alpha" for s in d2["sessions"]))
+    def test_activity_endpoint_filters_by_days(self):
+        # H3(i): api_activity received `days` but returned EVERY cached session regardless
+        # (measured: identical payload size for days=7 and days=365). Filter by `started`.
+        from cabina import sessions as SESS
+        from datetime import datetime, timedelta, timezone
+        old_ts = (datetime.now(timezone.utc) - timedelta(days=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        sdir = os.path.join(self.env.claude, "projects", "-work-alpha")
+        old_id = "sess-old-b3"
+        with open(os.path.join(sdir, old_id + ".jsonl"), "w") as f:
+            f.write(json.dumps({"type": "user", "timestamp": old_ts, "cwd": self.env.alpha, "gitBranch": "main",
+                                 "sessionId": old_id, "version": "1.0.0",
+                                 "message": {"role": "user", "content": [{"type": "text", "text": "old session"}]}}) + "\n")
+        SESS.refresh(self.env.cfg, days=3650)
+        d_wide = self.get("/api/activity?project=alpha&days=3650")
+        self.assertTrue(any(s["session_id"] == old_id for s in d_wide["sessions"]))
+        d_narrow = self.get("/api/activity?project=alpha&days=1")
+        self.assertFalse(any(s["session_id"] == old_id for s in d_narrow["sessions"]))
+        self.assertLessEqual(len(d_narrow["sessions"]), len(d_wide["sessions"]))
     def test_post_requires_token(self):
         code, _ = self.post("/api/open", {"path": "/tmp"}, token="wrong"); self.assertEqual(code, 403)
         code, _ = self.post("/api/open", {"path": "/tmp"}, token=""); self.assertEqual(code, 403)
@@ -96,9 +161,23 @@ class TestServer(unittest.TestCase):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
         self.assertIn("function mchip", html)
         self.assertIn("function renderHubBanner", html)
+    def test_boot_lazy_loads_non_default_tabs(self):
+        # H3(ii): the boot fetched agents, skills, projects, harness, activity, docs and hub in
+        # one burst regardless of which tab was visible. Only what the header needs (agents,
+        # live, hub banner) should load eagerly; the rest loads on first visit via ensureLoaded.
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        self.assertNotIn("loadSkills();loadProjs();loadHar();loadActivity();", html)
+        self.assertIn("function ensureLoaded", html)
     def test_activity_supports_aggregated_shape(self):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
         self.assertIn("function renderActivityAggregated", html)
+    def test_live_polling_pauses_when_hidden_and_resumes_on_visible(self):
+        # H4: setInterval(loadLive,1000) ran forever regardless of tab visibility, each tick
+        # launching 2 herdr subprocesses. Guard on document.hidden and refresh immediately on
+        # visibilitychange, instead of two separate timers.
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        self.assertIn("visibilitychange", html)
+        self.assertIn("document.hidden", html)
     def test_activity_and_hub_fields_always_escaped(self):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
         import re
