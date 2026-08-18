@@ -13,17 +13,30 @@ _LOCAL_ONLY_FIELDS = ("cwd", "source_path", "mtime", "size", "offset")
 def _strip_local_only(row):
     """R9 (cwd/source_path) + P1 (también mtime/size/offset): campos que nunca deben salir de
     esta máquina, sin importar cómo se haya construido la fila. Se aplica en el límite mismo de
-    la exportación — no confía en que quien construye la fila nunca los vuelva a agregar."""
-    return {k: v for k, v in row.items() if k not in _LOCAL_ONLY_FIELDS}
+    la exportación — no confía en que quien construye la fila nunca los vuelva a agregar.
+    Defensa adicional (privacy fix): cualquier entrada de files_touched que sea absoluta se
+    descarta aquí también, aunque _detail_row ya la haya filtrado — es la última puerta antes
+    de serializar."""
+    out = {k: v for k, v in row.items() if k not in _LOCAL_ONLY_FIELDS}
+    ft = out.get("files_touched")
+    if isinstance(ft, list):
+        out["files_touched"] = [f for f in ft if isinstance(f, str) and not os.path.isabs(f) and not f.startswith("~")]
+    return out
 
 
 def _detail_row(s, titles):
     """Una fila de `export --activity --detail`, como lista blanca explícita a partir de un
     resumen de sesión completo `s` (que SÍ trae cwd/source_path/mtime/size/offset — sessions.py
-    los guarda solo localmente, no para exportar). titles=True agrega el título."""
+    los guarda solo localmente, no para exportar). titles=True agrega el título.
+
+    Privacy fix: files_touched puede traer rutas absolutas para archivos fuera del proyecto (p.
+    ej. un scratch file bajo el home del usuario) — eso filtra el username. Solo las entradas
+    relativas salen; las descartadas se cuentan en files_outside."""
+    all_files = s.get("files_touched") or []
+    kept = [f for f in all_files if isinstance(f, str) and not os.path.isabs(f) and not f.startswith("~")]
     row = {"project": s.get("project"), "started": s.get("started"), "ended": s.get("ended"),
            "duration_s": s.get("duration_s"), "turns": s.get("turns"), "commits": s.get("commits"),
-           "branch": s.get("branch"), "files_touched": s.get("files_touched") or [],
+           "branch": s.get("branch"), "files_touched": kept, "files_outside": len(all_files) - len(kept),
            "agents": s.get("agents") or {}, "skills": s.get("skills") or {},
            "tokens": s.get("tokens") or {"in": 0, "out": 0}, "subagents": s.get("subagents", 0)}
     if titles:

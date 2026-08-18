@@ -1,7 +1,8 @@
 import json, unittest
+from unittest import mock
 import _helpers  # noqa
 from _env import Env
-from cabina import snapshot as SNAP
+from cabina import snapshot as SNAP, sessions as SESS
 
 class TestExportActivity(unittest.TestCase):
     def setUp(self):
@@ -33,6 +34,20 @@ class TestExportActivity(unittest.TestCase):
         dumped = json.dumps(out)
         self.assertNotIn("source_path", dumped)
         self.assertNotIn('"cwd"', dumped)
+
+    def test_export_activity_detail_drops_absolute_files_touched(self):
+        # Privacy fix: files_touched entries outside the project (absolute paths, e.g. scratch
+        # files under the user's home) must never leave the machine — they leak the username.
+        fake_session = {"project": "alpha", "started": "2026-08-10T09:00", "ended": None,
+                         "duration_s": 60, "turns": 1, "commits": 0, "branch": "main",
+                         "files_touched": ["src/a.py", "/Users/x/secret.py"],
+                         "agents": {}, "skills": {}, "tokens": {"in": 1, "out": 1}, "subagents": 0}
+        with mock.patch.object(SESS, "load", return_value=[fake_session]):
+            out = SNAP.export_activity(self.env.cfg, detail=True)
+        row = out["sessions"][0]
+        self.assertEqual(row["files_touched"], ["src/a.py"])
+        self.assertEqual(row["files_outside"], 1)
+        self.assertNotIn("/Users/x", json.dumps(out))
 
 class TestExportProjectsDetail(unittest.TestCase):
     # Orchestrator amendment to Tarea 28 (plan Concern 2): export() also embeds
