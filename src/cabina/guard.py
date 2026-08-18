@@ -204,6 +204,20 @@ def hooks_status(settings_path, cmd="cabina"):
     }
 
 
+def _unique_backup_path(path):
+    """`path` already carries a microsecond-resolution timestamp suffix, but a frozen or
+    coarse clock can still repeat it (two writes in the same instant). Never overwrite an
+    existing backup: append -1, -2, ... until a free name is found."""
+    if not os.path.exists(path):
+        return path
+    i = 1
+    while True:
+        cand = f"{path}-{i}"
+        if not os.path.exists(cand):
+            return cand
+        i += 1
+
+
 def hooks_write(settings_path, cmd="cabina", force=False):
     """Merge our two hooks into an existing settings.json (backup first). Idempotent.
     Guard: refuses to wire a `cmd` that does not resolve on PATH (the exact "dead hook"
@@ -217,7 +231,7 @@ def hooks_write(settings_path, cmd="cabina", force=False):
     except Exception as e:
         return False, f"cannot parse {settings_path}: {e}"
     if os.path.isfile(settings_path):
-        shutil.copy2(settings_path, settings_path + ".bak-" + datetime.now().strftime("%Y%m%d-%H%M%S"))
+        shutil.copy2(settings_path, _unique_backup_path(settings_path + ".bak-" + datetime.now().strftime("%Y%m%d-%H%M%S-%f")))
     hooks = d.setdefault("hooks", {})
     for ev, groups in hooks_snippet(cmd)["hooks"].items():
         lst = hooks.setdefault(ev, [])

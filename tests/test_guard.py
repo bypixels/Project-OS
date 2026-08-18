@@ -1,4 +1,5 @@
 import io, json, os, shutil, tempfile, unittest
+from datetime import datetime
 from unittest import mock
 import _helpers  # noqa
 from _env import Env
@@ -123,6 +124,27 @@ class TestHooksInstall(unittest.TestCase):
                 ok, msg = G.hooks_write(settings, "cabina")
             self.assertTrue(ok)
             self.assertTrue(os.path.isfile(settings))
+
+    def test_backup_names_never_collide_within_the_same_second(self):
+        # Two writes landing in the same wall-clock second (double click, or two POSTs back
+        # to back) must never produce the same backup filename — the second write would
+        # silently clobber the first backup otherwise. Freeze the clock to the same instant
+        # for both calls to force the collision that a bare %Y%m%d-%H%M%S suffix would hit.
+        with tempfile.TemporaryDirectory() as d:
+            settings = os.path.join(d, "settings.json")
+            json.dump({"hooks": {"Stop": [{"hooks": [{"command": "pre-hooks"}]}]}}, open(settings, "w"))
+            fixed = datetime(2026, 8, 18, 12, 0, 0, 123456)
+            with mock.patch.object(G, "datetime") as mdt, mock.patch.object(G, "_cmd_resolves", return_value=(True, "/usr/local/bin/cabina")):
+                mdt.now.return_value = fixed
+                ok1, _ = G.hooks_write(settings, "cabina")
+                ok2, _ = G.hooks_write(settings, "cabina")
+            self.assertTrue(ok1); self.assertTrue(ok2)
+            baks = sorted(f for f in os.listdir(d) if f.startswith("settings.json.bak-"))
+            self.assertEqual(len(baks), 2)                 # two writes -> two distinct backups, never one clobbering the other
+            self.assertNotEqual(baks[0], baks[1])
+            first = json.load(open(os.path.join(d, baks[0])))
+            self.assertEqual(first["hooks"]["Stop"][0]["hooks"][0]["command"], "pre-hooks")
+            self.assertNotIn("PreToolUse", first["hooks"])   # first backup is the PRE-hooks content
 
 
 class TestHooksStatus(unittest.TestCase):
