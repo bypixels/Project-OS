@@ -48,6 +48,9 @@ def main(argv=None):
     hk.add_argument("--cmd", default="cabina", help="command name to wire (default: cabina)")
     cf = sub.add_parser("config", help="show effective config"); cf.add_argument("--example", action="store_true", help="print an example config.toml")
 
+    ac = sub.add_parser("activity", help="session activity read from Claude Code transcripts")
+    ac.add_argument("--project"); ac.add_argument("--days", type=int, default=30); ac.add_argument("--json", action="store_true")
+
     a = ap.parse_args(argv)
     cfg = CFG.load(a.config)
 
@@ -112,6 +115,21 @@ def main(argv=None):
         if a.write:
             ok, msg = guard.hooks_write(sp, a.cmd); print(msg); return 0 if ok else 1
         print(json.dumps(guard.hooks_snippet(a.cmd), indent=2)); print(f"\n# to apply:  cabina hooks --write   (merges into {sp}, keeps a backup)"); return 0
+    if a.cmd == "activity":
+        from . import sessions
+        items = sessions.refresh(cfg, days=a.days)
+        if a.project:
+            items = [s for s in items if (s.get("project") or "").lower() == a.project.lower()]
+        if a.json:
+            print(json.dumps(items, ensure_ascii=False, indent=1)); return 0
+        print(f"\n{'project':<20} {'started':<25} {'dur':>6} {'turns':>5} {'files':>5}  title")
+        print("─" * 100)
+        for s in items[:60]:
+            dur = f"{(s['duration_s'] or 0) // 60}m"
+            print(f"{(s['project'] or '—')[:20]:<20} {(s['started'] or '—')[:24]:<25} {dur:>6} {s['turns']:>5} {len(s['files_touched']):>5}  {(s['title'] or '—')[:50]}")
+        print("─" * 100)
+        print(f"  {len(items)} sessions\n")
+        return 0
     from . import server
     port = getattr(a, "port", None); no_open = getattr(a, "no_open", False)
     server.serve(cfg, port=port, open_browser=not no_open); return 0
