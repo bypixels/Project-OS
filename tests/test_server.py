@@ -45,6 +45,14 @@ class TestServer(unittest.TestCase):
         self.assertEqual({x["project"]: x["status"] for x in h["drift"]["rules"]}, {"alpha": "diverged"})
         d = self.get("/api/docs"); self.assertTrue(any(x["rel"] == ".claude/MEMORY.md" for x in d["docs"]))
         l = self.get("/api/live"); self.assertFalse(l["ok"]); self.assertEqual(l["provider"], "none")
+    def test_activity_endpoint_serves_cache(self):
+        from cabina import sessions as SESS
+        SESS.refresh(self.env.cfg)                      # populate the cache once, synchronously, for the test
+        d = self.get("/api/activity?days=30")
+        self.assertTrue(any(s["project"] == "alpha" for s in d["sessions"]))
+        self.assertIn("active_seconds", d)
+        d2 = self.get("/api/activity?project=alpha&days=30")
+        self.assertTrue(d2["sessions"]); self.assertTrue(all(s["project"] == "alpha" for s in d2["sessions"]))
     def test_post_requires_token(self):
         code, _ = self.post("/api/open", {"path": "/tmp"}, token="wrong"); self.assertEqual(code, 403)
         code, _ = self.post("/api/open", {"path": "/tmp"}, token=""); self.assertEqual(code, 403)

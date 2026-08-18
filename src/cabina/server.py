@@ -10,6 +10,7 @@ from .docs import Docs
 from .i18n import STRINGS
 
 STATIC = os.path.join(os.path.dirname(__file__), "static")
+_activity_refresh_lock = threading.Lock()   # non-blocking: skip a refresh already in flight, never queue one behind the request thread
 
 
 class App:
@@ -125,6 +126,22 @@ class App:
     def api_in_repo(self, q):
         p = os.path.expanduser(q.get("path", [""])[0]); root = GO.repo_root(p)
         return {"in_repo": root is not None, "root": root}
+    def api_activity(self, q):
+        days = int((q.get("days") or ["30"])[0])
+        proj = (q.get("project") or [""])[0]
+        def go():
+            if not _activity_refresh_lock.acquire(blocking=False):
+                return                                    # a refresh is already running; this GET serves the cache as-is
+            try:
+                SESS.refresh(self.cfg, days=days)
+            finally:
+                _activity_refresh_lock.release()
+        threading.Thread(target=go, daemon=True).start()   # never parse on the request thread
+        items = SESS.load(self.cfg)
+        if proj:
+            items = [s for s in items if s.get("project") == proj]
+        return {"sessions": items, "days": days, "active_seconds": (self.cfg.get("live") or {}).get("active_seconds", 600)}
+
     def api_rescan(self, b):
         def go():
             d = scan.run(self.cfg); scan.save(self.cfg, d)
@@ -138,7 +155,8 @@ def make_handler(app):
     GETS = {"/api/agents": lambda q: app.api_agents(), "/api/skills": lambda q: app.api_skills(),
             "/api/projects": lambda q: app.api_projects(), "/api/harness": lambda q: app.api_harness(),
             "/api/live": lambda q: app.api_live(), "/api/docs": lambda q: app.api_docs(),
-            "/api/doc": app.api_doc, "/api/references": app.api_references, "/api/in-repo": app.api_in_repo}
+            "/api/doc": app.api_doc, "/api/references": app.api_references, "/api/in-repo": app.api_in_repo,
+            "/api/activity": app.api_activity}
     POSTS = {"/api/archive": app.api_archive, "/api/create": app.api_create, "/api/archive-skill": app.api_archive_skill,
              "/api/save-doc": app.api_save_doc, "/api/open": app.api_open, "/api/focus": app.api_focus, "/api/rescan": app.api_rescan, "/api/commit": app.api_commit}
 
