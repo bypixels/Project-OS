@@ -1,4 +1,6 @@
-# cabina
+# AI Projects Monitor (`cabina`)
+
+Package name on PyPI: `ai-projects-monitor`; the command is `cabina`.
 
 A control plane for a [Claude Code](https://claude.com/claude-code) environment: **agents, skills,
 harness and docs — across all your projects — under one contract, with a health check that runs on
@@ -95,7 +97,7 @@ two tools diverges silently, so cabina checks:
 ## Install
 
 ```sh
-pipx install cabina          # or: pip install cabina
+pipx install ai-projects-monitor          # or: pip install ai-projects-monitor
 cabina scan                  # first cache (~2 s)
 cabina                       # opens http://127.0.0.1:8930
 ```
