@@ -239,7 +239,7 @@ que un test llama EXPLÍCITAMENTE cuando de verdad necesita simular actividad re
               os.utime(p, (t, t))
   ```
 - [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_sessions.py" -v` → `Ran 1 test ... OK`.
-- [ ] Paso 5: `git add tests/_env.py tests/test_sessions.py && git commit -m "test: add a real-shaped synthetic transcript fixture for sessions.py, defaulting to stale mtimes (sidechain, cwd change, subagent tokens)"`
+- [x] Paso 5: `git add tests/_env.py tests/test_sessions.py && git commit -m "test: add a real-shaped synthetic transcript fixture for sessions.py, defaulting to stale mtimes (sidechain, cwd change, subagent tokens)"`
 
 ### Tarea 9: `usage._project_of` — resolver symlinks (fix compartido, R5)
 **Archivos:** Modificar `src/cabina/usage.py`, `tests/test_usage.py`
@@ -278,7 +278,7 @@ resolver symlinks en ambos lados de la comparación primero, como fix compartido
 - [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_usage.py" -v` → todos en verde
       (incluye los tests existentes de atribución, que usan rutas ficticias sin symlinks —
       `realpath` no les cambia el resultado).
-- [ ] Paso 5: `git commit -am "fix: usage._project_of resolves symlinks on both sides (shared fix, needed by sessions.py)"`
+- [x] Paso 5: `git commit -am "fix: usage._project_of resolves symlinks on both sides (shared fix, needed by sessions.py)"`
 
 ### Tarea 10: `_read_new_lines` — lectura incremental por byte-offset
 **Archivos:** Crear `src/cabina/sessions.py` · Modificar `tests/test_sessions.py`
@@ -336,7 +336,7 @@ El primer bloque del módulo, y la pieza que hace posible R2: leer SOLO lo que s
       return lines, new_offset
   ```
 - [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_sessions.py" -v` → `Ran 2 tests ... OK`.
-- [ ] Paso 5: `git add src/cabina/sessions.py tests/test_sessions.py && git commit -m "feat: sessions.py — byte-offset incremental line reader"`
+- [x] Paso 5: `git add src/cabina/sessions.py tests/test_sessions.py && git commit -m "feat: sessions.py — byte-offset incremental line reader"`
 
 ### Tarea 11: `_merge_lines`/`_new_state` — turnos, tokens, exclusión de sidechain (R6)
 **Archivos:** Modificar `src/cabina/sessions.py`, `tests/test_sessions.py`
@@ -426,7 +426,7 @@ hora de fin de la sesión.
       return state
   ```
 - [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_sessions.py" -v` → `Ran 4 tests ... OK`.
-- [ ] Paso 5: `git commit -am "feat: sessions.py — turns/tokens accumulator, excluding sidechain lines from started/ended too (R6)"`
+- [x] Paso 5: `git commit -am "feat: sessions.py — turns/tokens accumulator, excluding sidechain lines from started/ended too (R6)"`
 
 ### Tarea 12: extracción de herramientas — `tool_calls`, `files_touched`, `agents`, `skills`, `commits`
 **Archivos:** Modificar `src/cabina/sessions.py`, `tests/test_sessions.py`
@@ -464,7 +464,7 @@ hora de fin de la sesión.
                       state["commits"] += 1
   ```
 - [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_sessions.py" -v` → `Ran 5 tests ... OK`.
-- [ ] Paso 5: `git commit -am "feat: sessions.py — extract tool_calls/files_touched/agents/skills/commits (excludes sidechain)"`
+- [x] Paso 5: `git commit -am "feat: sessions.py — extract tool_calls/files_touched/agents/skills/commits (excludes sidechain)"`
 
 ### Tarea 13: `_finalize` — mayoría de cwd, `cwd_changed`, atribución, hora local (R5, R7)
 **Archivos:** Modificar `src/cabina/sessions.py`, `tests/test_sessions.py`
@@ -554,7 +554,7 @@ convierte fechas a hora LOCAL con offset (no UTC crudo).
   arma `_finalize` no los tiene, y eso está bien: la Tarea 14 los suma antes de que la Tarea 15
   aplique la lista blanca de campos.)
 - [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_sessions.py" -v` → `Ran 7 tests ... OK`.
-- [ ] Paso 5: `git commit -am "feat: sessions.py — _finalize: majority-cwd attribution, cwd_changed, local-time timestamps (R5, R7)"`
+- [x] Paso 5: `git commit -am "feat: sessions.py — _finalize: majority-cwd attribution, cwd_changed, local-time timestamps (R5, R7)"`
 
 ### Tarea 14: subagentes — conteo y tokens SIN sumar al total (R3)
 **Archivos:** Modificar `src/cabina/sessions.py`, `tests/test_sessions.py`
@@ -618,7 +618,7 @@ guardada APARTE — nunca mezclada con `tokens` de la sesión principal.
   y en `_finalize`, en el `return {...}`, agregar dos claves:
   `"subagent_tokens": _subagent_tokens(source_path), "subagents": _subagents_count(source_path),`
 - [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_sessions.py" -v` → `Ran 8 tests ... OK`.
-- [ ] Paso 5: `git commit -am "feat: sessions.py — count subagents and sum their tokens separately, unsummed (R3)"`
+- [x] Paso 5: `git commit -am "feat: sessions.py — count subagents and sum their tokens separately, unsummed (R3)"`
 
 ### Tarea 15: guardia de privacidad — lista blanca exacta de campos, en el resumen Y en el estado a medio terminar (R8)
 **Archivos:** Modificar `src/cabina/sessions.py` · `tests/test_sessions.py` · `tests/test_breaks.py`
@@ -700,7 +700,7 @@ antes de tocar disco, en vez de que el guard dependa para siempre de que nadie c
 - [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_sessions.py" -v` → `Ran 9 tests ... OK`;
       `python3 -m unittest discover -s tests -p "test_breaks.py" -v` → `Ran 9 tests ... OK` (los 7
       break-tests existentes + estos 2).
-- [ ] Paso 5: `git commit -am "feat: sessions.py — exact field allowlist guard on both the summary AND the persisted partial_state (R8), break-tested"`
+- [x] Paso 5: `git commit -am "feat: sessions.py — exact field allowlist guard on both the summary AND the persisted partial_state (R8), break-tested"`
 
 ### Tarea 16: registro en disco (`sessions.json`) — cargar y guardar
 **Archivos:** Modificar `src/cabina/sessions.py`, `tests/test_sessions.py`
@@ -738,7 +738,7 @@ antes de tocar disco, en vez de que el guard dependa para siempre de que nadie c
       os.replace(tmp, path)
   ```
 - [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_sessions.py" -v` → `Ran 10 tests ... OK`.
-- [ ] Paso 5: `git commit -am "feat: sessions.py — atomic save/load for the sessions.json registry"`
+- [x] Paso 5: `git commit -am "feat: sessions.py — atomic save/load for the sessions.json registry"`
 
 ### Tarea 17: `refresh(cfg, days=30)` — orquesta el parseo incremental + retención (R2, R4)
 **Archivos:** Modificar `src/cabina/sessions.py`, `src/cabina/config.py`, `tests/test_sessions.py`, `tests/test_breaks.py`
@@ -891,7 +891,7 @@ sobrevive cuando no debería.
   ```
 - [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_sessions.py" -v` → `Ran 14 tests ... OK`;
       `python3 -m unittest discover -s tests -p "test_breaks.py" -v` → `Ran 10 tests ... OK`.
-- [ ] Paso 5: `git commit -am "feat: sessions.py — refresh() with byte-offset incremental parsing and existence-independent retention (R2, R4), retention prune break-tested"`
+- [x] Paso 5: `git commit -am "feat: sessions.py — refresh() with byte-offset incremental parsing and existence-independent retention (R2, R4), retention prune break-tested"`
 
 ### Tarea 18: `load(cfg)` — leer el caché sin tocar disco de nuevo
 **Archivos:** Modificar `src/cabina/sessions.py`, `tests/test_sessions.py`
@@ -914,7 +914,7 @@ sobrevive cuando no debería.
       return sorted((e["summary"] for e in reg.values()), key=lambda s: s.get("started") or "", reverse=True)
   ```
 - [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_sessions.py" -v` → `Ran 15 tests ... OK`.
-- [ ] Paso 5: `git commit -am "feat: sessions.py — load() reads the cached registry only, no re-parse"`
+- [x] Paso 5: `git commit -am "feat: sessions.py — load() reads the cached registry only, no re-parse"`
 
 ---
 
@@ -977,7 +977,7 @@ igual que `cabina agents`/`cabina check` ya bloquean mientras trabajan.
           return 0
   ```
 - [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_cli.py" -v` → `Ran 1 test ... OK`.
-- [ ] Paso 5: `git commit -am "feat: cabina activity — CLI surface for session history"`
+- [x] Paso 5: `git commit -am "feat: cabina activity — CLI surface for session history"`
 
 ### Tarea 20: `live.TranscriptProvider` — señal ADITIVA de "activo", nunca reemplaza a herdr (R1)
 **Archivos:** Modificar `src/cabina/live.py`, `src/cabina/config.py` · Crear `tests/test_live.py`
@@ -1101,7 +1101,7 @@ se calcula mirando tanto el archivo de sesión como cualquier archivo bajo `<sid
   ```
 - [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_live.py" -v` → `Ran 3 tests ... OK`.
       Correr la suite completa una vez para confirmar que nada existente se rompió.
-- [ ] Paso 5: `git commit -am "feat: live.TranscriptProvider — additive 'active' signal from transcript mtimes, never replacing herdr (R1)"`
+- [x] Paso 5: `git commit -am "feat: live.TranscriptProvider — additive 'active' signal from transcript mtimes, never replacing herdr (R1)"`
 
 ### Tarea 21: `server.App.working()` se amplía con la señal de transcripciones — guard + break-test (R1)
 **Archivos:** Modificar `src/cabina/server.py`, `tests/test_breaks.py`
@@ -1174,7 +1174,7 @@ Además, el break-test de esta tarea ya no se queda en `App.working()`: ejercita
       seguir en verde (ver la nota de arriba: la fixture llega fría por defecto desde la Tarea 8, así
       que `working()` no incluye "alpha" a menos que un test llame `env.touch_session(fresh=True)`
       explícitamente).
-- [ ] Paso 5: `git commit -am "feat: server — App.working() unions in transcript-active projects, additively (R1); break-test exercises the real docs().save() path"`
+- [x] Paso 5: `git commit -am "feat: server — App.working() unions in transcript-active projects, additively (R1); break-test exercises the real docs().save() path"`
 
 ### Tarea 22: `GET /api/activity` — sirve el último snapshot, refresca en segundo plano (R2)
 **Archivos:** Modificar `src/cabina/server.py`, `tests/test_server.py`
@@ -1212,7 +1212,7 @@ disparar un hilo de fondo y responder de inmediato con lo último que hay en cac
   ```
   y en `make_handler`, agregar al diccionario `GETS`: `"/api/activity": app.api_activity,`
 - [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_server.py" -v` → todos en verde.
-- [ ] Paso 5: `git commit -am "feat: server — GET /api/activity serves the cached snapshot, refreshes off the request thread (R2)"`
+- [x] Paso 5: `git commit -am "feat: server — GET /api/activity serves the cached snapshot, refreshes off the request thread (R2)"`
 
 ### Tarea 23: MCP — `cabina_activity(project, days)`, `project` obligatorio, sin títulos/rutas (R11)
 **Archivos:** Modificar `src/cabina/mcp.py`, `tests/test_mcp.py`
@@ -1261,7 +1261,7 @@ lista de sesiones con forma fija `{started, ended, duration_s, turns, commits, a
     ```
   - en `handle()`, agregar al diccionario de despacho: `"cabina_activity": self.t_activity,`
 - [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_mcp.py" -v` → todos en verde.
-- [ ] Paso 5: `git commit -am "feat: MCP — cabina_activity requires project, never returns titles/cwd/paths (R11)"`
+- [x] Paso 5: `git commit -am "feat: MCP — cabina_activity requires project, never returns titles/cwd/paths (R11)"`
 
 ### Tarea 24: `cabina brief` gana una línea — "última sesión aquí"
 **Archivos:** Modificar `src/cabina/guard.py`, `src/cabina/i18n.py`, `tests/test_guard.py`
@@ -1314,7 +1314,7 @@ lista de sesiones con forma fija `{started, ended, duration_s, turns, commits, a
                                              title=last.get("title") or "(untitled)", ago=_ago(last.get("ended") or last.get("started"))))
   ```
 - [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_guard.py" -v` → todos en verde.
-- [ ] Paso 5: `git commit -am "feat: brief() — one line with the last session recorded in this project"`
+- [x] Paso 5: `git commit -am "feat: brief() — one line with the last session recorded in this project"`
 
 ### Tarea 25: UI — pestaña "Actividad" (lista + detalle + timeline de 14 días + "activo hace Ns")
 **Archivos:** Modificar `src/cabina/static/index.html`, `tests/test_server.py`
@@ -1394,7 +1394,42 @@ del día siguiente van en barras distintas, no en la misma.
 - [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_server.py" -v` → todos en verde.
       Verificación manual complementaria (no automatizada): `PYTHONPATH=src python3 -m cabina ui`
       con datos reales, click en "Actividad" (skill `run`).
-- [ ] Paso 5: `git commit -am "feat: UI — Activity tab (session list, detail, 14-day timeline, 'active Ns ago' badge)"`
+- [x] Paso 5: `git commit -am "feat: UI — Activity tab (session list, detail, 14-day timeline, 'active Ns ago' badge)"`
+
+---
+
+## Enmiendas aplicadas durante la ejecución (Fase 1/1b)
+
+Durante la ejecución de Fase 1/1b, además de las tareas planeadas, se aplicaron las siguientes
+correcciones (algunas durante la implementación original, otras a partir de una revisión de código
+independiente posterior). Se documentan aquí, con el hash del commit que las introdujo, para que no
+queden implícitas:
+
+- **Lector de línea parcial** (`_read_new_lines` nunca consume una línea final sin `\n`, porque una
+  transcripción viva se sigue escribiendo mientras cabina la lee): `fa09866`.
+- **Atribución por repositorio git de respaldo + nombre determinístico**: primero, atribuir una
+  sesión a su repo git aunque no tenga `.claude/` (`ac7198f`); después, al detectar que el nombre
+  dependía del orden de escaneo, se corrigió para que sea SIEMPRE la ruta relativa a la raíz
+  contenedora — determinístico sin importar qué más se haya escaneado antes — y para que
+  `files_touched` de esos repos también quede relativizado (`76cea45`).
+- **Un solo centinela `"unknown"`** para sesiones sin proyecto atribuible, nunca `None`: `b2ad476`.
+- **Tokens de subagentes leídos incrementalmente por offset**, igual que el archivo de sesión
+  propio, en vez de releer la transcripción completa en cada refresh: `7c1ba71`.
+- **`TranscriptProvider` lee la cola de la transcripción, no la cabeza**: una sesión que cambia de
+  proyecto a mitad de camino (un `cd` a otro repo) quedaba mal atribuida al cwd de arranque; ahora
+  se lee el último ~64 KB del archivo y se usa la ÚLTIMA coincidencia de `cwd`, con la cabeza como
+  respaldo solo si la cola no tiene ninguna: `99fdaab`.
+- **Strings TOML literales para rutas en configs de subproceso** (una ruta de Windows con backslash
+  rompe `tomllib` si va entre comillas dobles): `41e93c8`.
+- **Canario R8 hecho real**: el canario que probaba "el registro en disco nunca contiene texto de
+  prompt" seguía en verde aunque se desactivara la guarda de redacción, porque `_merge_lines` nunca
+  copiaba texto crudo al estado — no había nada que la guarda pudiera atrapar. Se reemplazó por un
+  canario que envuelve el `_merge_lines` real e inyecta el marcador, así la guarda del punto de
+  escritura queda genuinamente ejercida: `7bd7fab`.
+- **Test de resiliencia por archivo**: `refresh()` ya toleraba que una transcripción individual
+  fallara al leerse (no abortaba las demás), pero nada lo ejercitaba de punta a punta; se agregó un
+  segundo archivo de sesión forzado a fallar y se verificó que el resto de las sesiones y el
+  registro en disco sobreviven: `eab174b`.
 
 ---
 
