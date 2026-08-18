@@ -169,6 +169,12 @@ class TestServer(unittest.TestCase):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
         self.assertIn("function projKey", html)
         self.assertIn("projKey(y)===S.sel", html)
+    def test_harness_row_and_detail_keyed_by_name_and_machine(self):
+        # G1: harness rows used e.name alone as key — in hub mode two machines can both have a
+        # project called "alpha", so the detail always resolved the first one. Mirror projKey.
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        self.assertIn("function harKey", html)
+        self.assertIn("harKey(x)===name", html)
     def test_unknown_routes(self):
         with self.assertRaises(urllib.error.HTTPError): self.get("/api/nope")
         code, _ = self.post("/api/nope", {}); self.assertEqual(code, 404)

@@ -192,6 +192,21 @@ class TestHubServer(unittest.TestCase):
                      "workflows": 0, "worktrees_mb": 0, "worktrees_detail": []}.items():
             self.assertEqual(row[k], v, k)
 
+    def test_api_harness_returns_states_with_name_machine_and_safe_defaults(self):
+        # G1: snapshot.export()'s harness rows carry `project` (not `name`) and only
+        # {level, hooks_dead, hooks_broken} — the UI's renderHarness/renderHarDetail read
+        # e.name plus several other keys a hub row never exports. Without a `name`, clicking
+        # a harness row in hub mode could never resolve its detail (silent no-op).
+        d = self.get("/api/harness")
+        row = d["states"][0]
+        self.assertEqual(row["name"], "alpha")
+        self.assertEqual(row["machine"], "m1")
+        self.assertEqual(row["level"], "partial")
+        for k, v in {"hooks_active": [], "hooks": [], "missing": [], "hooks_helpers": [],
+                     "memory_days": None, "runlog": False, "has": {}, "path": "", "rules": 0,
+                     "workflows": 0}.items():
+            self.assertEqual(row[k], v, k)
+
     def test_post_is_always_405(self):
         import urllib.request, urllib.error
         req = urllib.request.Request(f"http://127.0.0.1:{self.port}/api/rescan", data=b"{}", method="POST")

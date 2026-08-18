@@ -162,8 +162,17 @@ class HubApp:
         return {"projects": rows}
 
     def api_harness(self, q=None):
+        # snapshot.export()'s harness rows carry `project` (not `name`) and only {level,
+        # hooks_dead, hooks_broken} — renderHarness/renderHarDetail also read hooks_active,
+        # hooks, missing, hooks_helpers, memory_days, runlog, has, path, rules, workflows,
+        # none of which a hub row exports. Without `name` a click never resolved its detail
+        # (silent no-op); the rest default here so a hub row never throws.
         m = self._merged()["merged"]
-        return {"states": m["harness"], "runlogs": [], "drift": {"codex_present": False}}
+        defaults = {"hooks_active": [], "hooks": [], "missing": [], "hooks_helpers": [],
+                    "memory_days": None, "runlog": False, "has": {}, "path": "", "rules": 0,
+                    "workflows": 0}
+        states = [{**defaults, **h, "name": h.get("name") or h.get("project")} for h in m["harness"]]
+        return {"states": states, "runlogs": [], "drift": {"codex_present": False}}
 
     def api_activity(self, q=None):
         act = self._merged()["merged"]["activity"]
