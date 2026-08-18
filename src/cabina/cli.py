@@ -8,7 +8,7 @@
   cabina fleet           terminal TUI (live provider + roster)
   cabina config          print the effective config / write an example
 """
-import argparse, json, os, sys
+import argparse, json, os, sys, textwrap
 from . import __version__, config as CFG
 
 
@@ -49,7 +49,7 @@ def main(argv=None):
     br = sub.add_parser("brief", help="hook: SessionStart — print a short health/context brief"); br.add_argument("--cwd")
     hk = sub.add_parser("hooks", help="print the settings.json entries for guard+brief; --write merges them")
     hk.add_argument("--write", action="store_true"); hk.add_argument("--settings", help="path to settings.json (default: ~/.claude/settings.json)")
-    hk.add_argument("--cmd", default="cabina", help="command name to wire (default: cabina)")
+    hk.add_argument("--cmd", dest="hook_cmd", default="cabina", help="command name to wire (default: cabina)")
     cf = sub.add_parser("config", help="show effective config"); cf.add_argument("--example", action="store_true", help="print an example config.toml")
 
     ac = sub.add_parser("activity", help="session activity read from Claude Code transcripts")
@@ -100,7 +100,14 @@ def main(argv=None):
         return 0
     if a.cmd == "compare":
         from . import snapshot
-        A = json.load(open(a.a, encoding="utf-8")); B = json.load(open(a.b, encoding="utf-8"))
+        def _load(path):
+            try:
+                return json.load(open(path, encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as e:
+                print(f"error: cannot read {path}: {e}", file=sys.stderr); return None
+        A = _load(a.a); B = _load(a.b) if A is not None else None
+        if A is None or B is None:
+            return 2
         print(snapshot.render_compare(snapshot.compare(A, B), A.get("machine") or a.a, B.get("machine") or a.b)); return 0
     if a.cmd == "init":
         from . import repo
@@ -128,8 +135,8 @@ def main(argv=None):
         from . import guard
         sp = a.settings or os.path.join(cfg["claude_home"], "settings.json")
         if a.write:
-            ok, msg = guard.hooks_write(sp, a.cmd); print(msg); return 0 if ok else 1
-        print(json.dumps(guard.hooks_snippet(a.cmd), indent=2)); print(f"\n# to apply:  cabina hooks --write   (merges into {sp}, keeps a backup)"); return 0
+            ok, msg = guard.hooks_write(sp, a.hook_cmd); print(msg); return 0 if ok else 1
+        print(json.dumps(guard.hooks_snippet(a.hook_cmd), indent=2)); print(f"\n# to apply:  cabina hooks --write   (merges into {sp}, keeps a backup)"); return 0
     if a.cmd == "activity":
         from . import sessions
         items = sessions.refresh(cfg, days=a.days)
@@ -167,6 +174,11 @@ def _agents(cfg, a):
         print(msg)
         for r in refs[:12]: print("   ", r)
         return 0 if ok else 1
+    if sys.stderr.isatty():
+        # TODO i18n: R.load() below refreshes usage by grepping every transcript under
+        # ~/.claude/projects (H2) -- can take ~10s with no other feedback; `cabina scan`
+        # keeps the cache warm so this stays fast.
+        print("scanning usage history… (cabina scan keeps this warm)", file=sys.stderr)
     rows, items = R.load()
     hom = Roster.homonyms(rows)
     out = []
@@ -187,7 +199,7 @@ def _agents(cfg, a):
     for proj, r, u, path, tool in out:
         n = u["here"] if u["attributed"] and u["here"] is not None else u["total"]
         mark = "" if u["attributed"] or hom.get(r.name, 0) < 2 else "≈"
-        det = (r.critical or r.warnings or [""])[0][:38]
+        det = textwrap.shorten((r.critical or r.warnings or [""])[0], width=38, placeholder="…")
         print(f"{r.name:<28} {proj[:20]:<20} {tool:<7} {(r.fields.get('model') or '—')[:6]:<7} {(u['last'] or '—'):<11} {n:>4}{mark:1} {r.category:<9} {det}")
     ag = [r for _, r, _, _, _ in out if r.is_agent]
     nc = sum(1 for _, _, _, _, t in out if t == "codex")
