@@ -137,4 +137,87 @@ class TestBreaks(unittest.TestCase):
             self.assertIn(env.alpha, _json.dumps(out2))                            # guard removed -> cwd leaks -> canary red
         finally:
             env.cleanup()
+
+    def test_hub_no_write_path_guard(self):
+        from cabina import hub as HUB, config as CFG
+        self.assertFalse(hasattr(HUB.HubApp, "POSTS"))
+        for m in ("api_archive", "api_create", "api_archive_skill", "api_save_doc", "api_commit", "api_open", "api_focus", "api_rescan"):
+            self.assertFalse(hasattr(HUB.HubApp, m))
+        import threading, urllib.request, urllib.error
+        from http.server import ThreadingHTTPServer
+        with tempfile.TemporaryDirectory() as d:
+            app = HUB.HubApp(d, CFG.load(None))
+            H = HUB.make_hub_handler(app)
+            def run_posts():
+                srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+                port = srv.server_address[1]
+                threading.Thread(target=srv.serve_forever, daemon=True).start()
+                try:
+                    codes = []
+                    for path in ("/api/archive", "/api/create", "/api/archive-skill", "/api/save-doc",
+                                 "/api/open", "/api/focus", "/api/rescan", "/api/commit"):
+                        req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", data=b"{}", method="POST")
+                        try:
+                            urllib.request.urlopen(req); codes.append(200)
+                        except urllib.error.HTTPError as e:
+                            codes.append(e.code)
+                    return codes
+                finally:
+                    srv.shutdown()
+            self.assertEqual(run_posts(), [405] * 8)                                  # guard present: every write route blocked
+            leaky_do_post = lambda self: self._json({"ok": True, "message": "SHOULD NEVER HAPPEN"}, 200)
+            with mock.patch.object(H, "do_POST", leaky_do_post):
+                self.assertEqual(run_posts(), [200] * 8)                              # guard removed -> canary red
+
+    def test_hub_path_confinement_guard(self):
+        from cabina import hub as HUB
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as outside:
+            secret = os.path.join(outside, "secret.json")
+            open(secret, "w").write('{"machine": "evil", "agents": [{"name": "leaked"}], "skills": [], "harness": [], "projects": []}')
+            os.symlink(secret, os.path.join(d, "escape.json"))
+            out = HUB.load_dir(d, 5)
+            self.assertEqual(out["files"][0]["status"], "outside")                     # guard present: rejected
+            self.assertEqual(out["merged"]["agents"], [])
+            with mock.patch.object(HUB, "_confined", return_value=True):               # guard disabled
+                out2 = HUB.load_dir(d, 5)
+            self.assertEqual(out2["files"][0]["status"], "ok")                          # confinement bypassed -> canary red
+            self.assertEqual(out2["merged"]["agents"][0]["name"], "leaked")
+
+    def test_hub_size_cap_guard(self):
+        # Orchestrator amendment: the size cap in load_dir must be an isolated helper
+        # (_over_cap) so this break-test can disable it without touching os.path.getsize itself.
+        from cabina import hub as HUB
+        import json as _json
+        with tempfile.TemporaryDirectory() as d:
+            open(os.path.join(d, "big.json"), "w").write(_json.dumps(
+                {"machine": "m1", "agents": [], "skills": [], "harness": [], "projects": [], "pad": "x" * 2000}))
+            out = HUB.load_dir(d, max_mb=0.001)
+            self.assertEqual(out["files"][0]["status"], "too-large")                    # guard present: rejected
+            with mock.patch.object(HUB, "_over_cap", return_value=False):               # guard disabled
+                out2 = HUB.load_dir(d, max_mb=0.001)
+            self.assertEqual(out2["files"][0]["status"], "ok")                          # cap bypassed -> the oversized file is read -> canary red
+
+    def test_hub_unreadable_file_guard(self):
+        # Orchestrator amendment: json.loads is wrapped per file via an isolated helper
+        # (_read_export). If that per-file try/except around it were ever deleted, a single
+        # broken export would make load_dir itself raise instead of marking one entry
+        # "unreadable" — this asserts the guard's actual mechanism, not just its outcome.
+        from cabina import hub as HUB
+        import json as _json
+        with tempfile.TemporaryDirectory() as d:
+            open(os.path.join(d, "bad.json"), "w").write("{not valid json")
+            open(os.path.join(d, "good.json"), "w").write(_json.dumps(
+                {"machine": "m1", "agents": [{"name": "x", "project": "p", "tool": "claude", "category": "valid", "model": "sonnet", "uses": 1}],
+                 "skills": [], "harness": [], "projects": ["p"]}))
+            real_read = HUB._read_export
+            def flaky(path):
+                if path.endswith("bad.json"):
+                    raise ValueError("boom")
+                return real_read(path)
+            with mock.patch.object(HUB, "_read_export", side_effect=flaky):
+                out = HUB.load_dir(d, 5)                                                 # must NOT raise: guard present
+            statuses = {f["name"]: f["status"] for f in out["files"]}
+            self.assertEqual(statuses["bad.json"], "unreadable")                         # the flaky file is isolated
+            self.assertEqual(statuses["good.json"], "ok")                                # the other file still loads
+            self.assertEqual(out["merged"]["agents"][0]["name"], "x")                    # its data still merged
 if __name__ == "__main__": unittest.main()

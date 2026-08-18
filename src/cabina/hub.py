@@ -11,6 +11,25 @@ def _confined(real_path, real_dir):
     return real_path == real_dir or real_path.startswith(real_dir + os.sep)
 
 
+def _over_cap(path, max_mb):
+    """Guard: True si path pesa más de max_mb MB. Aislado (no inline) por la misma razón que
+    `_confined`: un break-test puede desactivarlo sin tocar os.path.getsize en sí. Un error al
+    medir el tamaño (p. ej. el archivo desapareció) no cuenta como "demasiado grande" — cae en
+    `_read_export`, que sí lo marca "unreadable"."""
+    try:
+        return os.path.getsize(path) > max_mb * 1024 * 1024
+    except OSError:
+        return False
+
+
+def _read_export(path):
+    """Parsea UN archivo de export. Aislado para que un break-test pueda forzarlo a lanzar y
+    confirmar que el try/except por archivo alrededor de esta llamada (en load_dir) es lo que
+    evita que un export roto tumbe a los demás — no una coincidencia de que hoy nadie lo rompió."""
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
 def load_dir(dir_, max_mb=5):
     """Archivos *.json DIRECTAMENTE bajo dir_ (no recursivo). Cada archivo: confinado por
     realpath a dir_ (un symlink que escapa -> status "outside"), tope de tamaño max_mb MB (->
@@ -29,15 +48,10 @@ def load_dir(dir_, max_mb=5):
             real_path = os.path.realpath(path)
             if not _confined(real_path, real_dir):
                 entry["status"] = "outside"; files.append(entry); continue
-            try:
-                size = os.path.getsize(real_path)
-            except OSError as e:
-                entry["status"] = "unreadable"; entry["error"] = str(e); files.append(entry); continue
-            if size > max_mb * 1024 * 1024:
+            if _over_cap(real_path, max_mb):
                 entry["status"] = "too-large"; files.append(entry); continue
             try:
-                with open(real_path, encoding="utf-8") as f:
-                    d = json.load(f)
+                d = _read_export(real_path)
             except Exception as e:
                 entry["status"] = "unreadable"; entry["error"] = str(e); files.append(entry); continue
             machine = d.get("machine") or name
