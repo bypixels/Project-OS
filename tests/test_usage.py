@@ -169,5 +169,21 @@ class TestUsageHistoryRegistry(unittest.TestCase):
             self.assertEqual(items["reviewer"]["n_total"], 42)     # 40 + 2, no 2, no 40
             self.assertNotIn("n_window", items["reviewer"])        # save() ya no lo escribe
 
+    def test_scan_file_skips_regex_on_lines_without_the_needle(self):
+        # D-F1: _scan_file no debe correr _CWD.search (y por tanto _project_of) sobre lineas
+        # que ni siquiera contienen "subagent_type" o el patron de Skill — un pre-filtro de
+        # substring (barato) debe descartarlas ANTES de llegar a las regex/_project_of.
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "f.jsonl")
+            lines = ['{"timestamp":"2026-08-01","cwd":"/x","noise":"line %d"}' % i for i in range(20)]
+            lines[3] = '{"timestamp":"2026-08-01","cwd":"/x","subagent_type":"reviewer"}'
+            lines[11] = '{"timestamp":"2026-08-01","cwd":"/x","name":"Skill","input":{"skill":"deploy"}}'
+            open(p, "w").write("\n".join(lines) + "\n")
+            with mock.patch.object(U, "_project_of", wraps=U._project_of) as spy:
+                agents, skills, _ = U._scan_file(p, 0, roots={})
+            self.assertEqual(agents["reviewer"]["n"], 1)
+            self.assertEqual(skills["deploy"]["n"], 1)
+            self.assertLessEqual(spy.call_count, 2)   # hoy: 20 (una por linea, sin pre-filtro)
+
 if __name__ == "__main__":
     unittest.main()

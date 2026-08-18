@@ -72,6 +72,11 @@ def _scan_file(path, offset, roots):
     agents, skills = {}, {}
     roots = roots or {}
     for line in lines:
+        # D-F1 perf fix: a cheap C-level substring check first, same idea as the old grep -F —
+        # most lines carry neither needle, so this skips _TS/_CWD/_project_of (and the regex
+        # itself) for the overwhelming majority of a 1.4 GB history without changing results.
+        if '"subagent_type"' not in line and '"name":"Skill"' not in line:
+            continue
         ts = _TS.search(line)
         d = ts.group(1) if ts else None
         cw = _CWD.search(line)
