@@ -1,4 +1,4 @@
-import json, os, threading, time, unittest, urllib.request
+import copy, json, os, threading, time, unittest, urllib.request
 import _helpers  # noqa
 from _env import Env
 from cabina import server, scan
@@ -141,6 +141,38 @@ class TestServer(unittest.TestCase):
                 time.sleep(0.02)
         self.app.data = scan.load(self.env.cfg); self.app._roster = None; self.app._skills = None
         self.app.roster(); self.app.skills()   # re-warm: see comment in the "gates" test above
+    def test_rescan_publishes_data_before_flipping_scanning_and_releasing_lock(self):
+        # S3 fix-up: the go() thread must publish self.data (and clear _roster/_skills) BEFORE
+        # flipping _scanning False and releasing _scan_lock. Otherwise a poller that sees
+        # scanning=False and immediately reloads /api/agents can still get the OLD self.data,
+        # and a second POST /api/rescan landing in the gap between release() and _scanning=False
+        # would be accepted, starting an overlapping scan.
+        from unittest import mock
+        marker = copy.deepcopy(self.app.data)
+        marker["projects"] = list(marker["projects"]) + [{
+            "path": "/tmp/after-rescan", "name": "after-rescan", "agents": [], "skills": [],
+            "commands": [], "rules": [], "git": None, "claude_md": None, "agents_md": None,
+            "agents_md_link": None,
+        }]
+        with mock.patch("cabina.server.scan.run", return_value=marker), mock.patch("cabina.server.scan.save"):
+            r = self.app.api_rescan({})
+            self.assertTrue(r["ok"], r)
+            for _ in range(150):
+                if not self.app._scanning:
+                    # The instant _scanning flips False, self.data must ALREADY be the new
+                    # marker and the lock must ALREADY be released — never observe the old
+                    # order where scanning=False (or lock released) precedes the data swap.
+                    self.assertTrue(
+                        any(p["name"] == "after-rescan" for p in self.app.data["projects"]),
+                        "scanning flipped False (or lock released) before self.data was published")
+                    self.assertFalse(self.app._scan_lock.locked())
+                    break
+                time.sleep(0.001)
+            else:
+                self.fail("rescan did not finish")
+        # restore the real cache/state before other tests in this shared fixture run
+        self.app.data = scan.load(self.env.cfg); self.app._roster = None; self.app._skills = None
+        self.app.roster(); self.app.skills()
     def test_scan_status_reflects_error_when_scan_run_raises(self):
         from unittest import mock
         d0 = self.get("/api/scan-status")

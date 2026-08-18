@@ -215,24 +215,27 @@ class App:
         def go():
             d = None
             try:
-                cfg = copy.deepcopy(self.cfg)
-                cfg["scan"]["check_mcp"] = cfg["scan"].get("check_mcp") or bool(body.get("mcp"))
-                cfg["scan"]["measure_worktrees"] = cfg["scan"].get("measure_worktrees") or bool(body.get("worktrees"))
-                d = scan.run(cfg)
-                scan.save(self.cfg, d)
-            except Exception as e:
-                self._scan_error = str(e)
-            # Release the lock and flip _scanning False BEFORE touching self.data/_roster/
-            # _skills: a poller (any caller, including tests) that treats "_roster is None" as
-            # "the rescan finished" must never be able to observe that while the lock is still
-            # held or _scanning is still True — within this one thread's sequential execution,
-            # everything below only becomes visible to other threads AFTER everything above it.
-            self._scan_finished = datetime.now().isoformat(timespec="seconds")
-            self._scan_lock.release()
-            self._scanning = False
-            if d is not None:
-                with self.lock:
-                    self.data = d; self._roster = None; self._skills = None
+                try:
+                    cfg = copy.deepcopy(self.cfg)
+                    cfg["scan"]["check_mcp"] = cfg["scan"].get("check_mcp") or bool(body.get("mcp"))
+                    cfg["scan"]["measure_worktrees"] = cfg["scan"].get("measure_worktrees") or bool(body.get("worktrees"))
+                    d = scan.run(cfg)
+                    scan.save(self.cfg, d)
+                except Exception as e:
+                    self._scan_error = str(e)
+                # Publish self.data/_roster/_skills BEFORE flipping _scanning False, and flip
+                # _scanning False BEFORE releasing the lock: a GET /api/scan-status poller that
+                # observes scanning=False must already see the new self.data (never a stale
+                # reload), and a POST /api/rescan that observes scanning=False before the lock
+                # is actually free must still be refused with "a scan is already running"
+                # rather than starting a second scan concurrently with this one's cleanup.
+                if d is not None:
+                    with self.lock:
+                        self.data = d; self._roster = None; self._skills = None
+                self._scan_finished = datetime.now().isoformat(timespec="seconds")
+                self._scanning = False
+            finally:
+                self._scan_lock.release()   # always last, even if the above raised
         threading.Thread(target=go, daemon=True).start()
         return {"ok": True, "message": "rescanning in the background"}
 
