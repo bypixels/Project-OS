@@ -110,6 +110,22 @@ class TestFinalize(unittest.TestCase):
         self.assertEqual(summary["subagent_tokens"], {"in": 15, "out": 25, "cache_read": 0, "cache_write": 0})
         self.assertEqual(summary["tokens"]["in"], 230)             # unchanged: subagent tokens NOT added in
 
+    def test_subagent_tokens_read_incrementally_by_offset(self):
+        # R2 perf fix: subagent transcripts are re-read by offset, not in full every refresh —
+        # same idea as the session file's own incremental parsing (Tarea 17).
+        lines, off = S._read_new_lines(self.env.session_file, 0)
+        state = S._merge_lines(S._new_state(), lines)
+        summary = S._finalize(state, self.env.session_file, {"alpha": self.env.alpha}, off)
+        self.assertEqual(summary["subagent_tokens"], {"in": 15, "out": 25, "cache_read": 0, "cache_write": 0})
+        sub_path = os.path.join(os.path.dirname(self.env.session_file), self.env.session_id, "subagents", "agent-1.jsonl")
+        self.assertIn(sub_path, state["subagent_files"])
+        off1 = state["subagent_files"][sub_path]["offset"]
+        open(sub_path, "a").write(
+            '{"type":"assistant","timestamp":"2026-08-10T09:05:00Z","message":{"role":"assistant","content":[{"type":"tool_use","name":"Grep","input":{"pattern":"y"}}],"usage":{"input_tokens":7,"output_tokens":3,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}\n')
+        summary2 = S._finalize(state, self.env.session_file, {"alpha": self.env.alpha}, off)
+        self.assertEqual(summary2["subagent_tokens"], {"in": 22, "out": 28, "cache_read": 0, "cache_write": 0})  # grew by exactly the appended amount
+        self.assertGreater(state["subagent_files"][sub_path]["offset"], off1)
+
     def test_never_stores_prompt_text_and_matches_allowlist(self):
         lines, off = S._read_new_lines(self.env.session_file, 0)
         state = S._merge_lines(S._new_state(), lines)

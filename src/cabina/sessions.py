@@ -27,7 +27,7 @@ SUMMARY_FIELDS = ("session_id", "project", "cwd_changed", "cwd", "branch", "tool
 
 PARTIAL_STATE_FIELDS = ("session_id", "cwd_counts", "branch", "version", "title", "started",
                         "ended", "turns", "tool_calls", "files_touched", "agents", "skills",
-                        "commits", "tokens", "sidechain_lines")
+                        "commits", "tokens", "sidechain_lines", "subagent_files")
 
 
 def _redact_unknown_fields(summary):
@@ -173,37 +173,51 @@ def _subagents_count(source_path):
     return sum(1 for f in os.listdir(d) if f.endswith(".jsonl"))
 
 
-def _subagent_tokens(source_path):
-    """Tokens spent by subagents of this session — read in full each refresh (these files are
-    small), kept SEPARATE from the session's own `tokens` (R3: never summed together)."""
+def _subagent_tokens(source_path, state):
+    """Tokens spent by subagents of this session — read INCREMENTALLY by byte offset, same idea
+    as the session file's own parsing (Tarea 17): some of these transcripts grow past a few MB,
+    and re-reading them in full on every refresh does not scale (R2). Progress per subagent file
+    is kept in state["subagent_files"] = {path: {"offset", "tokens"}}, mutated in place so it
+    rides along with the rest of the partial_state that refresh() persists. Kept SEPARATE from
+    the session's own `tokens` (R3: never summed together)."""
     sid = os.path.splitext(os.path.basename(source_path))[0]
     d = os.path.join(os.path.dirname(source_path), sid, "subagents")
-    tokens = _empty_tokens()
+    files_state = state.setdefault("subagent_files", {})
+    total = _empty_tokens()
     if not os.path.isdir(d):
-        return tokens
+        return total
     for f in os.listdir(d):
         if not f.endswith(".jsonl"):
             continue
+        fp = os.path.join(d, f)
         try:
-            with open(os.path.join(d, f), encoding="utf-8", errors="replace") as fh:
-                for raw in fh:
-                    raw = raw.strip()
-                    if not raw:
-                        continue
-                    try:
-                        d2 = json.loads(raw)
-                    except Exception:
-                        continue
-                    if d2.get("isSidechain"):
-                        continue
-                    usg = ((d2.get("message") or {}).get("usage")) or {}
-                    tokens["in"] += usg.get("input_tokens", 0) or 0
-                    tokens["out"] += usg.get("output_tokens", 0) or 0
-                    tokens["cache_read"] += usg.get("cache_read_input_tokens", 0) or 0
-                    tokens["cache_write"] += usg.get("cache_creation_input_tokens", 0) or 0
+            size = os.path.getsize(fp)
+        except OSError:
+            continue
+        entry = files_state.get(fp)
+        if entry is None or size < entry.get("offset", 0):
+            entry = {"offset": 0, "tokens": _empty_tokens()}    # new, or shrunk/rotated: reparse from scratch
+        try:
+            lines, new_offset = _read_new_lines(fp, entry["offset"])
         except Exception:
-            pass
-    return tokens
+            lines, new_offset = [], entry["offset"]
+        for raw in lines:
+            try:
+                d2 = json.loads(raw)
+            except Exception:
+                continue
+            if d2.get("isSidechain"):
+                continue
+            usg = ((d2.get("message") or {}).get("usage")) or {}
+            entry["tokens"]["in"] += usg.get("input_tokens", 0) or 0
+            entry["tokens"]["out"] += usg.get("output_tokens", 0) or 0
+            entry["tokens"]["cache_read"] += usg.get("cache_read_input_tokens", 0) or 0
+            entry["tokens"]["cache_write"] += usg.get("cache_creation_input_tokens", 0) or 0
+        entry["offset"] = new_offset
+        files_state[fp] = entry
+        for k in total:
+            total[k] += entry["tokens"][k]
+    return total
 
 
 def _to_local_iso(ts):
@@ -357,5 +371,5 @@ def _finalize(state, source_path, roots, offset, cfg_roots=()):
         "commits": state["commits"], "tokens": state["tokens"], "version": state["version"],
         "sidechain_lines": state["sidechain_lines"], "source_path": source_path,
         "size": size, "mtime": mtime, "offset": offset,
-        "subagent_tokens": _subagent_tokens(source_path), "subagents": _subagents_count(source_path),
+        "subagent_tokens": _subagent_tokens(source_path, state), "subagents": _subagents_count(source_path),
     }
