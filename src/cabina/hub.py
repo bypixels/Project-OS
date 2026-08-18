@@ -101,6 +101,7 @@ def load_dir(dir_, max_mb=5):
 
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
+from . import server as SRV
 from .i18n import STRINGS
 
 STATIC = os.path.join(os.path.dirname(__file__), "static")
@@ -190,6 +191,10 @@ def make_hub_handler(app):
             self.send_response(code); self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(b))); self.send_header("Cache-Control", "no-store"); self.end_headers(); self.wfile.write(b)
         def do_GET(self):
+            # Anti-DNS-rebinding (same guard as server.py): the hub binds 127.0.0.1 unconditionally
+            # (see serve_hub below), so only loopback Host headers are ever accepted here.
+            if not SRV.host_allowed(self.headers.get("Host"), "127.0.0.1"):
+                return self._json({"ok": False, "message": "bad host"}, 421)
             u = urlparse(self.path)
             if u.path in ("/", "/index.html"):
                 html = open(os.path.join(STATIC, "index.html"), encoding="utf-8").read()
@@ -201,6 +206,8 @@ def make_hub_handler(app):
             try: return self._json(fn(parse_qs(u.query)))
             except Exception as e: return self._json({"ok": False, "message": str(e)}, 500)
         def do_POST(self):
+            if not SRV.host_allowed(self.headers.get("Host"), "127.0.0.1"):
+                return self._json({"ok": False, "message": "bad host"}, 421)
             return self._json({"ok": False, "message": "cabina hub is read-only: no write route exists"}, 405)
     return H
 

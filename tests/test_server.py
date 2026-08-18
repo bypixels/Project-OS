@@ -19,7 +19,7 @@ class TestServer(unittest.TestCase):
         cls.port = cls.srv.server_address[1]
         threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
     @classmethod
-    def tearDownClass(cls): cls.srv.shutdown(); cls.env.cleanup()
+    def tearDownClass(cls): cls.srv.shutdown(); cls.srv.server_close(); cls.env.cleanup()
 
     def get(self, path):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}{path}") as r: return json.loads(r.read())
@@ -277,6 +277,91 @@ class TestServer(unittest.TestCase):
     def test_post_requires_token(self):
         code, _ = self.post("/api/open", {"path": "/tmp"}, token="wrong"); self.assertEqual(code, 403)
         code, _ = self.post("/api/open", {"path": "/tmp"}, token=""); self.assertEqual(code, 403)
+    # ---------- Host/Origin guard (anti DNS-rebinding) ----------
+    def _raw(self, method, path, headers=None, body=None):
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", self.port)
+        try:
+            conn.request(method, path, body=body, headers=headers or {})
+            r = conn.getresponse()
+            data = r.read()
+            return r.status, data
+        finally:
+            conn.close()
+    def test_get_with_bad_host_header_rejected(self):
+        code, body = self._raw("GET", "/", headers={"Host": "evil.example"})
+        self.assertEqual(code, 421)
+        self.assertFalse(json.loads(body)["ok"])
+    def test_get_with_normal_host_header_ok(self):
+        code, body = self._raw("GET", "/", headers={"Host": f"127.0.0.1:{self.port}"})
+        self.assertEqual(code, 200)
+    def test_post_with_bad_host_header_rejected(self):
+        headers = {"Host": "evil.example", "Content-Type": "application/json", "X-Cabina-Token": self.app.token}
+        code, body = self._raw("POST", "/api/open", headers=headers, body=json.dumps({"path": "/tmp"}).encode())
+        self.assertEqual(code, 421)
+        self.assertFalse(json.loads(body)["ok"])
+    def test_post_with_bad_origin_rejected_even_with_valid_token(self):
+        headers = {"Host": f"127.0.0.1:{self.port}", "Origin": "http://evil.example",
+                   "Content-Type": "application/json", "X-Cabina-Token": self.app.token}
+        code, body = self._raw("POST", "/api/open", headers=headers, body=json.dumps({"path": "/tmp"}).encode())
+        self.assertEqual(code, 403)
+        self.assertFalse(json.loads(body)["ok"])
+    def test_post_with_loopback_origin_allowed(self):
+        from unittest import mock
+        with mock.patch("cabina.server.host.open_path", return_value=(True, "opened")):
+            headers = {"Host": f"127.0.0.1:{self.port}", "Origin": f"http://127.0.0.1:{self.port}",
+                       "Content-Type": "application/json", "X-Cabina-Token": self.app.token}
+            code, body = self._raw("POST", "/api/open", headers=headers,
+                                    body=json.dumps({"path": self.env.alpha}).encode())
+        self.assertEqual(code, 200)
+        self.assertTrue(json.loads(body)["ok"])
+    def test_post_origin_matching_configured_bind_host_allowed(self):
+        # server.host is user-configurable (config.py DEFAULTS / example config): a user may
+        # bind to a LAN IP, not just loopback. The Origin check must accept loopback OR the
+        # exact configured bind host -- otherwise the UI's own POSTs from a non-loopback bind
+        # would be refused as "bad origin", a functional regression. The TEST server still
+        # binds 127.0.0.1 (so this suite can talk to it); only cfg["server"]["host"] differs.
+        import copy, http.client, threading
+        from http.server import ThreadingHTTPServer
+        from unittest import mock
+        from cabina import server as SRV
+        cfg2 = copy.deepcopy(self.env.cfg)
+        cfg2["server"]["host"] = "10.0.0.5"
+        app2 = SRV.App(cfg2)
+        srv2 = ThreadingHTTPServer(("127.0.0.1", 0), SRV.make_handler(app2))
+        port2 = srv2.server_address[1]
+        threading.Thread(target=srv2.serve_forever, daemon=True).start()
+        try:
+            with mock.patch("cabina.server.host.open_path", return_value=(True, "opened")):
+                conn = http.client.HTTPConnection("127.0.0.1", port2)
+                headers = {"Host": f"127.0.0.1:{port2}", "Origin": "http://10.0.0.5:1234",
+                           "Content-Type": "application/json", "X-Cabina-Token": app2.token}
+                conn.request("POST", "/api/open", body=json.dumps({"path": app2.cfg["claude_home"]}).encode(), headers=headers)
+                r = conn.getresponse(); code = r.status; body = json.loads(r.read()); conn.close()
+            self.assertEqual(code, 200, body)          # bind host as Origin: allowed
+            self.assertTrue(body["ok"], body)
+            conn = http.client.HTTPConnection("127.0.0.1", port2)
+            headers2 = {"Host": f"127.0.0.1:{port2}", "Origin": "http://evil.example",
+                        "Content-Type": "application/json", "X-Cabina-Token": app2.token}
+            conn.request("POST", "/api/open", body=json.dumps({"path": "/tmp"}).encode(), headers=headers2)
+            r2 = conn.getresponse(); code2 = r2.status; r2.read(); conn.close()
+            self.assertEqual(code2, 403)               # still refuses a genuinely foreign origin
+        finally:
+            srv2.shutdown(); srv2.server_close()
+    # ---------- /api/open path confinement ----------
+    def test_open_outside_roots_refused_and_never_calls_host_open_path(self):
+        from unittest import mock
+        with mock.patch("cabina.server.host.open_path") as m:
+            code, r = self.post("/api/open", {"path": "/tmp"})
+        self.assertFalse(r["ok"], r)
+        self.assertIn("outside", r["message"])
+        m.assert_not_called()
+    def test_open_inside_project_root_allowed(self):
+        from unittest import mock
+        with mock.patch("cabina.server.host.open_path", return_value=(True, "opened")) as m:
+            code, r = self.post("/api/open", {"path": os.path.join(self.env.alpha, "CLAUDE.md")})
+        self.assertTrue(r["ok"], r)
+        m.assert_called_once()
     def test_create_then_archive_agent(self):
         code, r = self.post("/api/create", {"project": "alpha", "name": "new-one", "description": "Does new things well", "model": "sonnet", "tools": "Read", "body": "You are new."})
         self.assertTrue(r["ok"], r); self.assertTrue(os.path.isfile(os.path.join(self.env.alpha, ".claude", "agents", "new-one.md")))
@@ -468,11 +553,22 @@ class TestServer(unittest.TestCase):
         settings = os.path.join(self.env.claude, "settings.json")
         self.assertFalse(os.path.isfile(settings))
         with mock.patch("cabina.guard.shutil.which", return_value=None):
-            code, r = self.post("/api/hooks-install", {"cmd": "definitely-not-a-real-cmd-xyz"})
+            code, r = self.post("/api/hooks-install", {"cmd": "cabina-missing-xyz"})
         self.assertFalse(r["ok"], r)
         self.assertIn("not on PATH", r["message"])
         self.assertFalse(os.path.isfile(settings))
         self.assertFalse(any(f.startswith("settings.json.bak-") for f in os.listdir(self.env.claude)))
+
+    def test_hooks_install_rejects_non_cabina_command_even_with_force(self):
+        # U2: hooks may only ever run cabina -- a `bash -c '...'` payload must be refused
+        # regardless of force=True (force only bypasses the "not on PATH" check).
+        settings = os.path.join(self.env.claude, "settings.json")
+        if os.path.isfile(settings):
+            os.remove(settings)
+        code, r = self.post("/api/hooks-install", {"cmd": "bash -c 'echo pwned'", "force": True})
+        self.assertFalse(r["ok"], r)
+        self.assertIn("cabina", r["message"])
+        self.assertFalse(os.path.isfile(settings))
 
     def test_hooks_install_ok_and_idempotent(self):
         from unittest import mock

@@ -162,6 +162,7 @@ class TestHubServer(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.srv.shutdown()
+        cls.srv.server_close()
 
     def get(self, path):
         import urllib.request
@@ -206,6 +207,37 @@ class TestHubServer(unittest.TestCase):
                      "memory_days": None, "runlog": False, "has": {}, "path": "", "rules": 0,
                      "workflows": 0}.items():
             self.assertEqual(row[k], v, k)
+
+    def test_get_with_bad_host_header_rejected(self):
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", self.port)
+        try:
+            conn.request("GET", "/", headers={"Host": "evil.example"})
+            r = conn.getresponse()
+            self.assertEqual(r.status, 421)
+            self.assertFalse(json.loads(r.read())["ok"])
+        finally:
+            conn.close()
+
+    def test_get_with_normal_host_header_ok(self):
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", self.port)
+        try:
+            conn.request("GET", "/api/hub", headers={"Host": f"127.0.0.1:{self.port}"})
+            r = conn.getresponse()
+            self.assertEqual(r.status, 200)
+        finally:
+            conn.close()
+
+    def test_post_with_bad_host_header_rejected_before_405(self):
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", self.port)
+        try:
+            conn.request("POST", "/api/rescan", body=b"{}", headers={"Host": "evil.example"})
+            r = conn.getresponse()
+            self.assertEqual(r.status, 421)
+        finally:
+            conn.close()
 
     def test_post_is_always_405(self):
         import urllib.request, urllib.error

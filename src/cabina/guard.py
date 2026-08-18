@@ -7,7 +7,7 @@
   cabina brief   SessionStart — a few lines of context: health, who is working, this project's memory age.
   cabina hooks   print (or --write) the settings.json entries.
 """
-import os, sys, json, time, shutil, shlex
+import os, sys, json, time, shutil, shlex, re
 from datetime import datetime
 from .contract import Contract
 from . import scan, live as LIVE, check as CHECK
@@ -158,6 +158,43 @@ def hooks_snippet(cmd="cabina"):
     }}
 
 
+_SHELL_META = re.compile(r"[;|&$`()<>{}\n\r]")
+_PY_BASENAME = re.compile(r"^python(\d(\.\d+)?)?(\.exe)?$", re.IGNORECASE)
+
+
+def _cmd_is_cabina(cmd):
+    """S2 hardening: hooks_write must only ever wire a command that runs cabina itself, never
+    an arbitrary shell command -- `force=True` bypasses the "not on PATH" check below but must
+    NEVER bypass this one. Allowed: (a) a command whose first token's basename starts with
+    'cabina' -- checked against the RESOLVED path when `_cmd_resolves` succeeds, or against the
+    raw token itself when it does not (so force still works for an as-yet-uninstalled cabina,
+    while a resolvable 'bash' is still never mistaken for cabina); (b) the literal 3-token form
+    `<python> -m cabina` where <python>'s basename matches pythonX(.Y)?. Any shell metacharacter
+    anywhere in the raw string is an automatic refusal, checked before any parsing. Returns
+    (bool, reason)."""
+    if not isinstance(cmd, str) or not cmd.strip():
+        return False, "refused: empty command"
+    if _SHELL_META.search(cmd):
+        return False, f"refused: hooks may only run cabina (shell metacharacters not allowed in {cmd!r})"
+    try:
+        toks = shlex.split(cmd)
+    except Exception:
+        return False, f"refused: could not parse command {cmd!r}"
+    if not toks:
+        return False, "refused: empty command"
+    first = toks[0]
+    resolves, resolved_path = _cmd_resolves(cmd)
+    name_source = resolved_path if resolves and resolved_path else first
+    base = os.path.basename(name_source).lower()
+    if base.endswith(".exe"):
+        base = base[:-4]
+    if base.startswith("cabina"):
+        return True, ""
+    if len(toks) == 3 and toks[1] == "-m" and toks[2] == "cabina" and _PY_BASENAME.match(os.path.basename(first)):
+        return True, ""
+    return False, f"refused: hooks may only run cabina (got {first!r})"
+
+
 def _cmd_resolves(cmd):
     """First whitespace token of `cmd` resolves on PATH (shutil.which), or is itself an
     existing, executable absolute path. Returns (bool, path|None). Never raises — a
@@ -220,8 +257,12 @@ def _unique_backup_path(path):
 
 def hooks_write(settings_path, cmd="cabina", force=False):
     """Merge our two hooks into an existing settings.json (backup first). Idempotent.
-    Guard: refuses to wire a `cmd` that does not resolve on PATH (the exact "dead hook"
-    problem cabina flags elsewhere) unless the caller passes force=True."""
+    Guards: (1) `cmd` must be cabina itself -- never bypassed by force (S2 hardening); (2)
+    refuses to wire a `cmd` that does not resolve on PATH (the exact "dead hook" problem
+    cabina flags elsewhere) unless the caller passes force=True."""
+    is_cabina, reason = _cmd_is_cabina(cmd)
+    if not is_cabina:
+        return False, reason
     resolves, _ = _cmd_resolves(cmd)
     if not resolves and not force:
         return False, (f"{cmd} is not on PATH: installing it would wire a dead hook (the exact thing "

@@ -13,6 +13,80 @@ from .i18n import STRINGS
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 _activity_refresh_lock = threading.Lock()   # non-blocking: skip a refresh already in flight, never queue one behind the request thread
 MAX_POST_BODY = 5 * 1024 * 1024   # S3-C: /api/compare accepts an arbitrary export from another machine
+_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+def host_allowed(host_header, bind_host):
+    """Anti-DNS-rebinding guard: True only if `host_header` (the raw `Host:` request header,
+    possibly with a port, possibly an IPv6 literal in brackets) names loopback or the exact
+    configured bind host. Without this, an attacker's DNS name resolving to 127.0.0.1 could
+    serve a page that reads the token off `/` and POSTs with it -- the browser sends that
+    page's own Host header, which this rejects. Any error extracting a hostname is a refusal."""
+    if not host_header or not isinstance(host_header, str):
+        return False
+    h = host_header.strip()
+    if not h:
+        return False
+    if h.startswith("["):
+        end = h.find("]")
+        if end == -1:
+            return False
+        hostname = h[1:end]
+    else:
+        hostname = h.split(":", 1)[0]
+    hostname = hostname.strip().lower()
+    if not hostname:
+        return False
+    allowed = set(_LOOPBACK_HOSTS)
+    if bind_host:
+        allowed.add(str(bind_host).strip().lower())
+    return hostname in allowed
+
+
+def _origin_hostname(origin):
+    """Hostname from an `Origin:` header value (a URL like `http://evil.example` or
+    `http://127.0.0.1:8930`), lowercased. None on anything unparsable."""
+    try:
+        h = urlparse(origin).hostname
+    except Exception:
+        return None
+    return h.lower() if h else None
+
+
+def origin_allowed(origin, bind_host):
+    """POST-only CSRF guard: True if `origin`'s hostname is loopback or exactly the configured
+    bind host (case-insensitive) -- the same trust boundary `host_allowed` uses for the Host
+    header. `server.host` is user-configurable (a LAN IP is a supported bind, per config.py's
+    DEFAULTS/example): without accepting it here too, the UI's own same-origin POSTs would be
+    refused as "bad origin" on any non-loopback bind, while a truly foreign Origin is still
+    refused either way."""
+    oh = _origin_hostname(origin)
+    if not oh:
+        return False
+    if oh in _LOOPBACK_HOSTS:
+        return True
+    return bool(bind_host) and oh == str(bind_host).strip().lower()
+
+
+def _open_allowed(path, allowed_roots):
+    """U3: True if the realpath of `path` is inside (or equal to) one of `allowed_roots`
+    (each realpath'd too, so a symlinked root still confines correctly). Isolated as its own
+    function -- not inlined into api_open -- so a break-test can disable it without touching
+    os.path.realpath itself. Any error resolving a candidate root is skipped, never trusted."""
+    try:
+        real = os.path.realpath(path)
+    except Exception:
+        return False
+    for root in allowed_roots or []:
+        if not root:
+            continue
+        try:
+            r = os.path.realpath(root)
+        except Exception:
+            continue
+        if real == r or real.startswith(r + os.sep):
+            return True
+    return False
 
 
 class App:
@@ -155,7 +229,14 @@ class App:
     def api_save_doc(self, b):
         return self.docs().save(b["project"], b["rel"], b["content"], b["hash"], working=self.working())
     def api_open(self, b):
-        ok, msg = host.open_path(os.path.expanduser(b["path"])); return {"ok": ok, "message": msg}
+        """U3: confined to cabina's own roots -- project roots (incl. global -> claude_home),
+        codex_home and state_dir -- so a POST here can never be used to open an arbitrary path
+        on the machine (and, on Windows, os.startfile an arbitrary file)."""
+        p = os.path.realpath(os.path.expanduser(b["path"]))
+        roots = list(self.roots().values()) + [self.cfg["claude_home"], self.cfg["codex_home"], self.cfg["state_dir"]]
+        if not _open_allowed(p, roots):
+            return {"ok": False, "message": "path outside cabina roots"}
+        ok, msg = host.open_path(p); return {"ok": ok, "message": msg}
     def api_focus(self, b):
         ok, msg = self.live.focus(b["pane"]); return {"ok": ok, "message": msg}
     def api_commit(self, b):
@@ -291,6 +372,8 @@ def make_handler(app):
             for k, v in (extra_headers or {}).items(): self.send_header(k, v)
             self.end_headers(); self.wfile.write(b)
         def do_GET(self):
+            if not host_allowed(self.headers.get("Host"), app.cfg["server"]["host"]):
+                return self._json({"ok": False, "message": "bad host"}, 421)
             u = urlparse(self.path)
             if u.path in ("/", "/index.html"):
                 html = open(os.path.join(STATIC, "index.html"), encoding="utf-8").read()
@@ -311,6 +394,11 @@ def make_handler(app):
             try: return self._json(fn(parse_qs(u.query)))
             except Exception as e: return self._json({"ok": False, "message": str(e)}, 500)
         def do_POST(self):
+            if not host_allowed(self.headers.get("Host"), app.cfg["server"]["host"]):
+                return self._json({"ok": False, "message": "bad host"}, 421)
+            origin = self.headers.get("Origin")
+            if origin and not origin_allowed(origin, app.cfg["server"]["host"]):
+                return self._json({"ok": False, "message": "bad origin"}, 403)
             if self.headers.get("X-Cabina-Token") != app.token:
                 return self._json({"ok": False, "message": "invalid token"}, 403)
             n = int(self.headers.get("Content-Length", 0))

@@ -314,10 +314,10 @@ class TestBreaks(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             settings = os.path.join(d, "settings.json")
             with mock.patch.object(G, "_cmd_resolves", return_value=(True, None)):    # guard disabled
-                ok, _ = G.hooks_write(settings, "definitely-not-a-real-cmd-xyz")
+                ok, _ = G.hooks_write(settings, "cabina-missing-xyz")
             self.assertTrue(ok)                                    # would wire a dead hook -> canary red
             self.assertTrue(os.path.isfile(settings))
-            ok2, msg2 = G.hooks_write(settings, "definitely-not-a-real-cmd-xyz")      # guard present
+            ok2, msg2 = G.hooks_write(settings, "cabina-missing-xyz")      # guard present
             self.assertFalse(ok2)                                  # refused: no PATH resolution, no force
             self.assertIn("not on PATH", msg2)
 
@@ -344,4 +344,122 @@ class TestBreaks(unittest.TestCase):
             self.assertEqual(statuses["bad.json"], "unreadable")                         # the flaky file is isolated
             self.assertEqual(statuses["good.json"], "ok")                                # the other file still loads
             self.assertEqual(out["merged"]["agents"][0]["name"], "x")                    # its data still merged
+
+    def test_server_host_origin_guard(self):
+        # Anti DNS-rebinding: a request whose Host header names anything but loopback/the
+        # configured bind host must never reach any route.
+        import http.client, threading
+        from http.server import ThreadingHTTPServer
+        env = Env()
+        try:
+            app = SRV.App(env.cfg)
+            srv = ThreadingHTTPServer(("127.0.0.1", 0), SRV.make_handler(app))
+            port = srv.server_address[1]
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            def evil_get():
+                conn = http.client.HTTPConnection("127.0.0.1", port)
+                try:
+                    conn.request("GET", "/", headers={"Host": "evil.example"})
+                    r = conn.getresponse(); code = r.status; r.read()
+                    return code
+                finally:
+                    conn.close()
+            try:
+                self.assertEqual(evil_get(), 421)                          # guard present
+                with mock.patch.object(SRV, "host_allowed", return_value=True):   # guard disabled
+                    self.assertEqual(evil_get(), 200)                      # canary red
+            finally:
+                srv.shutdown(); srv.server_close()
+        finally:
+            env.cleanup()
+
+    def test_server_origin_guard_accepts_bind_host_but_rejects_foreign_origin(self):
+        # POST CSRF guard: origin_allowed() must accept loopback OR the configured bind host
+        # (server.host can be a LAN IP -- config.py DEFAULTS/example), and still refuse a
+        # genuinely foreign Origin. Disable it in memory and show a forged Origin from
+        # evil.example would be accepted before restoring the guard.
+        import copy, http.client, threading
+        from http.server import ThreadingHTTPServer
+        env = Env()
+        try:
+            cfg2 = copy.deepcopy(env.cfg)
+            cfg2["server"]["host"] = "10.0.0.5"
+            app = SRV.App(cfg2)
+            srv = ThreadingHTTPServer(("127.0.0.1", 0), SRV.make_handler(app))
+            port = srv.server_address[1]
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            def post_with_origin(origin):
+                conn = http.client.HTTPConnection("127.0.0.1", port)
+                try:
+                    headers = {"Host": f"127.0.0.1:{port}", "Origin": origin,
+                               "Content-Type": "application/json", "X-Cabina-Token": app.token}
+                    conn.request("POST", "/api/open", body=b'{"path": "/tmp"}', headers=headers)
+                    r = conn.getresponse(); code = r.status; r.read()
+                    return code
+                finally:
+                    conn.close()
+            try:
+                self.assertEqual(post_with_origin("http://10.0.0.5:1234"), 200)   # bind host: allowed (not 403)
+                self.assertEqual(post_with_origin("http://evil.example"), 403)    # foreign origin: refused
+                with mock.patch.object(SRV, "origin_allowed", return_value=True):   # guard disabled
+                    self.assertNotEqual(post_with_origin("http://evil.example"), 403)   # canary red
+            finally:
+                srv.shutdown(); srv.server_close()
+        finally:
+            env.cleanup()
+
+    def test_hub_host_origin_guard(self):
+        from cabina import hub as HUB, config as CFG
+        import http.client, threading
+        from http.server import ThreadingHTTPServer
+        with tempfile.TemporaryDirectory() as d:
+            app = HUB.HubApp(d, CFG.load(None))
+            srv = ThreadingHTTPServer(("127.0.0.1", 0), HUB.make_hub_handler(app))
+            port = srv.server_address[1]
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            def evil_get():
+                conn = http.client.HTTPConnection("127.0.0.1", port)
+                try:
+                    conn.request("GET", "/", headers={"Host": "evil.example"})
+                    r = conn.getresponse(); code = r.status; r.read()
+                    return code
+                finally:
+                    conn.close()
+            try:
+                self.assertEqual(evil_get(), 421)                          # guard present
+                with mock.patch.object(SRV, "host_allowed", return_value=True):   # guard disabled (shared function)
+                    self.assertEqual(evil_get(), 200)                      # canary red
+            finally:
+                srv.shutdown(); srv.server_close()
+
+    def test_hooks_install_cabina_only_allowlist_guard(self):
+        # U2: hooks_write must refuse anything that is not cabina itself, even with force=True.
+        # Disable _cmd_is_cabina in memory and show a `bash -c '...'` payload would be accepted
+        # (and written to settings.json) before restoring the guard.
+        with tempfile.TemporaryDirectory() as d:
+            settings = os.path.join(d, "settings.json")
+            with mock.patch.object(G, "_cmd_is_cabina", return_value=(True, "")):        # guard disabled
+                ok, _ = G.hooks_write(settings, "bash -c 'echo pwned'", force=True)
+            self.assertTrue(ok)                                            # would wire an arbitrary command -> canary red
+            self.assertTrue(os.path.isfile(settings))
+        with tempfile.TemporaryDirectory() as d:
+            settings = os.path.join(d, "settings.json")
+            ok2, msg2 = G.hooks_write(settings, "bash -c 'echo pwned'", force=True)     # guard present
+            self.assertFalse(ok2)
+            self.assertFalse(os.path.isfile(settings))
+
+    def test_open_path_confinement_guard(self):
+        # U3: POST /api/open must refuse any path outside cabina's own roots.
+        env = Env()
+        try:
+            app = SRV.App(env.cfg)
+            roots = list(app.roots().values()) + [env.cfg["claude_home"], env.cfg["codex_home"], env.cfg["state_dir"]]
+            self.assertFalse(SRV._open_allowed("/tmp", roots))              # guard present: rejected
+            with mock.patch.object(SRV, "_open_allowed", return_value=True):   # guard disabled
+                with mock.patch.object(SRV.host, "open_path", return_value=(True, "opened")) as m:
+                    r = app.api_open({"path": "/tmp"})
+            self.assertTrue(r["ok"])                                        # would open an arbitrary path -> canary red
+            m.assert_called_once()
+        finally:
+            env.cleanup()
 if __name__ == "__main__": unittest.main()
