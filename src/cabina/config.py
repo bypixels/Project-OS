@@ -69,7 +69,7 @@ language = "en"                 # "en" | "es"
 claude_home = "~/.claude"       # same on every OS
 codex_home = "~/.codex"
 roots = ["~/Documents", "~/Desktop"]
-# state_dir = ...               # defaults to the platform convention above
+state_dir = "~/.local/share/cabina"   # platform convention above; overridden by $CABINA_CONFIG's sibling on Windows
 
 [server]
 host = "127.0.0.1"
@@ -80,16 +80,26 @@ required = ["name", "description", "model", "tools"]
 critical = ["name", "description"]
 warn = ["model", "tools"]
 models = ["sonnet", "opus", "haiku"]
+known_fields = ["overrides", "maxTurns", "color", "version"]   # extra frontmatter fields that don't warn
 
 [scan]
 measure_worktrees = false     # slow: ~2 s per worktree
 check_mcp = false
+skip_dirs = ["node_modules", ".git", ".next", "dist", "build", ".venv", "__pycache__", "worktrees", "_archive"]
 
 [live]
 provider = "auto"               # "auto" | "herdr" | "none"
+active_seconds = 600            # window after the last transcript line counted as "active"
+
+[activity]
+retention_days = 365            # how long session activity is kept before it ages out
+
+[hub]
+max_file_mb = 5                 # cap on each machine's export file cabina hub will load
 
 [docs]
 backup_retention_days = 30
+max_per_dir = 60                 # cap on documents listed per folder in the Docs tab
 
 [check]
 worktree_stale_days = 14
