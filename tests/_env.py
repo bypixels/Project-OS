@@ -1,5 +1,5 @@
 """A synthetic Claude Code environment in a temp dir: global + one project, for server tests."""
-import os, json, tempfile
+import os, json, tempfile, time
 import _helpers  # noqa
 from cabina import config as CFG
 
@@ -35,7 +35,41 @@ class Env:
         os.makedirs(os.path.join(self.codex, "sessions", "2026", "08"))
         open(os.path.join(self.codex, "sessions", "2026", "08", "r.jsonl"), "w").write(f'{{"timestamp":"2026-08-04T00:00:00Z","type":"session_meta","payload":{{"cwd":"{a}"}}}}\n')
         open(os.path.join(a, "AGENTS.md"), "w").write("# AGENTS.md\nThis file provides guidance to Codex.\n")   # a copy, not a link
+        # sessions fixture: one real-shaped transcript for project alpha + one subagent file.
+        # Uses names ("sessions-demo-agent"/"sessions-demo-skill") that do NOT collide with
+        # "reviewer"/"deploy" above, so usage.py-based assertions elsewhere stay unaffected.
+        self.session_id = "sess-1"
+        sdir = os.path.join(self.claude, "projects", "-work-alpha")
+        os.makedirs(os.path.join(sdir, self.session_id, "subagents"))
+        self.session_file = os.path.join(sdir, self.session_id + ".jsonl")
+        open(self.session_file, "w").write(
+            f'{{"type":"user","timestamp":"2026-08-10T09:00:00Z","cwd":"{a}","gitBranch":"main","sessionId":"{self.session_id}","version":"1.2.3","message":{{"role":"user","content":[{{"type":"text","text":"PROMPT_MARKER_DO_NOT_LEAK please refactor the widget loader"}}]}}}}\n'
+            f'{{"type":"assistant","timestamp":"2026-08-10T09:01:00Z","cwd":"{a}","gitBranch":"main","sessionId":"{self.session_id}","message":{{"role":"assistant","content":[{{"type":"text","text":"On it."}},{{"type":"tool_use","name":"Edit","input":{{"file_path":"{a}/src/widget.py"}}}}],"usage":{{"input_tokens":120,"output_tokens":340,"cache_read_input_tokens":50,"cache_creation_input_tokens":10}}}}}}\n'
+            f'{{"type":"assistant","timestamp":"2026-08-10T09:01:30Z","cwd":"{a}/apps","gitBranch":"main","sessionId":"{self.session_id}","message":{{"role":"assistant","content":[{{"type":"tool_use","name":"Agent","input":{{"subagent_type":"sessions-demo-agent"}}}},{{"type":"tool_use","name":"Skill","input":{{"skill":"sessions-demo-skill"}}}}],"usage":{{"input_tokens":80,"output_tokens":60,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}}}}\n'
+            f'{{"type":"assistant","timestamp":"2026-08-10T09:02:00Z","cwd":"{a}","isSidechain":true,"sessionId":"{self.session_id}","message":{{"role":"assistant","content":[{{"type":"tool_use","name":"Read","input":{{"file_path":"{a}/src/secret.py"}}}}],"usage":{{"input_tokens":999,"output_tokens":999,"cache_read_input_tokens":999,"cache_creation_input_tokens":999}}}}}}\n'
+            f'{{"type":"assistant","timestamp":"2026-08-10T09:03:00Z","cwd":"{a}","gitBranch":"main","sessionId":"{self.session_id}","message":{{"role":"assistant","content":[{{"type":"tool_use","name":"Bash","input":{{"command":"git commit -m done"}}}}],"usage":{{"input_tokens":30,"output_tokens":20,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}}}}\n'
+            f'{{"type":"ai-title","aiTitle":"Refactor the widget loader","sessionId":"{self.session_id}"}}\n'
+        )
+        open(os.path.join(sdir, self.session_id, "subagents", "agent-1.jsonl"), "w").write(
+            '{"type":"assistant","timestamp":"2026-08-10T09:01:35Z","message":{"role":"assistant","content":[{"type":"tool_use","name":"Grep","input":{"pattern":"x"}}],"usage":{"input_tokens":15,"output_tokens":25,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}\n')
+        # CRITICAL fix from adversarial review: default every transcript fixture (the pre-existing
+        # -x/s.jsonl included) to a STALE mtime, so live.TranscriptProvider (Tarea 20) never marks
+        # "alpha" active by accident in an ordinary Env-based test. Tests that need "active"
+        # call env.touch_session(fresh=True) explicitly (see the method below).
+        old = time.time() - 3600
+        for p in (os.path.join(self.claude, "projects", "-x", "s.jsonl"), self.session_file,
+                  os.path.join(sdir, self.session_id, "subagents", "agent-1.jsonl")):
+            os.utime(p, (old, old))
         self.cfg = CFG._merge(CFG.DEFAULTS, {"claude_home": self.claude, "codex_home": self.codex, "roots": [self.projects], "state_dir": self.state,
                                              "live": {"provider": "none"}, "scan": {"measure_worktrees": False, "check_mcp": False}})
         self.alpha = a
     def cleanup(self): self.tmp.cleanup()
+
+    def touch_session(self, fresh=True):
+        """Set the mtime of the sessions fixture (session file + its subagent file) to 'now'
+        (fresh=True, looks active to live.TranscriptProvider) or back to stale (fresh=False).
+        Tests call this explicitly — the fixture defaults to stale (see Env.__init__ above)."""
+        t = time.time() if fresh else time.time() - 3600
+        sub = os.path.join(os.path.dirname(self.session_file), self.session_id, "subagents", "agent-1.jsonl")
+        for p in (self.session_file, sub):
+            os.utime(p, (t, t))
