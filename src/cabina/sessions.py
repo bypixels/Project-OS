@@ -20,12 +20,20 @@ FILE_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 
 
 def _read_new_lines(path, offset):
-    """Bytes after `offset` -> (list of non-empty line strings, new_offset)."""
+    """Bytes after `offset` -> (list of non-empty line strings, new_offset). Never consumes a
+    partial trailing line (a transcript being appended by a live Claude Code session): only
+    bytes up to and including the last b"\\n" in the chunk are considered read; if the chunk has
+    no newline at all, nothing is returned and `offset` is unchanged (wait for the line to
+    complete)."""
     with open(path, "rb") as f:
         f.seek(offset)
         data = f.read()
-    new_offset = offset + len(data)
-    lines = [l for l in data.decode("utf-8", "replace").splitlines() if l.strip()]
+    last_nl = data.rfind(b"\n")
+    if last_nl == -1:
+        return [], offset
+    new_offset = offset + last_nl + 1
+    complete = data[:last_nl]
+    lines = [l for l in complete.decode("utf-8", "replace").splitlines() if l.strip()]
     return lines, new_offset
 
 

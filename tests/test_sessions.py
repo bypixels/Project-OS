@@ -29,6 +29,18 @@ class TestReadNewLines(unittest.TestCase):
             self.assertEqual(lines2, ['{"a":3}'])
             self.assertGreater(off2, off1)
 
+    def test_never_consumes_a_partial_trailing_line(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "f.jsonl")
+            first_line = '{"a":1}\n'
+            open(p, "w").write(first_line + '{"a":2, "partial')  # no trailing \n: still being written
+            lines1, off1 = S._read_new_lines(p, 0)
+            self.assertEqual(lines1, ['{"a":1}'])
+            self.assertEqual(off1, len(first_line))
+            open(p, "a").write('": true}\n')  # the writer finishes the line
+            lines2, off2 = S._read_new_lines(p, off1)
+            self.assertEqual(lines2, ['{"a":2, "partial": true}'])
+
 class TestMergeLinesCore(unittest.TestCase):
     def setUp(self):
         self.env = Env()
