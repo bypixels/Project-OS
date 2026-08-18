@@ -8,13 +8,22 @@ Attribution: each transcript line carries the session `cwd`, so an invocation of
 `code-reviewer` is credited to the project whose root contains that cwd. This is what
 tells apart six homonymous `code-reviewer` agents.
 """
-import json, os, re, subprocess, shutil
+import json, os, re, subprocess, shutil, threading
 from datetime import date
 
 _AGENT = re.compile(r'"subagent_type":"([a-zA-Z0-9_-]+)"')
 _SKILL = re.compile(r'"name":"Skill","input":\{"skill":"([a-zA-Z0-9:_-]+)"')
 _TS = re.compile(r'"timestamp":"(\d{4}-\d{2}-\d{2})')
 _CWD = re.compile(r'"cwd":"([^"]+)"')
+
+# server.py runs a ThreadingHTTPServer: two concurrent requests can call refresh() on different
+# threads (CLI/MCP/check.py also call it, but never concurrently within one process). Without
+# this, two threads can each read usage-history.json, compute their own delta against the same
+# stale snapshot, and race writing it back — the tmp+os.replace in _save_history/save() is
+# atomic PER FILE, but that alone does not stop a lost update from a read-modify-write race
+# across the whole read -> scan -> write sequence. Guards ALL of _refresh_both, not just the
+# final save.
+_LOCK = threading.Lock()
 
 
 def _lines(history_dir, needle):
@@ -282,22 +291,25 @@ def _refresh_both(state_dir, history_dir, roots):
     bug where two independent refresh() calls (one per kind) on the SAME freshly-scanned file
     used to leave whichever kind's own output file un-persisted until IT was explicitly
     refreshed again — even though `_scan_history_dir` already had the data. Returns
-    {"agents": (items, meta), "skills": (items, meta)}."""
-    hist_path = os.path.join(state_dir, "usage-history.json")
-    history = _load_history(hist_path)
-    _scan_history_dir(history_dir, roots or {}, history)
-    _save_history(hist_path, history)
-    out = {}
-    for kind in ("agents", "skills"):
-        p = os.path.join(state_dir, f"usage-{kind}.json")
-        reg = load(p)
-        fresh = _aggregate(history, kind)
-        window = min((v["last"] for v in fresh.values() if v.get("last")), default=None)
-        items = merge(reg, fresh)
-        meta = {"updated": date.today().isoformat(), "history_window_from": window}
-        _save_sibling_output(state_dir, kind, items, meta)
-        out[kind] = (items, meta)
-    return out
+    {"agents": (items, meta), "skills": (items, meta)}. Serialized by _LOCK: the whole
+    read -> scan -> write sequence, not just the final save, so two threads never compute their
+    delta against the same stale snapshot."""
+    with _LOCK:
+        hist_path = os.path.join(state_dir, "usage-history.json")
+        history = _load_history(hist_path)
+        _scan_history_dir(history_dir, roots or {}, history)
+        _save_history(hist_path, history)
+        out = {}
+        for kind in ("agents", "skills"):
+            p = os.path.join(state_dir, f"usage-{kind}.json")
+            reg = load(p)
+            fresh = _aggregate(history, kind)
+            window = min((v["last"] for v in fresh.values() if v.get("last")), default=None)
+            items = merge(reg, fresh)
+            meta = {"updated": date.today().isoformat(), "history_window_from": window}
+            _save_sibling_output(state_dir, kind, items, meta)
+            out[kind] = (items, meta)
+        return out
 
 
 def refresh(path, history_dir, kind="agents", roots=None):

@@ -1,4 +1,5 @@
-import os, tempfile, unittest
+import os, tempfile, threading, time, unittest
+from unittest import mock
 import _helpers  # noqa
 from cabina import usage as U
 from _env import Env
@@ -118,6 +119,37 @@ class TestUsageHistoryRegistry(unittest.TestCase):
         skill_items, _ = U.refresh(skills_path, history_dir, "skills", roots)  # llega DESPUES, mismo archivo
         self.assertGreaterEqual(skill_items["deploy"]["n_total"], 1)        # antes de la enmienda: 0 (perdido)
         self.assertIn("deploy", U.load(skills_path))                        # y quedo PERSISTIDO en disco
+
+    def test_concurrent_refresh_does_not_lose_a_delta(self):
+        # Sin lock, dos refresh() concurrentes escriben al MISMO ".tmp" de usage-history.json:
+        # uno de los dos os.replace() puede fallar con FileNotFoundError porque el otro hilo ya
+        # lo consumio (o lo piso a mitad de escritura) — una carrera real de
+        # lectura-modificacion-escritura, no solo de rendimiento. Se fuerza la intercalacion con
+        # un mock que inserta una pausa entre "leer/escanear" y "guardar", igual que un test de
+        # carrera clasico (confiar en el scheduler del sistema es intermitente, ver Paso 2).
+        p, history_dir, roots = self._paths()
+        orig_save = U._save_history
+        def slow_save(*a, **k):
+            time.sleep(0.05)          # ventana para que el otro hilo lea el registro viejo
+            return orig_save(*a, **k)
+        self.env.append_usage_line(
+            '{"timestamp":"2026-08-05T00:00:00Z","cwd":"%s","x":{"subagent_type":"reviewer"}}' % self.env.alpha)
+        # hilo B cuenta la invocacion de "nested-from-subagent" que la fixture de la Tarea 40 ya
+        # deja en projects/-x/usage-sid/subagents/sub.jsonl — es un archivo DISTINTO.
+        errors = []
+        def run():
+            try:
+                U.refresh(p, history_dir, "agents", roots)
+            except Exception as e:
+                errors.append(e)
+        with mock.patch.object(U, "_save_history", side_effect=slow_save):
+            t1 = threading.Thread(target=run)
+            t2 = threading.Thread(target=run)
+            t1.start(); t2.start(); t1.join(); t2.join()
+        self.assertEqual(errors, [])                                   # sin el lock: FileNotFoundError intermitente
+        items = U.load(p)
+        self.assertEqual(items["reviewer"]["n_total"], 4)              # 3 originales + 1 agregada
+        self.assertEqual(items["nested-from-subagent"]["n_total"], 1)  # del subagents/sub.jsonl fijo
 
 if __name__ == "__main__":
     unittest.main()
