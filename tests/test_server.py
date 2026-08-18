@@ -27,6 +27,9 @@ class TestServer(unittest.TestCase):
     def test_index_has_token_and_lang(self):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
         self.assertIn(self.app.token, html); self.assertIn('lang="en"', html)
+    def test_index_has_activity_tab(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        self.assertIn('"activity"', html); self.assertIn("/api/activity", html)
     def test_agents_with_attribution(self):
         d = self.get("/api/agents"); by = {(a["project"], a["name"]): a for a in d["agents"]}
         self.assertEqual(by[("alpha", "reviewer")]["uses_here"], 2)      # cwd attribution
