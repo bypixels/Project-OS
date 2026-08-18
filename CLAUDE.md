@@ -72,11 +72,11 @@ previous total, not a raw re-count, so a file that shrinks (rotated/rewritten) c
 instead of double-counting it; `usage.merge` still guarantees dates never regress
 (break-tested). A single `refresh()` call updates BOTH `usage-agents.json` and
 `usage-skills.json` under the hood (`_refresh_both`), and the whole read-scan-write sequence is
-serialized by a module-level lock (`server.py` runs `ThreadingHTTPServer`). The old
-`grep -rhF`/Python-fallback path (`usage._lines`/`extract`/`extract_agents`/`extract_skills`)
-still exists as a standalone, unused-by-`refresh()` code path — kept only because
-`tests/test_platform.py::TestNoGrep` exercises it directly; nothing in the hot path calls it
-anymore. If the transcript format changes, usage becomes "unknown" — nothing else may break.
+serialized by a module-level lock (`server.py` runs `ThreadingHTTPServer`). There is no
+`grep` path anymore: `_read_new_lines`/`_scan_file` (plain `open()`, incremental by byte offset,
+substring pre-filter before any regex) is the only reader on every platform, so `usage.py` no
+longer needs a Windows fallback. If the transcript format changes, usage becomes "unknown" —
+nothing else may break.
 
 **Server = thin HTTP over the same modules.** `server.py` binds `127.0.0.1`, serves
 `static/index.html` (single file, `__TOKEN__`/`__LANG__` substituted), and requires an
