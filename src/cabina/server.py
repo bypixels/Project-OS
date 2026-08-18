@@ -2,9 +2,10 @@
 Reads through the modules; writes only via: create/archive agent, archive skill,
 save doc (guarded), open path, rescan cache."""
 import os, sys, json, secrets, threading, webbrowser, time
+from datetime import datetime
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
-from . import scan, skills as SK, projects as PROJ, harness as HAR, usage, live as LIVE, host, drift as DR, gitops as GO, sessions as SESS
+from . import scan, skills as SK, projects as PROJ, harness as HAR, usage, live as LIVE, host, drift as DR, gitops as GO, sessions as SESS, check as CHECK
 from .roster import Roster
 from .docs import Docs
 from .i18n import STRINGS
@@ -103,6 +104,15 @@ class App:
     def api_references(self, q):
         R, _, _ = self.roster()
         return {"references": R.references(q.get("name", [""])[0])}
+    def api_health(self):
+        """S1: the same findings `cabina check` prints, for the Health tab. Never lets the
+        tab render blank — any exception from check.run() becomes an empty findings list plus
+        an `error` string, still 200."""
+        try:
+            findings = CHECK.run(self.cfg, quick=False)
+        except Exception as e:
+            return {"findings": [], "error": str(e)}
+        return {"findings": findings, "ran_at": datetime.now().isoformat(timespec="seconds"), "quick": False}
 
     # ---- POST ----
     def api_archive(self, b):
@@ -178,7 +188,7 @@ def make_handler(app):
             "/api/projects": lambda q: app.api_projects(), "/api/harness": lambda q: app.api_harness(),
             "/api/live": lambda q: app.api_live(), "/api/docs": lambda q: app.api_docs(),
             "/api/doc": app.api_doc, "/api/references": app.api_references, "/api/in-repo": app.api_in_repo,
-            "/api/activity": app.api_activity}
+            "/api/activity": app.api_activity, "/api/health": lambda q: app.api_health()}
     POSTS = {"/api/archive": app.api_archive, "/api/create": app.api_create, "/api/archive-skill": app.api_archive_skill,
              "/api/save-doc": app.api_save_doc, "/api/open": app.api_open, "/api/focus": app.api_focus, "/api/rescan": app.api_rescan, "/api/commit": app.api_commit}
 

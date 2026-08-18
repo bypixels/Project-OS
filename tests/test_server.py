@@ -7,7 +7,13 @@ from http.server import ThreadingHTTPServer
 class TestServer(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.env = Env(); scan.save(cls.env.cfg, scan.run(cls.env.cfg))
+        cls.env = Env()
+        # S1-a: guarantee at least one "crit" finding for /api/health (the shared fixture's
+        # warn_agents/dead_hooks/rules_diverged only produce warn+info) — an agent missing the
+        # critical `description` field, local to THIS test module only.
+        open(os.path.join(cls.env.alpha, ".claude", "agents", "broken.md"), "w").write(
+            "---\nname: broken\nmodel: sonnet\n---\nBody without a description.\n")
+        scan.save(cls.env.cfg, scan.run(cls.env.cfg))
         cls.app = server.App(cls.env.cfg)
         cls.srv = ThreadingHTTPServer(("127.0.0.1", 0), server.make_handler(cls.app))
         cls.port = cls.srv.server_address[1]
@@ -257,4 +263,25 @@ class TestServer(unittest.TestCase):
     def test_unknown_routes(self):
         with self.assertRaises(urllib.error.HTTPError): self.get("/api/nope")
         code, _ = self.post("/api/nope", {}); self.assertEqual(code, 404)
+    # ---------- S1: /api/health ----------
+    def test_health_endpoint_shape(self):
+        d = self.get("/api/health")
+        self.assertNotIn("error", d)
+        self.assertIn("ran_at", d)
+        self.assertFalse(d["quick"])
+        sevs = {f["sev"] for f in d["findings"]}
+        self.assertIn("crit", sevs)       # the broken.md agent added in setUpClass
+        self.assertIn("warn", sevs)       # the dead hook / shadowing agent in the base fixture
+        for f in d["findings"]:
+            self.assertIn(f["sev"], ("crit", "warn", "info"))
+            for k in ("title", "detail", "fix"):
+                self.assertIn(k, f)
+    def test_health_endpoint_survives_check_run_exception(self):
+        # The tab must never render blank: if check.run() throws, the endpoint still answers
+        # 200 with an empty findings list and the error message, never a 500.
+        from unittest import mock
+        with mock.patch("cabina.server.CHECK.run", side_effect=RuntimeError("boom")):
+            d = self.get("/api/health")
+        self.assertEqual(d["findings"], [])
+        self.assertIn("boom", d["error"])
 if __name__ == "__main__": unittest.main()
