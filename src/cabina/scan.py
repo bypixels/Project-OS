@@ -94,23 +94,57 @@ def _git(path, *a):
         return ""
 
 
+def _worktree_list_porcelain(path):
+    """Parse `git worktree list --porcelain` (entries separated by a blank line: `worktree
+    <path>`, optional `branch refs/heads/X` or `detached`, optional `prunable <reason>`) — the
+    stable API, vs. the human-readable `git worktree list` output this used to scrape."""
+    entries, cur = [], None
+    for line in _git(path, "worktree", "list", "--porcelain").splitlines():
+        if not line:
+            if cur is not None:
+                entries.append(cur)
+            cur = None
+        elif line.startswith("worktree "):
+            cur = {"path": line[len("worktree "):], "branch": "", "prunable": None}
+        elif cur is None:
+            continue
+        elif line.startswith("branch "):
+            cur["branch"] = line[len("branch "):]
+        elif line.startswith("prunable"):
+            cur["prunable"] = line[len("prunable"):].strip() or True
+    if cur is not None:
+        entries.append(cur)
+    return entries
+
+
 def _git_info(path, measure_worktrees):
     if not _git(path, "rev-parse", "--git-dir"):
         return None
-    wt = []
-    for line in _git(path, "worktree", "list").splitlines()[1:]:
-        wp = line.split()[0]
-        mb = _dir_mb(wp) if measure_worktrees else 0
+    wt, known_mb = [], []
+    root_real = os.path.realpath(path)
+    for e in _worktree_list_porcelain(path):
+        wp = e["path"]
+        if os.path.realpath(wp) == root_real:   # the repo's own main worktree, always listed first
+            continue
+        exists = os.path.isdir(wp); prunable = e["prunable"] is not None
+        mb = _dir_mb(wp) if (measure_worktrees and exists) else None
+        if mb is not None:
+            known_mb.append(mb)
         try:
             mtime = datetime.fromtimestamp(os.path.getmtime(wp)).strftime("%Y-%m-%d")
         except Exception:
             mtime = "?"
+        if exists:
+            dirty = len(_git(wp, "status", "--porcelain").splitlines())
+            branch = e["branch"][len("refs/heads/"):] if e["branch"].startswith("refs/heads/") else e["branch"]
+        else:
+            dirty, branch = None, ""
         wt.append({"path": wp, "name": os.path.basename(wp), "mb": mb, "mtime": mtime,
-                   "dirty": len(_git(wp, "status", "--porcelain").splitlines()) if measure_worktrees else -1,
-                   "branch": _git(wp, "branch", "--show-current") if measure_worktrees else ""})
+                   "dirty": dirty, "branch": branch, "prunable": prunable})
     return {"branch": _git(path, "branch", "--show-current"), "commit": _git(path, "rev-parse", "--short", "HEAD"),
             "dirty": len(_git(path, "status", "--porcelain").splitlines()), "worktrees": wt,
-            "worktree_mb": sum(w["mb"] for w in wt), "last": _git(path, "log", "-1", "--format=%cs")}
+            "worktree_mb": sum(known_mb), "worktree_mb_measured": bool(measure_worktrees),
+            "last": _git(path, "log", "-1", "--format=%cs")}
 
 
 def mcp_servers(claude_home):

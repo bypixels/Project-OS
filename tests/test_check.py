@@ -51,5 +51,62 @@ class TestCheckProjectAttribution(unittest.TestCase):
             env.cleanup()
 
 
+class TestCheckStaleWorktrees(unittest.TestCase):
+    """dirty/branch are now always real (see scan._git_info); the stale-clean-worktree
+    finding must (a) skip prunable rows — they have no directory, they belong to
+    `git worktree prune`, not to this warning — and (b) never print a fake '0.0 GB'
+    when sizes were not measured."""
+    OLD_MTIME = "2025-07-14"   # well past the default 14-day threshold
+
+    def _stale_row(self, name, mb=None, prunable=False, dirty=0):
+        return {"path": f"/wt/{name}", "name": name, "mb": mb, "mtime": self.OLD_MTIME,
+                "dirty": None if prunable else dirty, "branch": "" if prunable else "feature",
+                "prunable": prunable}
+
+    def _set_git(self, alpha, worktrees, measured):
+        alpha["git"] = {"branch": "main", "commit": "abc1234", "dirty": 0, "worktrees": worktrees,
+                        "worktree_mb": sum(w["mb"] for w in worktrees if w["mb"] is not None),
+                        "worktree_mb_measured": measured, "last": "2026-08-01"}
+
+    def test_prunable_stale_row_is_skipped(self):
+        env = Env()
+        try:
+            data = scan.run(env.cfg)
+            alpha = next(p for p in data["projects"] if p["name"] == "alpha")
+            self._set_git(alpha, [self._stale_row("gone-wt", prunable=True)], measured=False)
+            scan.save(env.cfg, data)
+            findings = check.run(env.cfg, quick=True)
+            self.assertFalse(any("worktree" in f["title"].lower() and f["sev"] == "warn" for f in findings))
+        finally:
+            env.cleanup()
+
+    def test_unmeasured_size_does_not_print_fake_gb(self):
+        env = Env()
+        try:
+            data = scan.run(env.cfg)
+            alpha = next(p for p in data["projects"] if p["name"] == "alpha")
+            self._set_git(alpha, [self._stale_row("clean-wt", mb=None)], measured=False)
+            scan.save(env.cfg, data)
+            findings = check.run(env.cfg, quick=True)
+            stale = next(f for f in findings if "worktree" in f["title"].lower() and f["sev"] == "warn")
+            self.assertNotIn("0.0 GB", stale["title"])
+            self.assertIn("alpha", stale["projects"])
+        finally:
+            env.cleanup()
+
+    def test_measured_size_still_reports_real_gb(self):
+        env = Env()
+        try:
+            data = scan.run(env.cfg)
+            alpha = next(p for p in data["projects"] if p["name"] == "alpha")
+            self._set_git(alpha, [self._stale_row("clean-wt", mb=2048)], measured=True)
+            scan.save(env.cfg, data)
+            findings = check.run(env.cfg, quick=True)
+            stale = next(f for f in findings if "worktree" in f["title"].lower() and f["sev"] == "warn")
+            self.assertIn("2.0 GB", stale["title"])
+        finally:
+            env.cleanup()
+
+
 if __name__ == "__main__":
     unittest.main()

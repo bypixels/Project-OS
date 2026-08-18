@@ -133,20 +133,28 @@ def run(cfg, quick=False):
         if dead:
             add("warn", t(L, "check.dead_hooks", n=len(dead)), t(L, "check.dead_hooks.d") + "\n    " + "\n    ".join(dead), t(L, "fix.wire_or_archive"), projects=dead_projects)
 
-    # 6. stale clean worktrees
+    # 6. stale clean worktrees (prunable rows have no directory: they belong to
+    # `git worktree prune`, not to this warning; unmeasured sizes must not render as "0.0 GB")
     days = cfg["check"]["worktree_stale_days"]
-    stale, mb = [], 0
+    stale, mb, all_measured = [], 0, True
     for p in (data or {}).get("projects", []):
         for w in (p.get("git") or {}).get("worktrees", []):
+            if w.get("prunable"):
+                continue
             try:
                 age = (time.time() - time.mktime(time.strptime(w["mtime"], "%Y-%m-%d"))) / 86400
             except Exception:
                 continue
             if w["dirty"] == 0 and age > days:
-                stale.append((p["name"], w["name"], w["mb"], int(age))); mb += w["mb"]
+                stale.append((p["name"], w["name"], w["mb"], int(age)))
+                if w["mb"] is None:
+                    all_measured = False
+                else:
+                    mb += w["mb"]
     if stale:
-        top = "\n    ".join(f"{a}/{b}  {c} MB  {d} d" for a, b, c, d in sorted(stale, key=lambda x: -x[2])[:6])
-        add("warn", t(L, "check.stale_worktrees", n=len(stale), days=days, gb=f"{mb/1024:.1f}"), t(L, "check.stale_worktrees.d") + "\n    " + top, t(L, "fix.worktree"), projects=[a for a, b, c, d in stale])
+        gb = f"{mb/1024:.1f}" if all_measured else "?"
+        top = "\n    ".join(f"{a}/{b}  {c if c is not None else '?'} MB  {d} d" for a, b, c, d in sorted(stale, key=lambda x: -(x[2] or 0))[:6])
+        add("warn", t(L, "check.stale_worktrees", n=len(stale), days=days, gb=gb), t(L, "check.stale_worktrees.d") + "\n    " + top, t(L, "fix.worktree"), projects=[a for a, b, c, d in stale])
 
     # 7. MCP (only if the scan checked it)
     if data and data.get("mcp", {}).get("checked"):
