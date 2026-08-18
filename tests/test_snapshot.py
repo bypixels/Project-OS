@@ -49,5 +49,16 @@ class TestExportProjectsDetail(unittest.TestCase):
         finally:
             env.cleanup()
 
+class TestCompareActivity(unittest.TestCase):
+    def test_compare_activity_deltas(self):
+        a = {"machine": "m1", "agents": [], "skills": [], "projects": [],
+             "activity": {"aggregated": [{"project": "alpha", "sessions": 2, "hours": 1.5, "commits": 1}]}}
+        b = {"machine": "m2", "agents": [], "skills": [], "projects": [],
+             "activity": {"aggregated": [{"project": "alpha", "sessions": 5, "hours": 4.0, "commits": 3}]}}
+        r = SNAP.compare(a, b)
+        self.assertEqual(r["activity"][0]["sessions"], {"a": 2, "b": 5})
+        txt = SNAP.render_compare(r, "m1", "m2")
+        self.assertIn("alpha", txt)
+
 if __name__ == "__main__":
     unittest.main()

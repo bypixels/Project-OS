@@ -92,13 +92,25 @@ def compare(a, b):
     ka = {_key(x): x for x in a.get("agents", [])}; kb = {_key(x): x for x in b.get("agents", [])}
     sa = {_key(x) for x in a.get("skills", [])}; sb = {_key(x) for x in b.get("skills", [])}
     pa, pb = set(a.get("projects", [])), set(b.get("projects", []))
-    return {
+    out = {
         "a": a.get("machine"), "b": b.get("machine"),
         "agents": {"only_a": sorted(set(ka) - set(kb)), "only_b": sorted(set(kb) - set(ka)),
                    "state_differs": [{"agent": k, "a": ka[k]["category"], "b": kb[k]["category"]} for k in sorted(set(ka) & set(kb)) if ka[k]["category"] != kb[k]["category"]]},
         "skills": {"only_a": sorted(sa - sb), "only_b": sorted(sb - sa)},
         "projects": {"only_a": sorted(pa - pb), "only_b": sorted(pb - pa)},
     }
+    # P4: activity deltas only when BOTH exports carry aggregated activity — a missing side
+    # (a machine that ran `cabina export` without --activity) means "say nothing", never a
+    # false delta from assumed zeros.
+    aa, ab = (a.get("activity") or {}).get("aggregated"), (b.get("activity") or {}).get("aggregated")
+    if aa and ab:
+        pa2 = {x["project"]: x for x in aa}; pb2 = {x["project"]: x for x in ab}
+        out["activity"] = [{"project": p,
+                            "sessions": {"a": pa2.get(p, {}).get("sessions", 0), "b": pb2.get(p, {}).get("sessions", 0)},
+                            "hours": {"a": pa2.get(p, {}).get("hours", 0), "b": pb2.get(p, {}).get("hours", 0)},
+                            "commits": {"a": pa2.get(p, {}).get("commits", 0), "b": pb2.get(p, {}).get("commits", 0)}}
+                           for p in sorted(set(pa2) | set(pb2))]
+    return out
 
 
 def render_compare(r, la=None, lb=None):
@@ -112,4 +124,9 @@ def render_compare(r, la=None, lb=None):
     for x in r["agents"]["state_differs"]: out.append(f"     state differs  {x['agent']}: {la}={x['a']}  {lb}={x['b']}")
     sec("skills", r["skills"]["only_a"], r["skills"]["only_b"])
     sec("projects", r["projects"]["only_a"], r["projects"]["only_b"])
+    if r.get("activity"):
+        out.append(f"  activity: sessions/hours/commits, {la} → {lb}")
+        for x in r["activity"]:
+            out.append(f"     {x['project']:<20} sessions {x['sessions']['a']:>3}→{x['sessions']['b']:<3}  "
+                       f"hours {x['hours']['a']:.1f}→{x['hours']['b']:.1f}  commits {x['commits']['a']}→{x['commits']['b']}")
     return "\n".join(out)
