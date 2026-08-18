@@ -40,6 +40,14 @@ class TestRepoCheck(unittest.TestCase):
     def test_repo_check_no_claude_dir(self):
         with tempfile.TemporaryDirectory() as d:
             r = RP.check_repo(d); self.assertEqual(r["exit"], 0); self.assertEqual(r["agents_total"], 0)
+    def test_repo_check_nonexistent_root_is_usage_error(self):
+        with tempfile.TemporaryDirectory() as d:
+            missing = os.path.join(d, "does-not-exist")
+            r = RP.check_repo(missing)
+            self.assertEqual(r["exit"], 2)
+            self.assertIn("does not exist", r.get("error", ""))
+            self.assertIn(missing, r.get("error", ""))
+            self.assertNotEqual(RP.render(r).strip().splitlines()[-1].strip(), "result: ok")
 
 class TestSnapshot(unittest.TestCase):
     def test_export_compare(self):

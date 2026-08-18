@@ -17,6 +17,9 @@ def load_repo_config(root):
 
 def check_repo(root):
     root = os.path.realpath(root)
+    if not os.path.isdir(root):
+        return {"root": root, "agents_total": 0, "invalid": [], "warnings": [], "documents": [],
+                "agents_md": "none", "strict": False, "exit": 2, "error": f"repo path does not exist: {root}"}
     rc = load_repo_config(root)
     strict = bool((rc.get("check") or {}).get("strict", False))
     C = Contract({"contract": rc.get("contract", {})})
@@ -32,6 +35,8 @@ def check_repo(root):
 
 
 def render(r):
+    if r.get("error"):
+        return f"cabina check --repo {r['root']}\n  error: {r['error']}\n  result: FAIL (usage error)"
     out = [f"cabina check --repo {r['root']}", f"  agents: {r['agents_total']} · invalid: {len(r['invalid'])} · warnings: {len(r['warnings'])} · documents: {len(r['documents'])} · AGENTS.md: {r['agents_md']}"]
     for x in r["invalid"]:
         out.append(f"  INVALID  {x['name']}: " + "; ".join(x["reasons"]))
