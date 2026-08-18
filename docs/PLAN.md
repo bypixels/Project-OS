@@ -3012,3 +3012,45 @@ bajar el total global — su última contribución conocida se queda en el acumu
 - ¿El umbral de retención `cfg.activity.retention_days = 365` (Tarea 17, R4) es el valor correcto
   para el tamaño real de `sessions.json` en el uso diario de Danny, o conviene medirlo después de
   unas semanas de uso real antes de fijarlo en piedra?
+
+---
+
+# Fase 5 — worktrees: decir la verdad y entregar los comandos (2026-08-18)
+
+Fuera del brief original: salió de una observación del usuario ("debe haber forma de levantar una
+terminal para limpiar 32 worktrees") y de la interrogación del plan (`/grilling`) que siguió.
+
+Analogía: la báscula del almacén estaba apagada y la pantalla marcaba "0 kg". El panel decía
+"32 worktrees · 0.0 GB · 0 sin cambios pendientes · -1 uncommitted" sobre 57 GB reales.
+
+Causa raíz: el flag `--worktrees` gateaba DOS mediciones muy distintas — el `du` (~2 s por
+worktree) y el `git status` (~50 ms; medido: 1,6 s para los 32 de actanova). Sin el flag, cada
+worktree quedaba con `dirty = -1` y `mb = 0`, y como `check.py` filtra `dirty == 0`, la
+advertencia de worktrees viejos nunca podía dispararse.
+
+Decisiones tomadas (interrogadas una por una antes de implementar):
+
+- [x] **Status siempre, tamaño opcional.** `dirty`/`branch` se calculan en cada scan; el `du`
+      sigue detrás de `--worktrees`. Sin medir, el tamaño es `None` (se muestra "sin medir" /
+      "?G"), nunca 0.
+- [x] **`git worktree list --porcelain`** en vez de raspar la salida humana: da `prunable` gratis
+      y soporta rutas con espacios. Se excluye el worktree principal del repo por identidad de
+      ruta (no por posición).
+- [x] **`worktrees.py` genera, el usuario ejecuta.** Lista plana de comandos, sin bucles ni `if`,
+      que se pega igual en zsh, bash, PowerShell y cmd: `git worktree prune` por repo con
+      huérfanos, luego `git worktree remove` solo para los limpios. Nunca `--force`, nunca borra
+      ramas; lo excluido va como comentario con el motivo.
+- [x] **Rutas que ningún shell entrecomilla igual** (`" ' $ ` % ! & ( ) ^`, controles) no se
+      convierten en comando: se comentan. Origen: en POSIX `$(...)` se EJECUTA dentro de comillas
+      dobles, y `& ^ ( )` son metacaracteres de cmd.exe legales en un nombre de carpeta Windows.
+- [x] **Superficies**: `cabina worktrees [--project] [--json]`, `GET /api/worktrees`, y un panel
+      por proyecto en la pestaña Projects con los conteos, el script, "Copiar comandos de
+      limpieza" y "Abrir terminal aquí".
+- [x] **`POST /api/open-terminal`**: abre una terminal EN el directorio y nada más — token,
+      confinamiento a las raíces de cabina, solo directorios, y el binario de terminal se elige
+      en el servidor desde una lista blanca por SO. Con break-test.
+- [x] **Efecto aceptado**: la advertencia `stale_worktrees` (inerte hasta hoy) queda activa como
+      `warn`.
+
+Fuera de alcance por decisión explícita: que cabina ejecute la limpieza (rompería la invariante),
+borrar ramas mergeadas, y dejar el comando tecleado en la terminal.

@@ -9,6 +9,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Worktrees, told honestly**: worktree status (`dirty`, `branch`) is now measured on every
+  scan — it used to be gated behind `--worktrees` together with the slow `du`, so every
+  worktree reported `-1 uncommitted` and `0 MB`, and `cabina check`'s stale-worktree warning
+  could never fire at all. Sizes stay opt-in and read "size not measured" instead of `0.0 GB`;
+  worktrees whose directory is gone are flagged as orphaned (`prunable`); the repo's own main
+  worktree is no longer counted as one.
+- **`cabina worktrees`** (and a panel in the Projects tab): the exact cleanup commands, ready
+  to paste — `git worktree prune` per repo with orphans, then `git worktree remove` only for
+  worktrees that are clean; never `--force`, branches untouched, everything skipped listed as
+  a comment saying why. cabina never runs them. A path containing characters no shell quotes
+  the same way (`" ' $ \` % !`, control chars) is never turned into a command.
+- **"Open terminal here"** in the Projects tab (`POST /api/open-terminal`): opens a terminal at
+  the project root and nothing else — confined to cabina's own roots, directories only, and the
+  terminal binary is chosen server-side from a per-OS allowlist. Break-tested.
+
 - Session activity: `sessions.py` parses Claude Code transcripts incrementally (by byte offset)
   into per-session summaries — turns, tokens, tool calls, files touched, agents/skills used,
   commits — attributing sessions outside a `.claude/` dir to their git repo as a fallback.
