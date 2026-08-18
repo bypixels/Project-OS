@@ -109,6 +109,47 @@ def _guess_project_from_encoded_dir(source_path, roots):
     return usage._project_of(enc.replace("-", "/"), roots) or "unknown"
 
 
+def _subagents_count(source_path):
+    sid = os.path.splitext(os.path.basename(source_path))[0]
+    d = os.path.join(os.path.dirname(source_path), sid, "subagents")
+    if not os.path.isdir(d):
+        return 0
+    return sum(1 for f in os.listdir(d) if f.endswith(".jsonl"))
+
+
+def _subagent_tokens(source_path):
+    """Tokens spent by subagents of this session — read in full each refresh (these files are
+    small), kept SEPARATE from the session's own `tokens` (R3: never summed together)."""
+    sid = os.path.splitext(os.path.basename(source_path))[0]
+    d = os.path.join(os.path.dirname(source_path), sid, "subagents")
+    tokens = _empty_tokens()
+    if not os.path.isdir(d):
+        return tokens
+    for f in os.listdir(d):
+        if not f.endswith(".jsonl"):
+            continue
+        try:
+            with open(os.path.join(d, f), encoding="utf-8", errors="replace") as fh:
+                for raw in fh:
+                    raw = raw.strip()
+                    if not raw:
+                        continue
+                    try:
+                        d2 = json.loads(raw)
+                    except Exception:
+                        continue
+                    if d2.get("isSidechain"):
+                        continue
+                    usg = ((d2.get("message") or {}).get("usage")) or {}
+                    tokens["in"] += usg.get("input_tokens", 0) or 0
+                    tokens["out"] += usg.get("output_tokens", 0) or 0
+                    tokens["cache_read"] += usg.get("cache_read_input_tokens", 0) or 0
+                    tokens["cache_write"] += usg.get("cache_creation_input_tokens", 0) or 0
+        except Exception:
+            pass
+    return tokens
+
+
 def _to_local_iso(ts):
     if not ts:
         return None
@@ -155,4 +196,5 @@ def _finalize(state, source_path, roots, offset):
         "commits": state["commits"], "tokens": state["tokens"], "version": state["version"],
         "sidechain_lines": state["sidechain_lines"], "source_path": source_path,
         "size": size, "mtime": mtime, "offset": offset,
+        "subagent_tokens": _subagent_tokens(source_path), "subagents": _subagents_count(source_path),
     }

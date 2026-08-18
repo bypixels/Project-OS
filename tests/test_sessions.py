@@ -101,5 +101,13 @@ class TestFinalize(unittest.TestCase):
         self.assertIsNone(summary["cwd"])
         self.assertFalse(summary["cwd_changed"])
 
+    def test_subagents_count_and_unsummed_tokens(self):
+        lines, off = S._read_new_lines(self.env.session_file, 0)
+        state = S._merge_lines(S._new_state(), lines)
+        summary = S._finalize(state, self.env.session_file, {"alpha": self.env.alpha}, off)
+        self.assertEqual(summary["subagents"], 1)
+        self.assertEqual(summary["subagent_tokens"], {"in": 15, "out": 25, "cache_read": 0, "cache_write": 0})
+        self.assertEqual(summary["tokens"]["in"], 230)             # unchanged: subagent tokens NOT added in
+
 if __name__ == "__main__":
     unittest.main()
