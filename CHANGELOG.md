@@ -38,8 +38,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   exposed) and **Compare** (upload another machine's export, see the delta) from the UI.
 
 
+### Security
+
+- The web server (and the hub) now reject any request whose `Host` header is not loopback or the
+  configured bind host (HTTP 421), and any POST whose `Origin` is foreign (403) — closes the
+  DNS-rebinding path by which a malicious page could read the per-process token off `/` and then
+  POST with it. Break-tested.
+- `POST /api/hooks-install` (and `cabina hooks --write --cmd`) only ever wire `cabina` itself
+  (`cabina…` on PATH or `<python> -m cabina`; shell metacharacters refused; `force` cannot bypass
+  it) — before, any command that resolved on PATH (`bash -c '…'`) could be written into
+  `settings.json` as a hook. Break-tested.
+- `POST /api/open` is confined to project roots, `~/.claude`, `~/.codex` and the state dir —
+  before, any path on the machine could be handed to the OS opener. Break-tested.
+
 ### Fixed
 
+- `usage.refresh()` no longer aborts (server 500 / CLI traceback) when a transcript disappears or
+  becomes unreadable between `stat` and read: that file is skipped and retried next pass, the rest
+  is counted — matching the module's "usage degrades to unknown, nothing else breaks" contract.
+- `cabina mcp` refreshes its roster/scan every 30 s like the web server, instead of caching them
+  for the whole (session-long) process: `cabina_agent` / `cabina_references` no longer answer
+  from a snapshot taken at startup.
+- UI: the I18N key `checking` was defined twice per language, so the Health "Re-check" and Compare
+  busy states showed "checking references…"; the archive dialog now uses `checkingRefs`. A
+  structural test asserts no duplicate keys and en/es parity in the UI string table.
 - `export --detail` never carries absolute file paths (a username leak); they are counted as
   `files_outside` instead.
 - `export --activity` refreshes the session registry itself, so a freshly exported machine is

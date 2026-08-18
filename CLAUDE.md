@@ -54,8 +54,8 @@ reads `.cabina.toml` from the repo root only — a separate path that never goes
 **Config and platform paths.** `config.py` has `DEFAULTS` for every key; `host.default_dirs()`
 picks XDG (`~/.config/cabina`, `~/.local/share/cabina`) vs `%APPDATA%`/`%LOCALAPPDATA%` on Windows.
 Tool homes are always `~/.claude` and `~/.codex`. `$CABINA_CONFIG` overrides the config path.
-`grep`/`du` are used when present with pure-Python fallbacks (Windows) — keep both branches when
-touching `usage.py`/`scan.py`. `host.notify()` passes text to `osascript`/PowerShell via env vars,
+`grep` (`roster.py` `references()`) and `du` (`scan.py` worktree sizes) are used when present with
+pure-Python fallbacks (Windows) — keep both branches when touching them. `host.notify()` passes text to `osascript`/PowerShell via env vars,
 never interpolated into the script (injection guard, `tests/test_platform.py`).
 
 **Usage is best-effort, incremental, and attributed by cwd.** `usage.refresh()` (called by
@@ -80,9 +80,13 @@ nothing else may break.
 
 **Server = thin HTTP over the same modules.** `server.py` binds `127.0.0.1`, serves
 `static/index.html` (single file, `__TOKEN__`/`__LANG__` substituted), and requires an
-`X-Cabina-Token` header (per-process `secrets.token_urlsafe`) on every POST. POST routes are the
-only write paths in the whole program: archive agent/skill, create agent, save doc, open, commit,
-rescan. `gitops.commit_path` only ever runs `git add -A -- <path>` + `git commit -- <path>` (never
+`X-Cabina-Token` header (per-process `secrets.token_urlsafe`) on every POST. Every request (server
+and hub) must carry a loopback/bind-host `Host` header (`host_allowed`, 421 otherwise) and every
+POST a loopback/bind-host `Origin` when present (`origin_allowed`, 403) — the anti-DNS-rebinding
+guard, without which a malicious page could read the token off `/`. POST routes are the only write
+paths in the whole program: archive agent/skill, create agent, save doc, open (confined to project
+roots + tool homes + state dir, `_open_allowed`), commit, rescan, hooks-install (`guard.hooks_write`
+only ever wires `cabina` itself — `_cmd_is_cabina`, never bypassed by `force`). `gitops.commit_path` only ever runs `git add -A -- <path>` + `git commit -- <path>` (never
 a bare `-A`) and refuses mid-merge/rebase. `docs.py` guards saves with a content hash taken at
 read time, an allowlist of roots (no `../`), a "live agent working here" check, and a backup +
 atomic write.
