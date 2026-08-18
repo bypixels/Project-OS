@@ -325,5 +325,6 @@ function renderLive(){const l=S.live;$("filters").innerHTML=`<span class="muted"
  $("foot").textContent=T("inWs",{n:l.agents.length,w:l.workspaces.length})+" · "+Object.entries(c).map(([k,v])=>`${ico[k]||"·"} ${v} ${T(k)}`).join("  ");const done=l.agents.filter(a=>a.status==="done");
  $("detail").innerHTML=done.length?`<div class="h">${T("waitReview")}</div>`+done.map(a=>`<div class="box warn"><b>${esc(a.agent)}</b> · ${esc(a.workspace)}<br>${esc(a.task||"—")}</div>`).join(""):`<div class="muted">${T("noneDone")}</div>`;}
 loadAgents();loadSkills();loadProjs();loadHar();loadActivity();loadHub();
-if(!HUB){loadLive();loadDocs();setInterval(loadLive,1000);}
+if(!HUB){loadLive();loadDocs();let liveN=0;setInterval(()=>{if(document.hidden)return;liveN++;if(S.view==="live"||liveN%5===0)loadLive();},1000);
+ document.addEventListener("visibilitychange",()=>{if(!document.hidden)loadLive();});}
 </script></body></html>

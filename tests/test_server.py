@@ -120,6 +120,13 @@ class TestServer(unittest.TestCase):
     def test_activity_supports_aggregated_shape(self):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
         self.assertIn("function renderActivityAggregated", html)
+    def test_live_polling_pauses_when_hidden_and_resumes_on_visible(self):
+        # H4: setInterval(loadLive,1000) ran forever regardless of tab visibility, each tick
+        # launching 2 herdr subprocesses. Guard on document.hidden and refresh immediately on
+        # visibilitychange, instead of two separate timers.
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        self.assertIn("visibilitychange", html)
+        self.assertIn("document.hidden", html)
     def test_activity_and_hub_fields_always_escaped(self):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
         import re
