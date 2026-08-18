@@ -43,6 +43,27 @@ class TestServer(unittest.TestCase):
         self.assertTrue(any("overrides" in w for w in by[("alpha", "reviewer")]["warnings"]))  # shadows global undeclared
         self.assertEqual({a["tool"] for a in d["agents"]}, {"claude", "codex"})
         self.assertTrue(d["codex_present"])
+    def test_skills_endpoint_caches_usage_refresh_and_invalidates_on_archive(self):
+        # H2: api_skills used to call usage.refresh() (a grep over ~/.claude/projects) on
+        # every request, unlike api_agents' cached, TTL'd roster(). Mirror that pattern for
+        # skills: two consecutive GETs must refresh usage only once; archiving a skill must
+        # invalidate the cache so the next GET refreshes again.
+        from cabina import usage
+        from unittest import mock
+        tdir = os.path.join(self.env.alpha, ".claude", "skills", "throwaway")
+        os.makedirs(tdir, exist_ok=True)
+        open(os.path.join(tdir, "SKILL.md"), "w").write("---\nname: throwaway\ndescription: t\n---\n")
+        self.app._skills = None                      # force a real recompute inside the patched block below
+        with mock.patch("cabina.server.usage.refresh", wraps=usage.refresh) as m:
+            s1 = self.get("/api/skills")
+            self.assertTrue(any(x["name"] == "throwaway" for x in s1["skills"]))
+            self.get("/api/skills")
+            self.assertEqual(m.call_count, 1)                 # second GET served from cache: no re-refresh
+            code, r = self.post("/api/archive-skill", {"name": "throwaway", "path": tdir, "project": "alpha"})
+            self.assertTrue(r["ok"], r)
+            s2 = self.get("/api/skills")
+            self.assertEqual(m.call_count, 2)                 # archive invalidated the cache: refreshes again
+            self.assertFalse(any(x["name"] == "throwaway" for x in s2["skills"]))
     def test_skills_projects_harness_docs_live(self):
         s = self.get("/api/skills"); self.assertEqual({(x["name"], x["tool"]) for x in s["skills"]}, {("gsk", "claude"), ("deploy", "claude"), ("gsk", "codex")})
         self.assertEqual(next(x for x in s["skills"] if x["name"] == "deploy")["uses"], 1)
