@@ -73,7 +73,7 @@ en:{tabs:{health:"Health",agents:"Agents",live:"Live",skills:"Skills",projects:"
  compareBtn:"Compare…",compareT:"compare with another machine's export",compareTitle:"Compare with another export",compareHint:"Pick a cabina export .json file from another machine.",compareRun:"Compare",compareParseError:"Could not read that file as JSON.",closeBtn:"Close",
  path:"path",git:"git",clean:"clean",uncommitted:"{n} uncommitted",notRepo:"not a repo",lastCommit:"last commit",assets:"assets",agentsN:"agents",skillsN:"skills",commandsN:"commands",rulesN:"rules",harness:"harness",hooksN:"hooks",wfN:"workflows",docsN:"documents",memDays:"MEMORY.md",today:"today",daysUntouched:"{n} days untouched",maybeDead:"· possibly dead",
  tilesTitle:"Projects at a glance",tilesSparkAria:"30-day health trend (critical/warning)",tileActive:"active",tileIdle:"idle",tileNever:"no sessions yet",
- wtStats:"{n} worktrees · {clean} clean · {dirty} dirty · {unknown} unknown · {prunable} orphaned",wtSizeGb:"{gb} GB",wtSizeUnmeasured:"size not measured",wtRescanSizes:"Rescan with sizes",wtCopyScript:"Copy cleanup commands",wtOpenTerminal:"Open terminal here",
+ wtStats:"{n} worktrees · {clean} clean · {dirty} dirty · {unknown} unknown · {prunable} orphaned",wtSizeGb:"{gb} GB",wtSizeUnmeasured:"size not measured",wtRescanSizes:"Rescan with sizes",wtCopyScript:"Copy cleanup commands",wtOpenTerminal:"Open terminal here",wtLoadError:"Could not load worktree data.",
  harHint:"Harness state per project. Below, the run log.",complete:"complete",partial:"partial",noHar:"no harness",problem:"problem(s)",runlog:"RUN LOG",runs:"runs",consq:"consq.",kPer:"{k}k/consq.",
  pieces:"pieces",hooks:"hooks",activeOf:"{a} active of {n}",none:"none",runlogL:"run log",yesRl:"yes, harness-runs.md",no:"no",
  hkBroken:"<b>{n} wired hook(s) that do not exist</b>: settings.json calls them on every event and they fail.",hkDead:"<b>{n} unwired hook(s)</b>: on disk but no settings.json calls them — they never run.",hkDeadFix:"Wire it in <code>.claude/settings.json</code> under the right event, or archive it.",hkActive:"Active hooks",helpers:"helpers (not wired):",missing:"Missing",noneMsg:"This project has no harness: no persistent memory and no automatic guards.",openClaude:"Open .claude",
@@ -116,7 +116,7 @@ es:{tabs:{health:"Salud",agents:"Agentes",live:"En vivo",skills:"Skills",project
  compareBtn:"Comparar…",compareT:"comparar con el export de otra máquina",compareTitle:"Comparar con otro export",compareHint:"Elegí un archivo .json exportado desde otra máquina.",compareRun:"Comparar",compareParseError:"No se pudo leer ese archivo como JSON.",closeBtn:"Cerrar",
  path:"ruta",git:"git",clean:"limpio",uncommitted:"{n} sin commit",notRepo:"no es un repo",lastCommit:"último commit",assets:"assets",agentsN:"agentes",skillsN:"skills",commandsN:"comandos",rulesN:"rules",harness:"harness",hooksN:"hooks",wfN:"workflows",docsN:"documentos",memDays:"MEMORY.md",today:"hoy",daysUntouched:"{n} días sin tocar",maybeDead:"· posiblemente muerto",
  tilesTitle:"Proyectos de un vistazo",tilesSparkAria:"tendencia de salud de 30 días (crítico/advertencia)",tileActive:"activo",tileIdle:"inactivo",tileNever:"sin sesiones aún",
- wtStats:"{n} worktrees · {clean} limpios · {dirty} con cambios · {unknown} desconocidos · {prunable} huérfanos",wtSizeGb:"{gb} GB",wtSizeUnmeasured:"tamaño no medido",wtRescanSizes:"Reescanear con tamaños",wtCopyScript:"Copiar comandos de limpieza",wtOpenTerminal:"Abrir terminal aquí",
+ wtStats:"{n} worktrees · {clean} limpios · {dirty} con cambios · {unknown} desconocidos · {prunable} huérfanos",wtSizeGb:"{gb} GB",wtSizeUnmeasured:"tamaño no medido",wtRescanSizes:"Reescanear con tamaños",wtCopyScript:"Copiar comandos de limpieza",wtOpenTerminal:"Abrir terminal aquí",wtLoadError:"No se pudo cargar la información de worktrees.",
  harHint:"Estado del harness por proyecto. Abajo, la bitácora de corridas.",complete:"completo",partial:"parcial",noHar:"sin harness",problem:"problema(s)",runlog:"BITÁCORA DE CORRIDAS",runs:"corridas",consq:"consec.",kPer:"{k}k/consec.",
  pieces:"piezas",hooks:"hooks",activeOf:"{a} activos de {n}",none:"ninguno",runlogL:"bitácora",yesRl:"sí, harness-runs.md",no:"no",
  hkBroken:"<b>{n} hook(s) cableados que no existen</b>: settings.json los llama en cada evento y fallan.",hkDead:"<b>{n} hook(s) sin cablear</b>: existen en disco pero ningún settings.json los llama — nunca se ejecutan.",hkDeadFix:"Cablearlo en <code>.claude/settings.json</code> bajo el evento que corresponda, o archivarlo.",hkActive:"Hooks activos",helpers:"helpers (no se cablean):",missing:"Falta",noneMsg:"Este proyecto no tiene harness: no hay memoria persistente ni guardas automáticas.",openClaude:"Abrir .claude",
@@ -327,7 +327,9 @@ function renderProjDetail(){const x=(S.projs?.projects||[]).find(y=>projKey(y)==
  if(!HUB)$("bFolder").onclick=async()=>{toast((await POST("/api/open",{path:x.path})).message);};
  if(!HUB&&x.worktrees)loadWorktreePanel(x);}
 async function loadWorktreePanel(x){if(HUB)return;
- const r=await GET("/api/worktrees?project="+encodeURIComponent(x.name));
+ let r;
+ try{r=await GET("/api/worktrees?project="+encodeURIComponent(x.name));}
+ catch(e){if(S.sel!==projKey(x))return;const el0=$("wtPanel");if(el0){el0.className="box bad";el0.innerHTML=esc(T("wtLoadError"));}return;}
  if(S.sel!==projKey(x))return;                      // user navigated away while this was in flight
  const el=$("wtPanel");if(!el)return;
  const s=r.summary;

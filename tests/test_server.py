@@ -437,9 +437,22 @@ class TestServer(unittest.TestCase):
         block = html[start:end]
         split = block.index("\nes:{")
         en_block, es_block = block[:split], block[split:]
-        for key in ("wtStats", "wtSizeGb", "wtSizeUnmeasured", "wtRescanSizes", "wtCopyScript", "wtOpenTerminal"):
+        for key in ("wtStats", "wtSizeGb", "wtSizeUnmeasured", "wtRescanSizes", "wtCopyScript", "wtOpenTerminal", "wtLoadError"):
             self.assertIn(key + ":", en_block, key)
             self.assertIn(key + ":", es_block, key)
+    def test_worktree_panel_fetch_failure_shows_error_instead_of_hanging_on_loading(self):
+        # Follow-up: GET() has no error handling of its own, so a rejected /api/worktrees
+        # fetch (network failure, bad JSON, ...) used to leave the panel stuck on "loading…"
+        # forever plus an unhandled promise rejection. loadWorktreePanel must catch just that
+        # fetch and render a short error line instead -- the shared GET() helper itself must
+        # stay untouched (out of scope for this fix).
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        start = html.index("async function loadWorktreePanel")
+        end = html.index("// ---------- SCAN / EXPORT / COMPARE ----------")
+        body = html[start:end]
+        self.assertIn("catch", body)
+        self.assertIn('T("wtLoadError")', body)
+        self.assertIn('async function GET(u){return (await fetch(u)).json();}', html)   # GET() itself unchanged
     def test_project_row_and_footer_never_show_a_fake_zero_gb_for_unmeasured_worktrees(self):
         # Follow-up to the worktree panel: the ORIGINAL project row and the tab footer still
         # computed (x.worktrees_mb/1024).toFixed(1) unconditionally, so an unmeasured project

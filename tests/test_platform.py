@@ -160,9 +160,23 @@ class TestOpenTerminal(unittest.TestCase):
         self.assertEqual(calls[0][0], ["wt", "-d", "/some/dir"])
 
     def test_windows_falls_back_to_powershell_without_wt(self):
+        # Follow-up fix: cmd.exe is a real shell that re-parses text (%VAR%, &, ^, () survive
+        # double quotes) -- routing the path through `cmd /c start powershell ...` contradicted
+        # the "never a path a shell would re-parse" guarantee. Launch powershell directly instead,
+        # in a new console window, with -LiteralPath so no wildcard/escape interpretation happens.
         ok, msg, calls = self._capture("win32", "nt", {})
         self.assertTrue(ok, msg)
-        self.assertEqual(calls[0][0], ["cmd", "/c", "start", "powershell", "-NoExit", "-Command", "Set-Location", "/some/dir"])
+        self.assertEqual(calls[0][0], ["powershell", "-NoExit", "-Command", "Set-Location", "-LiteralPath", "/some/dir"])
+        self.assertNotIn("cmd", calls[0][0])
+        # creationflags must be looked up via getattr with a safe fallback, so importing/running
+        # this on non-Windows (where CREATE_NEW_CONSOLE does not exist) never breaks
+        self.assertIn("creationflags", calls[0][1])
+        self.assertEqual(calls[0][1]["creationflags"], getattr(host.subprocess, "CREATE_NEW_CONSOLE", 0))
+
+    def test_windows_fallback_never_uses_cmd_exe(self):
+        import inspect
+        src = inspect.getsource(host.open_terminal)
+        self.assertNotIn('"cmd"', src)
 
     def test_linux_prefers_x_terminal_emulator(self):
         ok, msg, calls = self._capture("linux", "posix", {"x-terminal-emulator": "/usr/bin/x-terminal-emulator", "gnome-terminal": "/usr/bin/gnome-terminal", "konsole": "/usr/bin/konsole", "xterm": "/usr/bin/xterm"})

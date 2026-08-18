@@ -4,7 +4,7 @@ import os, tempfile, unittest
 from datetime import datetime, timedelta
 from unittest import mock
 import _helpers  # noqa
-from cabina import contract as C, docs as D, guard as G, harness as H, healthlog as HL, server as SRV, sessions as SESS, usage as U
+from cabina import contract as C, docs as D, guard as G, harness as H, healthlog as HL, server as SRV, sessions as SESS, usage as U, worktrees as WT
 from _env import Env
 
 class TestBreaks(unittest.TestCase):
@@ -526,6 +526,22 @@ class TestBreaks(unittest.TestCase):
             m.assert_called_once()
         finally:
             env.cleanup()
+
+    def test_worktree_script_unsafe_path_guard(self):
+        # W3 follow-up: worktrees.script() must never put a path containing shell metacharacters
+        # (e.g. a command-substitution payload) on a `git worktree remove` line -- _is_unsafe()
+        # is what keeps it off, routing it to the "# skipped (... unusual characters)" comment
+        # instead.
+        data = {"projects": [{"name": "alpha", "path": "/repo/alpha", "git": {"worktrees": [
+            {"path": "/repo/alpha-wt/$(whoami)", "name": "evil", "mb": 1, "mtime": "2026-08-01",
+             "dirty": 0, "branch": "b", "prunable": False},
+        ]}}]}
+        cfg = {}   # never touched: script()/rows() only read `data`, which is passed explicitly
+        out = WT.script(cfg, data)
+        self.assertNotIn('worktree remove "/repo/alpha-wt/$(whoami)"', out)     # guard present: kept off the remove line
+        with mock.patch.object(WT, "_is_unsafe", return_value=False):            # guard disabled
+            out2 = WT.script(cfg, data)
+        self.assertIn('worktree remove "/repo/alpha-wt/$(whoami)"', out2)       # canary red: unsafe path now emitted
 
     def test_terminal_target_directory_only_guard(self):
         # W3: even a path INSIDE the allowed roots must be refused if it is a regular file --

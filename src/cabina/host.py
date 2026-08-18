@@ -53,7 +53,13 @@ def open_terminal(path):
             if shutil.which("wt"):
                 subprocess.Popen(["wt", "-d", path])
             else:
-                subprocess.Popen(["cmd", "/c", "start", "powershell", "-NoExit", "-Command", "Set-Location", path])
+                # No cmd.exe: it is a real shell that re-parses the command line (%VAR%, &, ^,
+                # () all survive double quotes there). Launch powershell directly in a new
+                # console window instead; -LiteralPath turns off wildcard/escape interpretation.
+                # CREATE_NEW_CONSOLE only exists on Windows -- getattr keeps this importable
+                # (and runnable, in a test) on every other OS.
+                subprocess.Popen(["powershell", "-NoExit", "-Command", "Set-Location", "-LiteralPath", path],
+                                  creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0))
             return True, "opened"
         if shutil.which("x-terminal-emulator"):
             subprocess.Popen(["x-terminal-emulator", f"--working-directory={path}"],

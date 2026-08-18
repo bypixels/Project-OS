@@ -151,6 +151,9 @@ class TestWorktreesScriptUnsafePaths(unittest.TestCase):
         '/repo/gamma-wt/wt%VAR%',
         '/repo/gamma-wt/wt!bang',
         '/repo/gamma-wt/wt\nline',
+        '/repo/gamma-wt/wt & whoami',      # cmd.exe: & chains commands; legal in a dir name
+        '/repo/gamma-wt/wt^caret',         # cmd.exe: ^ is its escape character
+        '/repo/gamma-wt/wt(1)',            # cmd.exe: ( ) group commands
     ]
     SAFE_PATH_WITH_SPACE = '/repo/gamma-wt/wt with space'
 

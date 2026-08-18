@@ -7,9 +7,12 @@ from . import scan
 # bash, PowerShell and cmd: "$" and "`" still expand inside POSIX double quotes (command
 # substitution would RUN when the user pastes the line), "`" is also PowerShell's escape
 # character, "%" and "!" are cmd's variable / delayed-expansion markers, and a literal `"` or
-# `'` breaks the quoting itself. Control characters (incl. newlines) are never safe either. A
-# plain space is fine — it stays inside the double quotes.
-_UNSAFE_CHARS = frozenset('"\'$`%!')
+# `'` breaks the quoting itself. "&", "(", ")" and "^" are all legal characters in a Windows
+# directory name but are cmd.exe metacharacters NOT reliably neutralized by double quotes there:
+# "&" chains a second command, "(" / ")" group commands, and "^" is cmd's own escape character.
+# Control characters (incl. newlines) are never safe either. A plain space is fine — it stays
+# inside the double quotes on every one of these shells.
+_UNSAFE_CHARS = frozenset('"\'$`%!&()^')
 
 
 def _is_unsafe(path):
