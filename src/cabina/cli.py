@@ -10,6 +10,7 @@
 """
 import argparse, json, os, sys, textwrap
 from . import __version__, config as CFG
+from .i18n import t
 
 
 def main(argv=None):
@@ -175,10 +176,8 @@ def _agents(cfg, a):
         for r in refs[:12]: print("   ", r)
         return 0 if ok else 1
     if sys.stderr.isatty():
-        # TODO i18n: R.load() below refreshes usage by grepping every transcript under
-        # ~/.claude/projects (H2) -- can take ~10s with no other feedback; `cabina scan`
-        # keeps the cache warm so this stays fast.
-        print("scanning usage history… (cabina scan keeps this warm)", file=sys.stderr)
+        # R.load() below refreshes usage by grepping every transcript, which can take ~10s.
+        print(t(cfg["language"], "agents.scanning_usage"), file=sys.stderr)
     rows, items = R.load()
     hom = Roster.homonyms(rows)
     out = []

@@ -42,6 +42,7 @@ STRINGS = {
         "fix.remove_wire": "remove the settings.json entry or restore the file",
         "fix.worktree": "git -C <repo> worktree remove <path>",
         "brief.last_session": "last session here: {title} ({ago} ago)",
+        "agents.scanning_usage": "scanning usage history… (cabina scan keeps this warm)",
     },
     "es": {
         "health.title": "SALUD DEL ENTORNO", "health.ok": "todo en orden",
@@ -85,6 +86,7 @@ STRINGS = {
         "fix.remove_wire": "quitar la entrada de settings.json o restaurar el archivo",
         "fix.worktree": "git -C <repo> worktree remove <path>",
         "brief.last_session": "última sesión aquí: {title} (hace {ago})",
+        "agents.scanning_usage": "leyendo el historial de uso… (cabina scan lo mantiene al día)",
     },
 }
 

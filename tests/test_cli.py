@@ -4,6 +4,7 @@ from unittest import mock
 import _helpers  # noqa
 from _env import Env
 from cabina import scan
+from cabina.i18n import t
 
 class TestActivityCommand(unittest.TestCase):
     def test_activity_json_lists_sessions(self):
@@ -128,10 +129,10 @@ class TestAgentsUsageScanHint(unittest.TestCase):
             env.cleanup()
 
     def test_prints_hint_on_a_tty(self):
-        self.assertIn("scanning usage history", self._run(tty=True))
+        self.assertIn(t("en", "agents.scanning_usage"), self._run(tty=True))
 
     def test_silent_when_not_a_tty(self):
-        self.assertNotIn("scanning usage history", self._run(tty=False))
+        self.assertNotIn(t("en", "agents.scanning_usage"), self._run(tty=False))
 
 
 class TestHooksCommand(unittest.TestCase):
