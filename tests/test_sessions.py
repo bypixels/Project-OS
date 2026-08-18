@@ -174,13 +174,11 @@ class TestSessionsRefresh(unittest.TestCase):
         items2 = S.refresh(cfg2, days=30)
         self.assertFalse(any(s["session_id"] == "sess-1" for s in items2))   # pruned by age, not by existence
 
-    def test_refresh_writes_a_registry_file_that_never_contains_prompt_text(self):
-        # CRITICAL finding from adversarial review: Tarea 15 only checked the in-memory
-        # summary dict. This checks the ACTUAL bytes written to sessions.json on disk — the
-        # full registry, partial_state included, not just the redacted summary copy.
-        S.refresh(self.env.cfg, days=30)
-        raw = open(S.registry_path(self.env.cfg), encoding="utf-8").read()
-        self.assertNotIn("PROMPT_MARKER_DO_NOT_LEAK", raw)
+    # NOTE: the on-disk "never leaks prompt text" canary used to live here, but it stayed
+    # green even if _redact_partial_state were identity (_merge_lines never actually copies
+    # prompt text into `state`, so there was nothing for the guard to catch). It has been
+    # replaced by a real canary in tests/test_breaks.py that injects the marker via a wrapper
+    # around the real _merge_lines, so the guard at the write site is genuinely exercised.
 
     def test_load_reads_cache_without_touching_source_files(self):
         S.refresh(self.env.cfg, days=30)

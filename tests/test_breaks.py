@@ -63,6 +63,33 @@ class TestBreaks(unittest.TestCase):
         with mock.patch.object(SESS, "PARTIAL_STATE_FIELDS", SESS.PARTIAL_STATE_FIELDS + ("prompt_text",)):
             self.assertIn("prompt_text", SESS._redact_partial_state(leak_state))                # guard removed -> leaks
 
+    def test_sessions_on_disk_registry_never_leaks_prompt_text_via_merge_lines(self):
+        # R8 canary, made real: the old canary (formerly in test_sessions.py) stayed green
+        # even if _redact_partial_state were identity, because _merge_lines never actually
+        # copies prompt text into `state` — there was nothing for the guard to catch. This
+        # wraps the REAL _merge_lines and injects a marker into `state`, so the guard at the
+        # write site (_redact_partial_state, called from refresh()) is genuinely exercised.
+        env = Env()
+        try:
+            real_merge = SESS._merge_lines
+            def leaky_merge(state, lines):
+                state = real_merge(state, lines)
+                state["prompt_text"] = "PROMPT_MARKER_DO_NOT_LEAK leaked"
+                return state
+            with mock.patch.object(SESS, "_merge_lines", leaky_merge):
+                SESS.refresh(env.cfg, days=30)
+            raw = open(SESS.registry_path(env.cfg), encoding="utf-8").read()
+            self.assertNotIn("PROMPT_MARKER_DO_NOT_LEAK", raw)                      # guard present: caught
+
+            os.remove(SESS.registry_path(env.cfg))
+            with mock.patch.object(SESS, "_merge_lines", leaky_merge), \
+                 mock.patch.object(SESS, "_redact_partial_state", lambda state: state):
+                SESS.refresh(env.cfg, days=30)
+            raw2 = open(SESS.registry_path(env.cfg), encoding="utf-8").read()
+            self.assertIn("PROMPT_MARKER_DO_NOT_LEAK", raw2)                        # guard removed -> canary red
+        finally:
+            env.cleanup()
+
     def test_sessions_retention_prune_guard(self):
         now_local = datetime.now().astimezone()
         old_ended = (now_local - timedelta(days=400)).isoformat()
