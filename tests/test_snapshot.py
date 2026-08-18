@@ -1,8 +1,8 @@
-import json, unittest
+import json, os, unittest
 from unittest import mock
 import _helpers  # noqa
 from _env import Env
-from cabina import snapshot as SNAP, sessions as SESS
+from cabina import snapshot as SNAP, sessions as SESS, scan
 
 class TestExportActivity(unittest.TestCase):
     def setUp(self):
@@ -77,6 +77,37 @@ class TestExportProjectsDetail(unittest.TestCase):
             self.assertTrue(all("path" not in p for p in out["projects_detail"]))
         finally:
             env.cleanup()
+
+class TestExportAgentsCarryContractFields(unittest.TestCase):
+    # E1: hub's renderAgentDetail crashed with "Cannot read properties of undefined (reading
+    # 'length')" because export() agent rows never carried critical/warnings — a teammate on
+    # another machine had no way to see WHY an agent is invalid. desc is the frontmatter
+    # description (truncated), never the full body/prompt, and "path" (local-only) stays out.
+    def test_export_agents_carry_critical_warnings_and_desc_not_path(self):
+        env = Env()
+        try:
+            out = SNAP.export(env.cfg)
+            row = next(a for a in out["agents"] if a["name"] == "reviewer" and a["project"] == "alpha")
+            self.assertEqual(row["critical"], [])
+            self.assertIsInstance(row["warnings"], list)
+            self.assertEqual(row["desc"], "Reviews things carefully")
+            self.assertNotIn("path", row)
+        finally:
+            env.cleanup()
+
+    def test_export_agents_desc_truncated_to_300_chars(self):
+        env = Env()
+        try:
+            long_desc = "x" * 500
+            open(os.path.join(env.claude, "agents", "longdesc.md"), "w").write(
+                f"---\nname: longdesc\ndescription: {long_desc}\nmodel: sonnet\ntools: Read\n---\nBody.\n")
+            scan.save(env.cfg, scan.run(env.cfg))
+            out = SNAP.export(env.cfg)
+            row = next(a for a in out["agents"] if a["name"] == "longdesc")
+            self.assertEqual(len(row["desc"]), 300)
+        finally:
+            env.cleanup()
+
 
 class TestCompareActivity(unittest.TestCase):
     def test_compare_activity_deltas(self):

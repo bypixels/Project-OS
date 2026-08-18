@@ -84,8 +84,12 @@ def export_activity(cfg, projects=None, detail=False, titles=False):
 def export(cfg, activity=None):
     data = scan.ensure(cfg)
     R = Roster(cfg, data); rows, items = R.load(refresh_usage=False)
+    # critical/warnings (why the contract flags it) and desc (frontmatter description, truncated
+    # to 300 chars — never the prompt body) travel to other machines via hub so a teammate can
+    # see WHY an agent is invalid without a filesystem path, which stays local-only (like cwd).
     agents = [{"name": r.name, "project": p, "tool": t, "category": r.category, "model": r.fields.get("model", ""),
-               "uses": items.get(r.name, {}).get("n_total", 0)} for p, r, path, t in rows if r.is_agent]
+               "uses": items.get(r.name, {}).get("n_total", 0), "critical": r.critical, "warnings": r.warnings,
+               "desc": r.fields.get("description", "")[:300]} for p, r, path, t in rows if r.is_agent]
     sk = [{"name": s["name"], "project": s["project"], "state": s["state"], "symlink": s["symlink"]} for s in SK.load(cfg, data)]
     hs = [{"project": e["name"], "level": e["level"], "hooks_dead": e["hooks_dead"], "hooks_broken": e["hooks_broken"]} for e in HAR.states(data)]
     # projects_detail: per-project fields from projects.load(), whitelisted to _PROJECT_DETAIL_FIELDS —

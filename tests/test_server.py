@@ -129,6 +129,13 @@ class TestServer(unittest.TestCase):
         self.assertGreater(len(hits), 0)
         for m in hits:
             self.assertIn("esc(", m.group(1), f"unescaped interpolation: ${{{m.group(1)}}}")
+    def test_agent_detail_tolerates_missing_critical_and_warnings(self):
+        # E1: hub export rows carry no critical/warnings key the way a live scan's rows do (they
+        # do now, but renderAgentDetail must never assume it) — a bare x.critical.length threw
+        # TypeError in hub mode. Guard both reads.
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        self.assertIn("(x.critical||[])", html)
+        self.assertIn("(x.warnings||[])", html)
     def test_unknown_routes(self):
         with self.assertRaises(urllib.error.HTTPError): self.get("/api/nope")
         code, _ = self.post("/api/nope", {}); self.assertEqual(code, 404)
