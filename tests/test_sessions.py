@@ -1,4 +1,4 @@
-import os, unittest
+import json, os, unittest
 import _helpers  # noqa
 from _env import Env
 
@@ -108,6 +108,14 @@ class TestFinalize(unittest.TestCase):
         self.assertEqual(summary["subagents"], 1)
         self.assertEqual(summary["subagent_tokens"], {"in": 15, "out": 25, "cache_read": 0, "cache_write": 0})
         self.assertEqual(summary["tokens"]["in"], 230)             # unchanged: subagent tokens NOT added in
+
+    def test_never_stores_prompt_text_and_matches_allowlist(self):
+        lines, off = S._read_new_lines(self.env.session_file, 0)
+        state = S._merge_lines(S._new_state(), lines)
+        summary = S._redact_unknown_fields(S._finalize(state, self.env.session_file, {"alpha": self.env.alpha}, off))
+        dumped = json.dumps(summary)
+        self.assertNotIn("PROMPT_MARKER_DO_NOT_LEAK", dumped)
+        self.assertEqual(set(summary), set(S.SUMMARY_FIELDS))
 
 if __name__ == "__main__":
     unittest.main()

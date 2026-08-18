@@ -3,7 +3,7 @@ test would notice. If a guard is ever deleted from the code, these go red first.
 import os, tempfile, unittest
 from unittest import mock
 import _helpers  # noqa
-from cabina import contract as C, docs as D, harness as H, usage as U
+from cabina import contract as C, docs as D, harness as H, sessions as SESS, usage as U
 
 class TestBreaks(unittest.TestCase):
     def test_contract_kebab_guard(self):
@@ -48,4 +48,16 @@ class TestBreaks(unittest.TestCase):
     def test_usage_never_regresses(self):
         r = U.merge({"a": {"last": "2026-08-10", "n_total": 9}}, {"a": {"last": "2026-08-01", "n": 1}})
         self.assertEqual(r["a"]["last"], "2026-08-10")
+    def test_sessions_no_text_leak_guard(self):
+        leak = {"session_id": "s1", "prompt_text": "the secret prompt string XYZ123"}
+        self.assertNotIn("prompt_text", SESS._redact_unknown_fields(leak))                     # guard present
+        with mock.patch.object(SESS, "SUMMARY_FIELDS", SESS.SUMMARY_FIELDS + ("prompt_text",)):
+            self.assertIn("prompt_text", SESS._redact_unknown_fields(leak))                     # guard removed -> leaks
+
+    def test_sessions_partial_state_allowlist_guard(self):
+        leak_state = dict(SESS._new_state())
+        leak_state["prompt_text"] = "the secret prompt string XYZ123"
+        self.assertNotIn("prompt_text", SESS._redact_partial_state(leak_state))                # guard present
+        with mock.patch.object(SESS, "PARTIAL_STATE_FIELDS", SESS.PARTIAL_STATE_FIELDS + ("prompt_text",)):
+            self.assertIn("prompt_text", SESS._redact_partial_state(leak_state))                # guard removed -> leaks
 if __name__ == "__main__": unittest.main()

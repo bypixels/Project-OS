@@ -20,6 +20,31 @@ from . import usage
 _COMMIT = re.compile(r"\bgit\s+commit\b")
 FILE_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 
+SUMMARY_FIELDS = ("session_id", "project", "cwd_changed", "cwd", "branch", "tool", "title",
+                   "started", "ended", "duration_s", "turns", "tool_calls", "files_touched",
+                   "agents", "skills", "commits", "tokens", "subagent_tokens", "subagents",
+                   "sidechain_lines", "version", "source_path", "size", "mtime", "offset")
+
+PARTIAL_STATE_FIELDS = ("session_id", "cwd_counts", "branch", "version", "title", "started",
+                        "ended", "turns", "tool_calls", "files_touched", "agents", "skills",
+                        "commits", "tokens", "sidechain_lines")
+
+
+def _redact_unknown_fields(summary):
+    """Guard: keep only keys in SUMMARY_FIELDS — an allowlist, not a denylist of 'known-bad'
+    names. Any accidental new field (e.g. raw text) is dropped, not exposed. `cwd` and
+    `source_path` are LOCAL-ONLY: they stay in this local registry but must never leave the
+    machine — export.py and mcp.py filter them out separately (Fase 1b / Fase 2)."""
+    return {k: v for k, v in summary.items() if k in SUMMARY_FIELDS}
+
+
+def _redact_partial_state(state):
+    """Same idea as _redact_unknown_fields, but for `partial_state` — the accumulator that
+    Tarea 17 persists into sessions.json as-is (to resume incremental parsing). Without this,
+    an accidental future addition to _merge_lines that captured raw text would land on disk
+    unfiltered, even though the final `summary` was already safe."""
+    return {k: v for k, v in state.items() if k in PARTIAL_STATE_FIELDS}
+
 
 def _read_new_lines(path, offset):
     """Bytes after `offset` -> (list of non-empty line strings, new_offset). Never consumes a
