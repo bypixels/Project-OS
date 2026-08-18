@@ -7,13 +7,20 @@ from _env import Env
 def hist(d, *lines):
     open(os.path.join(d, "s.jsonl"), "w").write("\n".join(lines) + "\n"); return d
 
+def scan(d, roots=None):
+    """_scan_file over the file `hist()` wrote (d/s.jsonl), from offset 0 -> (agents, skills)."""
+    agents, skills, _ = U._scan_file(os.path.join(d, "s.jsonl"), 0, roots or {})
+    return agents, skills
+
 class TestUsage(unittest.TestCase):
     def test_extract_count_and_last(self):
+        # D-F2: extract_agents()/the grep path are gone; _scan_file (offset-based, single pass)
+        # is now the only extractor, so these tests exercise it directly instead.
         with tempfile.TemporaryDirectory() as d:
             hist(d, '{"timestamp":"2026-08-01T10:00:00Z","x":{"subagent_type":"code-reviewer"}}',
                     '{"timestamp":"2026-08-05T10:00:00Z","x":{"subagent_type":"code-reviewer"}}',
                     '{"timestamp":"2026-08-03T10:00:00Z","x":{"subagent_type":"executor"}}')
-            u = U.extract_agents(d)
+            u, _ = scan(d)
             self.assertEqual((u["code-reviewer"]["n"], u["code-reviewer"]["last"], u["executor"]["n"]), (2, "2026-08-05", 1))
 
     def test_attribution_by_cwd(self):
@@ -21,20 +28,21 @@ class TestUsage(unittest.TestCase):
             hist(d, '{"timestamp":"2026-08-01T10:00:00Z","cwd":"/home/u/p/alpha/apps/api","x":{"subagent_type":"code-reviewer"}}',
                     '{"timestamp":"2026-08-02T10:00:00Z","cwd":"/home/u/p/beta","x":{"subagent_type":"code-reviewer"}}',
                     '{"timestamp":"2026-08-02T10:00:00Z","cwd":"/home/u/p/alpha-two","x":{"subagent_type":"code-reviewer"}}')
-            u = U.extract_agents(d, roots={"alpha": "/home/u/p/alpha", "beta": "/home/u/p/beta"})
+            u, _ = scan(d, roots={"alpha": "/home/u/p/alpha", "beta": "/home/u/p/beta"})
             self.assertEqual(u["code-reviewer"]["by_project"], {"alpha": 1, "beta": 1})   # alpha-two is NOT alpha
 
     def test_skill_invocations_not_mentions(self):
         with tempfile.TemporaryDirectory() as d:
             hist(d, '{"timestamp":"2026-08-01T10:00:00Z","x":{"name":"Skill","input":{"skill":"orchestrate"}}}',
                     '{"timestamp":"2026-08-02T10:00:00Z","x":"skill `mention-only`"}')
-            u = U.extract_skills(d)
+            _, u = scan(d)
             self.assertEqual(u["orchestrate"]["n"], 1); self.assertNotIn("mention-only", u)
 
     def test_line_without_timestamp(self):
         with tempfile.TemporaryDirectory() as d:
             hist(d, '{"x":{"subagent_type":"odd"}}')
-            self.assertEqual(U.extract_agents(d)["odd"], {"n": 1, "last": None, "by_project": {}})
+            u, _ = scan(d)
+            self.assertEqual(u["odd"], {"n": 1, "last": None, "by_project": {}})
 
     def test_merge_keeps_old_date_after_rotation(self):
         r = U.merge({"deploy": {"last": "2026-05-03", "n_total": 4}}, {})

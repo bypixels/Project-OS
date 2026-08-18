@@ -8,7 +8,7 @@ Attribution: each transcript line carries the session `cwd`, so an invocation of
 `code-reviewer` is credited to the project whose root contains that cwd. This is what
 tells apart six homonymous `code-reviewer` agents.
 """
-import json, os, re, subprocess, shutil, threading
+import json, os, re, threading
 from datetime import date
 
 _AGENT = re.compile(r'"subagent_type":"([a-zA-Z0-9_-]+)"')
@@ -24,30 +24,6 @@ _CWD = re.compile(r'"cwd":"([^"]+)"')
 # across the whole read -> scan -> write sequence. Guards ALL of _refresh_both, not just the
 # final save.
 _LOCK = threading.Lock()
-
-
-def _lines(history_dir, needle):
-    if not os.path.isdir(history_dir):
-        return []
-    if shutil.which("grep"):
-        try:
-            r = subprocess.run(["grep", "-rhF", needle, history_dir, "--include=*.jsonl"],
-                               capture_output=True, text=True, timeout=180)
-            return r.stdout.splitlines()
-        except Exception:
-            pass
-    # Python fallback (Windows, or grep missing): slower but same result
-    if True:
-        out = []
-        for dp, dn, fn in os.walk(history_dir):
-            for f in fn:
-                if f.endswith(".jsonl"):
-                    try:
-                        with open(os.path.join(dp, f), encoding="utf-8", errors="replace") as fh:
-                            out.extend(l for l in fh if needle in l)
-                    except Exception:
-                        pass
-        return out
 
 
 def _read_new_lines(path, offset):
@@ -66,8 +42,8 @@ def _read_new_lines(path, offset):
 def _scan_file(path, offset, roots):
     """Read the new bytes of one .jsonl since `offset`, extract BOTH agents and skills in a
     single pass (never just one — see the Tarea 43 amendment on the shared history baseline).
-    Returns (agents_delta, skills_delta, new_offset), each delta shaped like extract()'s output
-    but representing only what THIS pass found, not a running total."""
+    Returns (agents_delta, skills_delta, new_offset): {name: {"n","last","by_project"}} each,
+    representing only what THIS pass found, not a running total."""
     lines, new_offset = _read_new_lines(path, offset)
     agents, skills = {}, {}
     roots = roots or {}
@@ -104,33 +80,6 @@ def _project_of(cwd, roots):
         if (cwd == r or cwd.startswith(r.rstrip("/") + "/")) and len(r) > best_len:
             best, best_len = name, len(r)
     return best
-
-
-def extract(history_dir, pattern, needle, roots=None):
-    """{name: {"n": int, "last": "YYYY-MM-DD"|None, "by_project": {project: n}}}"""
-    out = {}
-    roots = roots or {}
-    for line in _lines(history_dir, needle):
-        ts = _TS.search(line)
-        d = ts.group(1) if ts else None
-        cw = _CWD.search(line)
-        proj = _project_of(cw.group(1) if cw else None, roots)
-        for m in pattern.finditer(line):
-            e = out.setdefault(m.group(1), {"n": 0, "last": None, "by_project": {}})
-            e["n"] += 1
-            if d and (e["last"] is None or d > e["last"]):
-                e["last"] = d
-            if proj:
-                e["by_project"][proj] = e["by_project"].get(proj, 0) + 1
-    return out
-
-
-def extract_agents(history_dir, roots=None):
-    return extract(history_dir, _AGENT, '"subagent_type":"', roots)
-
-
-def extract_skills(history_dir, roots=None):
-    return extract(history_dir, _SKILL, '"name":"Skill","input":{"skill":"', roots)
 
 
 def _file_delta(new_counts, old_counts):
