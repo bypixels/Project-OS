@@ -41,6 +41,40 @@ class TestHubLoadDir(unittest.TestCase):
             self.assertEqual(out["files"][0]["status"], "outside")
             self.assertEqual(out["merged"]["agents"], [])
 
+    def test_hub_keeps_aggregated_and_session_detail_from_all_machines(self):
+        # Orchestrator amendment: a file with only `aggregated` and a file with `sessions`
+        # detail must BOTH survive the merge — detail from one machine must never push the
+        # aggregated-only rows of another machine out of the response.
+        from cabina import hub as HUB
+        with tempfile.TemporaryDirectory() as d:
+            open(os.path.join(d, "m1.json"), "w").write(json.dumps({"cabina": 1, "machine": "m1", "os": "macOS", "when": "x",
+                "agents": [], "skills": [], "harness": [], "projects": ["alpha"],
+                "activity": {"aggregated": [{"project": "alpha", "sessions": 2, "hours": 1.0}]}}))
+            open(os.path.join(d, "m2.json"), "w").write(json.dumps({"cabina": 1, "machine": "m2", "os": "Linux", "when": "y",
+                "agents": [], "skills": [], "harness": [], "projects": ["alpha"],
+                "activity": {"aggregated": [{"project": "alpha", "sessions": 3, "hours": 2.0}],
+                             "sessions": [{"project": "alpha", "started": "s", "title": "t"}]}}))
+            out = HUB.load_dir(d, 5)
+            agg_machines = {row["machine"] for row in out["merged"]["activity"]["aggregated"]}
+            sess_machines = {row["machine"] for row in out["merged"]["activity"]["sessions"]}
+            self.assertEqual(agg_machines, {"m1", "m2"})
+            self.assertEqual(sess_machines, {"m2"})
+
+    def test_hub_merges_projects_detail_with_machine(self):
+        from cabina import hub as HUB
+        with tempfile.TemporaryDirectory() as d:
+            open(os.path.join(d, "m1.json"), "w").write(json.dumps({"cabina": 1, "machine": "m1", "os": "macOS", "when": "x",
+                "agents": [], "skills": [], "harness": [], "projects": ["alpha"],
+                "projects_detail": [{"name": "alpha", "branch": "main", "dirty": 0, "worktrees": 0, "docs": {},
+                                      "memory_days": None, "last_commit": "", "agents": 1, "skills": 1}]}))
+            open(os.path.join(d, "m2.json"), "w").write(json.dumps({"cabina": 1, "machine": "m2", "os": "Linux", "when": "y",
+                "agents": [], "skills": [], "harness": [], "projects": ["alpha"]}))   # no projects_detail key
+            out = HUB.load_dir(d, 5)
+            rows = out["merged"]["projects_detail"]
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["machine"], "m1")
+            self.assertEqual(rows[0]["name"], "alpha")
+
     def test_hub_skips_oversized_file(self):
         from cabina import hub as HUB
         with tempfile.TemporaryDirectory() as d:
@@ -74,6 +108,8 @@ class TestHubServer(unittest.TestCase):
             "agents": [{"name": "rev", "project": "alpha", "tool": "claude", "category": "valid", "model": "sonnet", "uses": 1}],
             "skills": [], "harness": [{"project": "alpha", "level": "partial", "hooks_dead": [], "hooks_broken": []}],
             "projects": ["alpha"],
+            "projects_detail": [{"name": "alpha", "branch": "main", "dirty": 0, "worktrees": 0, "docs": {},
+                                  "memory_days": None, "last_commit": "", "agents": 1, "skills": 0}],
             "activity": {"aggregated": [{"project": "alpha", "sessions": 1, "hours": 0.5, "tokens": {"in": 1, "out": 1},
                                           "commits": 0, "files_touched": 0, "tool_calls": {}, "agents": {}, "skills": {}}]}}))
         cls.HUB = HUB
@@ -104,6 +140,17 @@ class TestHubServer(unittest.TestCase):
         for p in ("/api/live", "/api/docs", "/api/doc", "/api/references", "/api/in-repo"):
             with self.assertRaises(urllib.error.HTTPError):
                 self.get(p)
+
+    def test_api_projects_returns_projects_detail_rows_with_machine_and_safe_defaults(self):
+        d = self.get("/api/projects")
+        row = d["projects"][0]
+        self.assertEqual(row["name"], "alpha")
+        self.assertEqual(row["machine"], "m1")
+        # fields never exported (local-only or too expensive to recompute) must default so the
+        # UI's renderProjects/renderProjDetail never throw on a hub row.
+        for k, v in {"exists": True, "git": True, "path": "", "commands": 0, "rules": 0, "hooks": 0,
+                     "workflows": 0, "worktrees_mb": 0, "worktrees_detail": []}.items():
+            self.assertEqual(row[k], v, k)
 
     def test_post_is_always_405(self):
         import urllib.request, urllib.error

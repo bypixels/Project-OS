@@ -38,7 +38,7 @@ def load_dir(dir_, max_mb=5):
     activity}}."""
     real_dir = os.path.realpath(dir_)
     files, agents, skills, harness = [], [], [], []
-    projects_set, agg_by_key, detail_rows, has_detail = set(), {}, [], False
+    projects_set, agg_by_key, detail_rows, projects_detail = set(), {}, [], []
     if os.path.isdir(dir_):
         for name in sorted(os.listdir(dir_)):
             if not name.endswith(".json"):
@@ -61,14 +61,18 @@ def load_dir(dir_, max_mb=5):
             for s in d.get("skills") or []: skills.append({**s, "machine": machine})
             for h in d.get("harness") or []: harness.append({**h, "machine": machine})
             for p in d.get("projects") or []: projects_set.add(p)
+            for pd in d.get("projects_detail") or []:
+                projects_detail.append({**pd, "machine": machine})
             act = d.get("activity") or {}
             for row in act.get("aggregated") or []:
                 agg_by_key[(row.get("project"), machine)] = {**row, "machine": machine}
-            if act.get("sessions"):
-                has_detail = True
-                for row in act["sessions"]: detail_rows.append({**row, "machine": machine})
-    activity = {"sessions": detail_rows} if has_detail else {"aggregated": list(agg_by_key.values())}
-    merged = {"agents": agents, "skills": skills, "projects": sorted(projects_set), "harness": harness, "activity": activity}
+            for row in act.get("sessions") or []:
+                detail_rows.append({**row, "machine": machine})
+    # Orchestrator amendment: always carry BOTH aggregated and per-session detail — a file that
+    # ships one shape must never push another file's rows of the other shape out of the merge.
+    activity = {"aggregated": list(agg_by_key.values()), "sessions": detail_rows}
+    merged = {"agents": agents, "skills": skills, "projects": sorted(projects_set),
+              "projects_detail": projects_detail, "harness": harness, "activity": activity}
     return {"files": files, "merged": merged}
 
 
@@ -101,7 +105,13 @@ class HubApp:
         return {"skills": self._merged()["merged"]["skills"], "window": None}
 
     def api_projects(self, q=None):
-        return {"projects": [{"name": p} for p in self._merged()["merged"]["projects"]]}
+        # projects_detail carries only the whitelisted export fields (never "path", local-only
+        # like cwd/source_path) — fields the UI's renderProjects/renderProjDetail also read but
+        # that never leave a machine get a safe default here so a hub row never throws.
+        defaults = {"exists": True, "git": True, "path": "", "commands": 0, "rules": 0, "hooks": 0,
+                    "workflows": 0, "worktrees_mb": 0, "worktrees_detail": []}
+        rows = [{**defaults, **p} for p in self._merged()["merged"]["projects_detail"]]
+        return {"projects": rows}
 
     def api_harness(self, q=None):
         m = self._merged()["merged"]
