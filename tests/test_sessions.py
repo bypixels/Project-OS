@@ -54,5 +54,14 @@ class TestMergeLinesCore(unittest.TestCase):
         state = S._merge_lines(S._new_state(), lines)
         self.assertEqual(state["ended"], "2026-08-10T09:00:00Z")     # the sidechain line's later timestamp never counts
 
+    def test_tool_extraction_excludes_sidechain(self):
+        lines, _ = S._read_new_lines(self.env.session_file, 0)
+        state = S._merge_lines(S._new_state(), lines)
+        self.assertEqual(state["tool_calls"], {"Edit": 1, "Agent": 1, "Skill": 1, "Bash": 1})   # no "Read" (sidechain)
+        self.assertEqual(state["files_touched"], [f"{self.env.alpha}/src/widget.py"])           # absolute here; relpath happens at _finalize
+        self.assertEqual(state["agents"], {"sessions-demo-agent": 1})
+        self.assertEqual(state["skills"], {"sessions-demo-skill": 1})
+        self.assertEqual(state["commits"], 1)
+
 if __name__ == "__main__":
     unittest.main()

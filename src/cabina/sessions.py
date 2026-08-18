@@ -13,7 +13,10 @@ Retention: summaries survive their source file disappearing (rotation is normal;
 the point, same as usage.py). They are pruned only once `ended` is older than
 cfg.activity.retention_days (default 365).
 """
-import json, os
+import json, os, re
+
+_COMMIT = re.compile(r"\bgit\s+commit\b")
+FILE_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 
 
 def _read_new_lines(path, offset):
@@ -71,4 +74,18 @@ def _merge_lines(state, lines):
             state["tokens"]["out"] += usg.get("output_tokens", 0) or 0
             state["tokens"]["cache_read"] += usg.get("cache_read_input_tokens", 0) or 0
             state["tokens"]["cache_write"] += usg.get("cache_creation_input_tokens", 0) or 0
+            for b in content:
+                if not isinstance(b, dict) or b.get("type") != "tool_use":
+                    continue
+                name = b.get("name", "?")
+                state["tool_calls"][name] = state["tool_calls"].get(name, 0) + 1
+                inp = b.get("input") or {}
+                if name == "Agent" and inp.get("subagent_type"):
+                    k = inp["subagent_type"]; state["agents"][k] = state["agents"].get(k, 0) + 1
+                if name == "Skill" and inp.get("skill"):
+                    k = inp["skill"]; state["skills"][k] = state["skills"].get(k, 0) + 1
+                if name in FILE_TOOLS and inp.get("file_path") and inp["file_path"] not in state["files_touched"]:
+                    state["files_touched"].append(inp["file_path"])
+                if name == "Bash" and _COMMIT.search(inp.get("command") or ""):
+                    state["commits"] += 1
     return state
