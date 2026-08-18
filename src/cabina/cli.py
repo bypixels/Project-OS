@@ -84,8 +84,9 @@ def main(argv=None):
         r = repo.check_repo(a.repo)
         print(json.dumps(r, indent=1) if a.json else repo.render(r)); return r["exit"]
     if a.cmd == "check":
-        from . import check
+        from . import check, healthlog
         F = check.run(cfg, quick=a.quick)
+        healthlog.append(cfg, F)
         if a.json: print(json.dumps(F, ensure_ascii=False, indent=1))
         else: print(check.render(cfg, F, color=sys.stdout.isatty()))
         if a.notify: check.notify(cfg, F)

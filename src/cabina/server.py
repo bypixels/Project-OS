@@ -5,7 +5,7 @@ import os, sys, json, copy, re, secrets, threading, webbrowser, time
 from datetime import datetime
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
-from . import scan, skills as SK, projects as PROJ, harness as HAR, usage, live as LIVE, host, drift as DR, gitops as GO, sessions as SESS, check as CHECK, guard as GUARD, snapshot as SNAP
+from . import scan, skills as SK, projects as PROJ, harness as HAR, usage, live as LIVE, host, drift as DR, gitops as GO, sessions as SESS, check as CHECK, guard as GUARD, snapshot as SNAP, healthlog as HEALTHLOG
 from .roster import Roster
 from .docs import Docs
 from .i18n import STRINGS
@@ -190,6 +190,7 @@ class App:
             findings = CHECK.run(self.cfg, quick=False)
         except Exception as e:
             return {"findings": [], "error": str(e)}
+        HEALTHLOG.append(self.cfg, findings)
         return {"findings": findings, "ran_at": datetime.now().isoformat(timespec="seconds"), "quick": False}
 
     def _hooks_settings_path(self):

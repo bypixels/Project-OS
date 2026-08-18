@@ -28,7 +28,7 @@ DEFAULTS = {
     "activity": {"retention_days": 365},
     "hub": {"max_file_mb": 5},
     "docs": {"backup_retention_days": 30, "max_per_dir": 60},
-    "check": {"worktree_stale_days": 14, "memory_stale_days": 30},
+    "check": {"worktree_stale_days": 14, "memory_stale_days": 30, "history_days": 180},
 }
 
 
@@ -107,4 +107,5 @@ max_per_dir = 60                 # cap on documents listed per folder in the Doc
 [check]
 worktree_stale_days = 14
 memory_stale_days = 30
+history_days = 180               # how long cabina check's health.jsonl trend is kept
 '''

@@ -4,7 +4,7 @@ import os, tempfile, unittest
 from datetime import datetime, timedelta
 from unittest import mock
 import _helpers  # noqa
-from cabina import contract as C, docs as D, guard as G, harness as H, server as SRV, sessions as SESS, usage as U
+from cabina import contract as C, docs as D, guard as G, harness as H, healthlog as HL, server as SRV, sessions as SESS, usage as U
 from _env import Env
 
 class TestBreaks(unittest.TestCase):
@@ -447,6 +447,54 @@ class TestBreaks(unittest.TestCase):
             ok2, msg2 = G.hooks_write(settings, "bash -c 'echo pwned'", force=True)     # guard present
             self.assertFalse(ok2)
             self.assertFalse(os.path.isfile(settings))
+
+    def test_healthlog_dedup_guard(self):
+        # If _should_append ever always returned True, two identical-and-recent `check` runs
+        # would each append their own line instead of collapsing into one.
+        env = Env()
+        try:
+            findings = [{"sev": "crit", "title": "x"}]
+            with mock.patch.object(HL, "_should_append", return_value=True):   # guard disabled
+                HL.append(env.cfg, findings)
+                HL.append(env.cfg, findings)
+            self.assertEqual(len(HL.read(env.cfg)), 2)                          # duplicate line -> canary red
+        finally:
+            env.cleanup()
+        env2 = Env()
+        try:
+            findings = [{"sev": "crit", "title": "x"}]
+            HL.append(env2.cfg, findings)                                       # guard present
+            HL.append(env2.cfg, findings)
+            self.assertEqual(len(HL.read(env2.cfg)), 1)                         # collapsed: no-op
+        finally:
+            env2.cleanup()
+
+    def test_healthlog_prune_guard(self):
+        # If _prune were ever a no-op, health.jsonl would grow forever past cfg.check.history_days.
+        from datetime import datetime, timedelta
+        env = Env()
+        try:
+            p = HL.path(env.cfg)
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            old = (datetime.now().astimezone() - timedelta(days=400)).isoformat(timespec="seconds")
+            with open(p, "w", encoding="utf-8") as f:
+                f.write('{"when": "%s", "crit": 9, "warn": 0, "info": 0}\n' % old)
+            with mock.patch.object(HL, "_prune", lambda path, days: None):     # guard disabled
+                self.assertTrue(HL.append(env.cfg, [{"sev": "crit", "title": "y"}]))
+            self.assertEqual(len(HL.read(env.cfg)), 2)                          # stale line survives -> canary red
+        finally:
+            env.cleanup()
+        env2 = Env()
+        try:
+            p = HL.path(env2.cfg)
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            old = (datetime.now().astimezone() - timedelta(days=400)).isoformat(timespec="seconds")
+            with open(p, "w", encoding="utf-8") as f:
+                f.write('{"when": "%s", "crit": 9, "warn": 0, "info": 0}\n' % old)
+            HL.append(env2.cfg, [{"sev": "crit", "title": "y"}])                # guard present
+            self.assertEqual(len(HL.read(env2.cfg)), 1)                         # stale line pruned
+        finally:
+            env2.cleanup()
 
     def test_open_path_confinement_guard(self):
         # U3: POST /api/open must refuse any path outside cabina's own roots.
