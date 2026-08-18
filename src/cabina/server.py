@@ -168,7 +168,7 @@ class App:
         def go():
             d = scan.run(self.cfg); scan.save(self.cfg, d)
             with self.lock:
-                self.data = d; self._roster = None
+                self.data = d; self._roster = None; self._skills = None
         threading.Thread(target=go, daemon=True).start()
         return {"ok": True, "message": "rescanning in the background"}
 

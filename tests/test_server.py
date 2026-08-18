@@ -1,4 +1,4 @@
-import json, os, threading, unittest, urllib.request
+import json, os, threading, time, unittest, urllib.request
 import _helpers  # noqa
 from _env import Env
 from cabina import server, scan
@@ -64,6 +64,32 @@ class TestServer(unittest.TestCase):
             s2 = self.get("/api/skills")
             self.assertEqual(m.call_count, 2)                 # archive invalidated the cache: refreshes again
             self.assertFalse(any(x["name"] == "throwaway" for x in s2["skills"]))
+    def test_rescan_invalidates_skills_cache(self):
+        # Reviewer-verified regression: api_rescan's background go() clears self._roster but
+        # not self._skills, so Skills could show up to 30s of stale data after a rescan even
+        # though Agents (via roster()) refreshes instantly.
+        self.app.skills()                                   # warm the cache with the pre-existing skill set
+        tdir = os.path.join(self.env.alpha, ".claude", "skills", "rescan-new")
+        os.makedirs(tdir, exist_ok=True)
+        open(os.path.join(tdir, "SKILL.md"), "w").write("---\nname: rescan-new\ndescription: r\n---\n")
+        self.app.api_rescan({})
+        for _ in range(150):
+            if self.app._roster is None:
+                break
+            time.sleep(0.02)
+        else:
+            self.fail("rescan did not complete in time")
+        rows, _ = self.app.skills()                          # still within the 30s TTL: must reflect the rescan
+        self.assertTrue(any(x["name"] == "rescan-new" for x in rows))
+        # cleanup: this fixture is shared across the whole TestServer class (setUpClass), so
+        # remove the added skill and re-sync data/caches before the next test reads them.
+        import shutil
+        shutil.rmtree(tdir)
+        self.app.api_rescan({})
+        for _ in range(150):
+            if self.app._roster is None:
+                break
+            time.sleep(0.02)
     def test_skills_projects_harness_docs_live(self):
         s = self.get("/api/skills"); self.assertEqual({(x["name"], x["tool"]) for x in s["skills"]}, {("gsk", "claude"), ("deploy", "claude"), ("gsk", "codex")})
         self.assertEqual(next(x for x in s["skills"] if x["name"] == "deploy")["uses"], 1)
