@@ -207,12 +207,37 @@ def merge(registry, fresh):
     never regresses. by_project sums by key. `fresh` here is expected to be the CURRENT
     AGGREGATE across every known source file (see refresh()), not a single file's own delta —
     comparing that aggregate against the registry's previous total is what makes the guard
-    meaningful across an unbounded number of files."""
+    meaningful across an unbounded number of files. `n_window` (Tarea 45: "count from the last
+    full reread" — a concept with no equivalent once reading is incremental) is no longer
+    written: dropped from every entry that passes through here, even one carried over from an
+    old max()-based file."""
     out = _accumulate(registry, fresh)
-    for k, v in fresh.items():
-        out[k]["n_window"] = v.get("n", 0)
     for e in out.values():
-        e.setdefault("n_window", 0); e.setdefault("by_project", {})
+        e.setdefault("by_project", {}); e.pop("n_window", None)
+    return out
+
+
+def _add_onto_registry(registry, delta):
+    """Plain, non-guarded addition of `delta` ("n"-shaped, e.g. a fresh aggregate) onto
+    `registry` ("n_total"-shaped) — used ONLY for a state_dir's very FIRST refresh() ever
+    (usage-history.json had no entries at all before this call). merge()'s diff-guard assumes
+    the registry's n_total is entirely explained by what usage-history.json already tracked;
+    on the first-ever call that is not true (an old max()-based usage-agents.json, Tarea 45,
+    or simply no prior file) — subtracting the fresh aggregate against that unrelated n_total
+    would incorrectly zero out or shrink history that was never double-counted in the first
+    place. There is nothing to reconcile against yet, so this just adds."""
+    out = {k: dict(v) for k, v in registry.items()}
+    for k, v in delta.items():
+        e = out.setdefault(k, {"last": None, "n_total": 0, "by_project": {}})
+        e["n_total"] = e.get("n_total", 0) + v.get("n", 0)
+        if v.get("last") and (e.get("last") is None or v["last"] > e["last"]):
+            e["last"] = v["last"]
+        bp = dict(e.get("by_project") or {})
+        for p, n in (v.get("by_project") or {}).items():
+            bp[p] = bp.get(p, 0) + n
+        e["by_project"] = bp
+    for e in out.values():
+        e.setdefault("by_project", {}); e.pop("n_window", None)   # Tarea 45: no longer written
     return out
 
 
@@ -297,6 +322,10 @@ def _refresh_both(state_dir, history_dir, roots):
     with _LOCK:
         hist_path = os.path.join(state_dir, "usage-history.json")
         history = _load_history(hist_path)
+        first_ever = not history   # no usage-history.json entries at all before this call: see
+                                    # _add_onto_registry — an existing usage-agents.json's
+                                    # n_total (e.g. an old max()-based file, Tarea 45) predates
+                                    # any per-file tracking and must be ADDED to, not diffed.
         _scan_history_dir(history_dir, roots or {}, history)
         _save_history(hist_path, history)
         out = {}
@@ -305,7 +334,7 @@ def _refresh_both(state_dir, history_dir, roots):
             reg = load(p)
             fresh = _aggregate(history, kind)
             window = min((v["last"] for v in fresh.values() if v.get("last")), default=None)
-            items = merge(reg, fresh)
+            items = _add_onto_registry(reg, fresh) if first_ever else merge(reg, fresh)
             meta = {"updated": date.today().isoformat(), "history_window_from": window}
             _save_sibling_output(state_dir, kind, items, meta)
             out[kind] = (items, meta)

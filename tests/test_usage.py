@@ -1,4 +1,4 @@
-import os, tempfile, threading, time, unittest
+import json, os, tempfile, threading, time, unittest
 from unittest import mock
 import _helpers  # noqa
 from cabina import usage as U
@@ -150,6 +150,24 @@ class TestUsageHistoryRegistry(unittest.TestCase):
         items = U.load(p)
         self.assertEqual(items["reviewer"]["n_total"], 4)              # 3 originales + 1 agregada
         self.assertEqual(items["nested-from-subagent"]["n_total"], 1)  # del subagents/sub.jsonl fijo
+
+    def test_loads_old_max_based_registry_and_sums_on_top(self):
+        # un usage-agents.json escrito por la version vieja (n_total via max(), con n_window)
+        # y SIN ninguna entrada en usage-history.json: el primer refresh() con el codigo nuevo
+        # debe SUMAR sobre ese n_total existente, nunca resetearlo ni recontar desde el inicio.
+        with tempfile.TemporaryDirectory() as d:
+            state = os.path.join(d, "state"); os.makedirs(state)
+            p = os.path.join(state, "usage-agents.json")
+            json.dump({"meta": {}, "items": {"reviewer": {
+                "n_total": 40, "last": "2026-07-01", "by_project": {"alpha": 40}, "n_window": 3}}},
+                open(p, "w"))
+            history_dir = os.path.join(d, "hist"); os.makedirs(history_dir)
+            open(os.path.join(history_dir, "s.jsonl"), "w").write(
+                '{"timestamp":"2026-08-01T00:00:00Z","cwd":"/x","x":{"subagent_type":"reviewer"}}\n'
+                '{"timestamp":"2026-08-02T00:00:00Z","cwd":"/x","x":{"subagent_type":"reviewer"}}\n')
+            items, _ = U.refresh(p, history_dir, "agents", {})
+            self.assertEqual(items["reviewer"]["n_total"], 42)     # 40 + 2, no 2, no 40
+            self.assertNotIn("n_window", items["reviewer"])        # save() ya no lo escribe
 
 if __name__ == "__main__":
     unittest.main()
