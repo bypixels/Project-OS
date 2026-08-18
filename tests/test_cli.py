@@ -35,5 +35,16 @@ class TestExportActivity(unittest.TestCase):
         self.assertTrue(all(s["project"] == "alpha" for s in data["activity"]["sessions"]))
         os.unlink(cfgp); env.cleanup()
 
+class TestHubCommand(unittest.TestCase):
+    def test_hub_command_calls_serve_hub_with_dir_and_port(self):
+        from cabina import cli as CLI
+        called = {}
+        def fake(dir_, cfg, port=None, open_browser=True):
+            called.update(dir=dir_, port=port, open_browser=open_browser)
+        with tempfile.TemporaryDirectory() as d:
+            with mock.patch("cabina.hub.serve_hub", fake):
+                CLI.main(["hub", d, "--port", "9999", "--no-open"])
+        self.assertEqual(called["dir"], d); self.assertEqual(called["port"], 9999); self.assertFalse(called["open_browser"])
+
 if __name__ == "__main__":
     unittest.main()

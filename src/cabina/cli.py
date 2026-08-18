@@ -55,6 +55,9 @@ def main(argv=None):
     ac = sub.add_parser("activity", help="session activity read from Claude Code transcripts")
     ac.add_argument("--project"); ac.add_argument("--days", type=int, default=30); ac.add_argument("--json", action="store_true")
 
+    hb = sub.add_parser("hub", help="serve the UI, read-only, over N `cabina export --activity` files in DIR")
+    hb.add_argument("dir"); hb.add_argument("--port", type=int); hb.add_argument("--no-open", action="store_true")
+
     a = ap.parse_args(argv)
     cfg = CFG.load(a.config)
 
@@ -142,6 +145,9 @@ def main(argv=None):
         print("─" * 100)
         print(f"  {len(items)} sessions\n")
         return 0
+    if a.cmd == "hub":
+        from . import hub
+        hub.serve_hub(a.dir, cfg, port=a.port, open_browser=not a.no_open); return 0
     from . import server
     port = getattr(a, "port", None); no_open = getattr(a, "no_open", False)
     server.serve(cfg, port=port, open_browser=not no_open); return 0
