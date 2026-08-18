@@ -81,6 +81,24 @@ class TestServer(unittest.TestCase):
         self.assertIn("active_seconds", d)
         d2 = self.get("/api/activity?project=alpha&days=30")
         self.assertTrue(d2["sessions"]); self.assertTrue(all(s["project"] == "alpha" for s in d2["sessions"]))
+    def test_activity_endpoint_filters_by_days(self):
+        # H3(i): api_activity received `days` but returned EVERY cached session regardless
+        # (measured: identical payload size for days=7 and days=365). Filter by `started`.
+        from cabina import sessions as SESS
+        from datetime import datetime, timedelta, timezone
+        old_ts = (datetime.now(timezone.utc) - timedelta(days=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        sdir = os.path.join(self.env.claude, "projects", "-work-alpha")
+        old_id = "sess-old-b3"
+        with open(os.path.join(sdir, old_id + ".jsonl"), "w") as f:
+            f.write(json.dumps({"type": "user", "timestamp": old_ts, "cwd": self.env.alpha, "gitBranch": "main",
+                                 "sessionId": old_id, "version": "1.0.0",
+                                 "message": {"role": "user", "content": [{"type": "text", "text": "old session"}]}}) + "\n")
+        SESS.refresh(self.env.cfg, days=3650)
+        d_wide = self.get("/api/activity?project=alpha&days=3650")
+        self.assertTrue(any(s["session_id"] == old_id for s in d_wide["sessions"]))
+        d_narrow = self.get("/api/activity?project=alpha&days=1")
+        self.assertFalse(any(s["session_id"] == old_id for s in d_narrow["sessions"]))
+        self.assertLessEqual(len(d_narrow["sessions"]), len(d_wide["sessions"]))
     def test_post_requires_token(self):
         code, _ = self.post("/api/open", {"path": "/tmp"}, token="wrong"); self.assertEqual(code, 403)
         code, _ = self.post("/api/open", {"path": "/tmp"}, token=""); self.assertEqual(code, 403)
@@ -117,6 +135,13 @@ class TestServer(unittest.TestCase):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
         self.assertIn("function mchip", html)
         self.assertIn("function renderHubBanner", html)
+    def test_boot_lazy_loads_non_default_tabs(self):
+        # H3(ii): the boot fetched agents, skills, projects, harness, activity, docs and hub in
+        # one burst regardless of which tab was visible. Only what the header needs (agents,
+        # live, hub banner) should load eagerly; the rest loads on first visit via ensureLoaded.
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        self.assertNotIn("loadSkills();loadProjs();loadHar();loadActivity();", html)
+        self.assertIn("function ensureLoaded", html)
     def test_activity_supports_aggregated_shape(self):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
         self.assertIn("function renderActivityAggregated", html)

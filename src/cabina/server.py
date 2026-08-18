@@ -151,6 +151,17 @@ class App:
         items = SESS.load(self.cfg)
         if proj:
             items = [s for s in items if s.get("project") == proj]
+        cutoff = time.time() - days * 86400
+        def _recent(s):
+            started = s.get("started")
+            if not started:
+                return False
+            try:
+                from datetime import datetime
+                return datetime.fromisoformat(started).timestamp() >= cutoff
+            except Exception:
+                return False
+        items = [s for s in items if _recent(s)]
         return {"sessions": items, "days": days, "active_seconds": (self.cfg.get("live") or {}).get("active_seconds", 600)}
 
     def api_rescan(self, b):

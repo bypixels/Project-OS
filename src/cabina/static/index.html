@@ -112,13 +112,15 @@ es:{tabs:{agents:"Agentes",live:"En vivo",skills:"Skills",projects:"Proyectos",h
  modified:"modificado",days:"días",maybeStale:"· posiblemente desactualizado",blockedMsg:"Hay un agente trabajando en <b>{p}</b> ahora mismo. Podés leer, pero la edición está bloqueada hasta que termine — editar ahora podría pisar su trabajo.",edit:"Editar",openExt:"Abrir en el editor",reload:"Recargar",editing:"editando",
  editHint:"Antes de guardar se verifica que nadie haya tocado el archivo mientras editabas, y se guarda una copia de la versión anterior.",save:"Guardar",noChanges:"sin cambios",saving:"guardando…",seeCurrent:"Ver la versión actual",loseEdit:"Vas a perder tu edición actual. ¿Recargar?",discard:"Estás editando otro documento. ¿Descartar los cambios?"}};
 const T=(k,v)=>{let s=(I18N[LANG]||I18N.en)[k]??I18N.en[k]??k; if(typeof s==="object")return s; return v?s.replace(/\{(\w+)\}/g,(_,x)=>v[x]??""):s;};
-const S={view:"agents",data:null,live:null,skills:null,projs:null,har:null,docs:null,doc:null,activity:null,hub:null,editing:false,sel:null,q:"",chips:new Set(),mode:null,focus:null};
+const S={view:"agents",data:null,live:null,skills:null,projs:null,har:null,docs:null,doc:null,activity:null,hub:null,editing:false,sel:null,q:"",chips:new Set(),mode:null,focus:null,loaded:new Set()};
 const $=id=>document.getElementById(id);const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 async function GET(u){return (await fetch(u)).json();}async function POST(u,b){return (await fetch(u,{method:"POST",headers:{"Content-Type":"application/json","X-Cabina-Token":TOKEN},body:JSON.stringify(b)})).json();}
 let tt;function toast(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(tt);tt=setTimeout(()=>t.classList.remove("show"),2600);}
 const VIEWS=HUB?["agents","skills","projects","harness","activity"]:["agents","live","skills","projects","harness","docs","activity"];
 $("tabs").innerHTML=VIEWS.map(v=>`<button class="tab" data-v="${v}">${esc(T("tabs")[v])}</button>`).join("");
-document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{S.view=t.dataset.v;S.mode=null;S.sel=null;S.q="";S.chips.clear();render();});
+const LOADERS={skills:()=>loadSkills(),projects:()=>loadProjs(),harness:()=>loadHar(),activity:()=>loadActivity(),docs:()=>loadDocs()};
+function ensureLoaded(v){if(S.loaded.has(v))return;const f=LOADERS[v];if(!f)return;S.loaded.add(v);f();}
+document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{S.view=t.dataset.v;S.mode=null;S.sel=null;S.q="";S.chips.clear();ensureLoaded(S.view);render();});
 async function loadAgents(){S.data=await GET("/api/agents");render();if(S.view==="agents"){if(S.mode==="create")renderCreate();else if(S.sel)renderAgentDetail();}}
 async function loadSkills(){S.skills=await GET("/api/skills");if(S.view==="skills")render();}
 async function loadProjs(){S.projs=await GET("/api/projects");if(S.view==="projects")render();}
@@ -254,7 +256,7 @@ function renderSessionDetail(){const x=(S.activity?.sessions||[]).find(y=>sessKe
 function projKey(x){return x.name+"|"+(x.machine||"");}   // E2: name alone collides when two hub machines share a project name
 function renderProjects(){if(!S.projs){$("rows").innerHTML=`<div class="empty">${T("loading")}</div>`;$("filters").innerHTML="";return;}const a=S.projs.projects;
  $("filters").innerHTML=`<span class="muted">${T("projHint")}</span>`+chipFocus()+(HUB?"":`<button class="btn" id="bRescan" style="margin-left:auto" title="${T("rescanT")}">${T("rescan")}</button>`);bindFocus();
- if(!HUB)$("bRescan").onclick=async()=>{toast((await POST("/api/rescan",{})).message);setTimeout(()=>{loadAgents();loadSkills();loadProjs();loadHar();loadDocs();},45000);};
+ if(!HUB)$("bRescan").onclick=async()=>{toast((await POST("/api/rescan",{})).message);setTimeout(()=>{loadAgents();Object.keys(LOADERS).forEach(v=>{if(S.loaded.has(v))LOADERS[v]();});},45000);};
  $("rows").innerHTML=a.map(x=>{const wt=x.worktrees?` · ${x.worktrees}wt ${(x.worktrees_mb/1024).toFixed(1)}G`:"";const dot=x.worktrees_mb>5000?"invalid":(x.dirty>20||(x.memory_days!==null&&x.memory_days>30))?"warnings":"valid";
   return `<button class="row ${S.sel===projKey(x)?"sel":""} ${S.focus===x.name?"focus":""}" data-k="${esc(projKey(x))}"><span class="dot d-${dot}"></span><span class="n">${esc(x.name)} <span class="muted">${esc(x.branch||"—")}</span></span><span class="w">${x.agents}ag · ${x.skills}sk${x.dirty?` · ${T("uncommitted",{n:x.dirty})}`:""}${wt}</span></button>`;}).join("");
  document.querySelectorAll(".row").forEach(r=>r.onclick=()=>{S.sel=r.dataset.k;renderProjects();renderProjDetail();});
@@ -324,7 +326,8 @@ function renderLive(){const l=S.live;$("filters").innerHTML=`<span class="muted"
  document.querySelectorAll(".row").forEach(r=>r.onclick=async()=>{toast((await POST("/api/focus",{pane:r.dataset.p})).message);});const c={};l.agents.forEach(a=>c[a.status]=(c[a.status]||0)+1);
  $("foot").textContent=T("inWs",{n:l.agents.length,w:l.workspaces.length})+" · "+Object.entries(c).map(([k,v])=>`${ico[k]||"·"} ${v} ${T(k)}`).join("  ");const done=l.agents.filter(a=>a.status==="done");
  $("detail").innerHTML=done.length?`<div class="h">${T("waitReview")}</div>`+done.map(a=>`<div class="box warn"><b>${esc(a.agent)}</b> · ${esc(a.workspace)}<br>${esc(a.task||"—")}</div>`).join(""):`<div class="muted">${T("noneDone")}</div>`;}
-loadAgents();loadSkills();loadProjs();loadHar();loadActivity();loadHub();
-if(!HUB){loadLive();loadDocs();let liveN=0;setInterval(()=>{if(document.hidden)return;liveN++;if(S.view==="live"||liveN%5===0)loadLive();},1000);
+loadAgents();loadHub();
+if(!HUB){loadLive();let liveN=0;setInterval(()=>{if(document.hidden)return;liveN++;if(S.view==="live"||liveN%5===0)loadLive();},1000);
  document.addEventListener("visibilitychange",()=>{if(!document.hidden)loadLive();});}
+ensureLoaded(S.view);
 </script></body></html>
