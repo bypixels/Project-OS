@@ -4,7 +4,7 @@ import os, tempfile, unittest
 from datetime import datetime, timedelta
 from unittest import mock
 import _helpers  # noqa
-from cabina import contract as C, docs as D, harness as H, server as SRV, sessions as SESS, usage as U
+from cabina import contract as C, docs as D, guard as G, harness as H, server as SRV, sessions as SESS, usage as U
 from _env import Env
 
 class TestBreaks(unittest.TestCase):
@@ -305,6 +305,21 @@ class TestBreaks(unittest.TestCase):
             with mock.patch.object(HUB, "_is_regular_file", return_value=True):          # guard disabled
                 out2 = HUB.load_dir(d, 5)
             self.assertEqual(out2["files"][0]["status"], "unreadable")                   # falls through to open() -> IsADirectoryError -> canary red
+
+    def test_guard_hooks_dead_cmd_guard(self):
+        # S2-a: hooks_write must refuse to wire a `cmd` that does not resolve on PATH — the
+        # exact "dead hook" problem cabina flags elsewhere for hand-written hooks. Disable the
+        # resolution check in memory and show the canary ("hooks_write with a nonexistent cmd
+        # must refuse") turns green (wrongly installs) before restoring the guard.
+        with tempfile.TemporaryDirectory() as d:
+            settings = os.path.join(d, "settings.json")
+            with mock.patch.object(G, "_cmd_resolves", return_value=(True, None)):    # guard disabled
+                ok, _ = G.hooks_write(settings, "definitely-not-a-real-cmd-xyz")
+            self.assertTrue(ok)                                    # would wire a dead hook -> canary red
+            self.assertTrue(os.path.isfile(settings))
+            ok2, msg2 = G.hooks_write(settings, "definitely-not-a-real-cmd-xyz")      # guard present
+            self.assertFalse(ok2)                                  # refused: no PATH resolution, no force
+            self.assertIn("not on PATH", msg2)
 
     def test_hub_unreadable_file_guard(self):
         # Orchestrator amendment: json.loads is wrapped per file via an isolated helper
