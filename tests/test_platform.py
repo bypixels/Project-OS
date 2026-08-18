@@ -72,6 +72,22 @@ class TestSymlinkFallback(unittest.TestCase):
             self.assertFalse(ok); self.assertTrue(os.path.lexists(link), "original link must survive a failed archive")
             self.assertTrue(os.path.exists(real))
 
+class TestNotifyNoInjection(unittest.TestCase):
+    EVIL = "x'); Remove-Item -Recurse ~ ; #\" & rm -rf ~ ; '"
+    def _capture(self, platform, name):
+        calls = []
+        def fake_run(args, **kw): calls.append((args, kw)); return mock.Mock(returncode=0)
+        with mock.patch.object(host.sys, "platform", platform), mock.patch.object(host.os, "name", name), \
+             mock.patch.object(host.subprocess, "run", fake_run), mock.patch.object(host.shutil, "which", lambda n: None):
+            host.notify(self.EVIL, self.EVIL, urgent=True)
+        return calls
+    def test_macos_text_goes_out_of_band(self):
+        calls = self._capture("darwin", "posix"); self.assertEqual(len(calls), 1)
+        args, kw = calls[0]; self.assertNotIn(self.EVIL, " ".join(args)); self.assertEqual(kw["env"]["CABINA_BODY"], self.EVIL)
+    def test_windows_text_goes_out_of_band(self):
+        calls = self._capture("win32", "nt"); self.assertEqual(len(calls), 1)
+        args, kw = calls[0]; self.assertNotIn(self.EVIL, " ".join(args)); self.assertIn("$env:CABINA_TITLE", " ".join(args)); self.assertEqual(kw["env"]["CABINA_TITLE"], self.EVIL)
+
 class TestFleetWithoutCurses(unittest.TestCase):
     def test_fleet_degrades(self):
         with mock.patch.dict(sys.modules, {"curses": None}):

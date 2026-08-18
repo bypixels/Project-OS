@@ -39,19 +39,22 @@ def open_path(path):
 
 
 def notify(title, body, urgent=False):
-    """Best-effort desktop notification. Silent no-op if unsupported."""
+    """Best-effort desktop notification. Silent no-op if unsupported.
+    Text is passed OUT-OF-BAND (environment variables), never interpolated into a script."""
+    env = {**os.environ, "CABINA_TITLE": str(title), "CABINA_BODY": str(body)}
     try:
         if sys.platform == "darwin":
-            snd = ' sound name "Basso"' if urgent else ""
-            subprocess.run(["osascript", "-e", f'display notification "{body}" with title "{title}"{snd}'],
-                           capture_output=True, timeout=5)
+            script = 'display notification (system attribute "CABINA_BODY") with title (system attribute "CABINA_TITLE")'
+            if urgent:
+                script += ' sound name "Basso"'
+            subprocess.run(["osascript", "-e", script], capture_output=True, timeout=5, env=env)
         elif os.name == "nt":
             ps = ("[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null;"
                   "$t=[Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02);"
-                  f"$t.GetElementsByTagName('text')[0].AppendChild($t.CreateTextNode('{title}')) > $null;"
-                  f"$t.GetElementsByTagName('text')[1].AppendChild($t.CreateTextNode('{body}')) > $null;"
+                  "$t.GetElementsByTagName('text')[0].AppendChild($t.CreateTextNode($env:CABINA_TITLE)) > $null;"
+                  "$t.GetElementsByTagName('text')[1].AppendChild($t.CreateTextNode($env:CABINA_BODY)) > $null;"
                   "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('cabina').Show([Windows.UI.Notifications.ToastNotification]::new($t))")
-            subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, timeout=10)
+            subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, timeout=10, env=env)
         elif shutil.which("notify-send"):
             subprocess.run(["notify-send", "-u", "critical" if urgent else "normal", title, body],
                            capture_output=True, timeout=5)
