@@ -31,26 +31,30 @@ Cualquiera de las dos: **nunca saltar el Paso 1 (test en rojo)**.
 
 # Fase 0 — Higiene de código abierto
 
+> Cerrada (marcado retroactivo 2026-08-18): las 7 tareas quedaron en commits 773dc48, 066ff8b,
+> 0c4e664, cb694a6, 6b7bb23, 031bb54, 1aee75e. Tareas 1 y 6 se resolvieron mejor que el literal del
+> plan (README sin número fijo de tests; nombre de distribución `ai-projects-monitor` decidido).
+
 Siete tareas sin "comportamiento" testeable con `unittest` — documentación y configuración. Cada
 una usa una **verificación** (algo que hoy falla y después de la tarea pasa) en vez de un test.
 
 ### Tarea 1: Sincronizar el conteo de tests en README.md
 **Archivos:** Modificar `README.md`
 
-- [ ] Paso 1: verificación que falla — `grep -n "68 tests" README.md` (imprime la línea vieja).
-- [ ] Paso 2: `python3 -m unittest discover -s tests -v 2>&1 | tail -3` → hoy `Ran 126 tests in
+- [x] Paso 1: verificación que falla — `grep -n "68 tests" README.md` (imprime la línea vieja).
+- [x] Paso 2: `python3 -m unittest discover -s tests -v 2>&1 | tail -3` → hoy `Ran 126 tests in
       ...s` / `OK` (este número se moverá con cada tarea nueva de las Fases 1/1b — normal, no hace
       falta perseguirlo, solo dejarlo razonable al cierre de cada fase).
-- [ ] Paso 3: en la línea `python -m unittest discover -s tests -v      # 68 tests, stdlib only`
+- [x] Paso 3: en la línea `python -m unittest discover -s tests -v      # 68 tests, stdlib only`
       cambiar `68` por `126`.
-- [ ] Paso 4: `grep -n "126 tests" README.md` imprime la línea corregida.
-- [ ] Paso 5: `git commit -am "docs: sync README test count with the actual suite (68 -> 126)"`
+- [x] Paso 4: `grep -n "126 tests" README.md` imprime la línea corregida.
+- [x] Paso 5: `git commit -am "docs: sync README test count with the actual suite (68 -> 126)"`
 
 ### Tarea 2: Placeholder de screenshots/GIF en README.md
 **Archivos:** Modificar `README.md`
 
-- [ ] Paso 1: verificación — `grep -n "## Screenshots" README.md` (no existe).
-- [ ] Paso 3: agregar después de `## Why`:
+- [x] Paso 1: verificación — `grep -n "## Screenshots" README.md` (no existe).
+- [x] Paso 3: agregar después de `## Why`:
   ```markdown
   ## Screenshots
 
@@ -58,8 +62,8 @@ una usa una **verificación** (algo que hoy falla y después de la tarea pasa) e
        before tagging v0.1.0. Suggested: one GIF showing archive-with-references-check,
        one static shot of the health check output. -->
   ```
-- [ ] Paso 4: `grep -n "## Screenshots" README.md` imprime la línea.
-- [ ] Paso 5: `git commit -am "docs: add a screenshots placeholder section ahead of v0.1.0"`
+- [x] Paso 4: `grep -n "## Screenshots" README.md` imprime la línea.
+- [x] Paso 5: `git commit -am "docs: add a screenshots placeholder section ahead of v0.1.0"`
 
 ### Tarea 3: Config de ruff en pyproject.toml (solo desarrollo)
 **Archivos:** Modificar `pyproject.toml`
@@ -67,8 +71,8 @@ una usa una **verificación** (algo que hoy falla y después de la tarea pasa) e
 Analogía: es la regla de estilo que un editor le pasa a un corrector — no cambia el libro, solo
 marca faltas de forma antes de imprimir. `dependencies = []` no se toca.
 
-- [ ] Paso 1: verificación — `grep -n "\[tool.ruff\]" pyproject.toml` (no existe).
-- [ ] Paso 3: agregar al final:
+- [x] Paso 1: verificación — `grep -n "\[tool.ruff\]" pyproject.toml` (no existe).
+- [x] Paso 3: agregar al final:
   ```toml
   [tool.ruff]
   line-length = 140
@@ -78,27 +82,27 @@ marca faltas de forma antes de imprimir. `dependencies = []` no se toca.
   select = ["E", "F", "I"]
   ignore = ["E501"]
   ```
-- [ ] Paso 4: `python3 -c "import tomllib; tomllib.load(open('pyproject.toml','rb')); print('valid toml')"` → `valid toml`.
-- [ ] Paso 5: `git commit -am "chore: add ruff config for local linting (dev-only, no runtime dep)"`
+- [x] Paso 4: `python3 -c "import tomllib; tomllib.load(open('pyproject.toml','rb')); print('valid toml')"` → `valid toml`.
+- [x] Paso 5: `git commit -am "chore: add ruff config for local linting (dev-only, no runtime dep)"`
 
 ### Tarea 4: CONTRIBUTING.md
 **Archivos:** Crear `CONTRIBUTING.md`
 
-- [ ] Paso 1: `test -f CONTRIBUTING.md && echo exists || echo missing` → `missing`.
-- [ ] Paso 3: crear con: cómo correr la suite, la regla de guards+break-tests, cómo se agregan
+- [x] Paso 1: `test -f CONTRIBUTING.md && echo exists || echo missing` → `missing`.
+- [x] Paso 3: crear con: cómo correr la suite, la regla de guards+break-tests, cómo se agregan
       strings (`i18n.py`, siempre `en`+`es`), que no hay linter obligatorio en CI (ruff es local).
-- [ ] Paso 4: `test -f CONTRIBUTING.md && echo exists` → `exists`.
-- [ ] Paso 5: `git add CONTRIBUTING.md && git commit -m "docs: add CONTRIBUTING.md"`
+- [x] Paso 4: `test -f CONTRIBUTING.md && echo exists` → `exists`.
+- [x] Paso 5: `git add CONTRIBUTING.md && git commit -m "docs: add CONTRIBUTING.md"`
 
 ### Tarea 5: CHANGELOG.md
 **Archivos:** Crear `CHANGELOG.md`
 
-- [ ] Paso 1: `test -f CHANGELOG.md && echo exists || echo missing` → `missing`.
-- [ ] Paso 3: Keep a Changelog, `## [Unreleased]` vacío + `## [0.1.0]` con lo que ya existe hoy
+- [x] Paso 1: `test -f CHANGELOG.md && echo exists || echo missing` → `missing`.
+- [x] Paso 3: Keep a Changelog, `## [Unreleased]` vacío + `## [0.1.0]` con lo que ya existe hoy
       (roster con contrato, skills, harness, docs con hash+backup, health check, live/herdr, MCP
       read-only, export/compare, hooks guard+brief).
-- [ ] Paso 4: `test -f CHANGELOG.md && head -3 CHANGELOG.md`.
-- [ ] Paso 5: `git add CHANGELOG.md && git commit -m "docs: add CHANGELOG.md, seed the 0.1.0 entry"`
+- [x] Paso 4: `test -f CHANGELOG.md && head -3 CHANGELOG.md`.
+- [x] Paso 5: `git add CHANGELOG.md && git commit -m "docs: add CHANGELOG.md, seed the 0.1.0 entry"`
 
 ### Tarea 6: Decidir el nombre de distribución — "cabina" está TOMADO en PyPI (R14)
 **Archivos:** Modificar `README.md`
@@ -109,9 +113,9 @@ del local ya lo usa el negocio de al lado — hay que decidir el nombre nuevo AN
 tarjetas de presentación (las líneas de instalación del README). Esta es una decisión del dueño, no
 de un agente: candidatos sugeridos `cabina-cc`, `claude-cabina`, `cabina-tower`.
 
-- [ ] Paso 1: verificación — `grep -n "pip install cabina" README.md` (hoy existe, línea 92:
+- [x] Paso 1: verificación — `grep -n "pip install cabina" README.md` (hoy existe, línea 92:
       `pipx install cabina          # or: pip install cabina`).
-- [ ] Paso 3: marcar el bloque de instalación como bloqueado hasta la decisión — en `README.md`,
+- [x] Paso 3: marcar el bloque de instalación como bloqueado hasta la decisión — en `README.md`,
       justo antes del bloque `## Install`, agregar:
   ```markdown
   > **Blocked on a name decision** (2026-08-18): the PyPI name `cabina` is taken by an unrelated
@@ -122,22 +126,22 @@ de un agente: candidatos sugeridos `cabina-cc`, `claude-cabina`, `cabina-tower`.
   (No se cambia `pyproject.toml` `[project] name` todavía — eso es parte de la MISMA decisión y se
   hace en un solo commit cuando Danny elija el nombre; cambiarlo a medias generaría un estado
   inconsistente entre el nombre publicado y el que usan los ejemplos.)
-- [ ] Paso 4: `grep -n "Blocked on a name decision" README.md` imprime la línea.
-- [ ] Paso 5: `git commit -am "docs: flag the PyPI name collision (cabina is taken) — blocks install instructions until renamed"`
+- [x] Paso 4: `grep -n "Blocked on a name decision" README.md` imprime la línea.
+- [x] Paso 5: `git commit -am "docs: flag the PyPI name collision (cabina is taken) — blocks install instructions until renamed"`
 
 ### Tarea 7: Instrucciones de release (lo corre Danny)
 **Archivos:** Modificar `CONTRIBUTING.md`
 
-- [ ] Paso 1: verificación — `grep -n "## Releasing" CONTRIBUTING.md` (no existe).
-- [ ] Paso 3: agregar sección `## Releasing` con el comando exacto (usando el nombre final una vez
+- [x] Paso 1: verificación — `grep -n "## Releasing" CONTRIBUTING.md` (no existe).
+- [x] Paso 3: agregar sección `## Releasing` con el comando exacto (usando el nombre final una vez
       resuelta la Tarea 6):
   ```sh
   git tag -a v0.1.0 -m "cabina v0.1.0 — agents, skills, harness, docs, health check, live, MCP"
   git push origin v0.1.0
   ```
   y una nota: "no publicar en PyPI hasta cerrar la Tarea 6 (nombre de distribución)".
-- [ ] Paso 4: — (sin verificación automática; el tag lo corre Danny).
-- [ ] Paso 5: `git commit -am "docs: document the release process (CONTRIBUTING.md)"`
+- [x] Paso 4: — (sin verificación automática; el tag lo corre Danny).
+- [x] Paso 5: `git commit -am "docs: document the release process (CONTRIBUTING.md)"`
 
 ---
 
@@ -2406,7 +2410,13 @@ Registro de lo que cambió respecto al texto original de las Tareas 26-39, con s
 
 # Fase 3 — salud en el tiempo: health.jsonl, sparkline, tablero de proyectos (checklist, R12/R13)
 
-- [ ] **`healthlog.py` (nuevo módulo)**: `append(cfg, findings)` — **un solo `write()` por línea**
+> Cerrada 2026-08-18. Decisiones tomadas en la tarea real: `healthlog.append` lo llaman `cli.py`
+> (`check`, no `--repo` ni `--quick`) y `server.api_health` — nunca `check.run()`, para que mcp/guard/
+> repo sigan puros. Las tiles se atribuyen por proyecto vía una clave opcional `projects` en los
+> findings (solo donde el proyecto se conoce por estructura, nunca por texto); `GET /api/tiles` y
+> `GET /api/health-history`; tiles compactas ordenadas activo → última sesión → nombre.
+
+- [x] **`healthlog.py` (nuevo módulo)**: `append(cfg, findings)` — **un solo `write()` por línea**
       (R12: nunca reconstruir el archivo entero para agregar una línea), con
       `{when, crit, warn, info}`. Se agrega una línea solo si `(crit, warn, info)` difiere de la
       última línea guardada **O** la última línea tiene más de 24 h — así un `cabina check` corrido
@@ -2416,18 +2426,18 @@ Registro de lo que cambió respecto al texto original de las Tareas 26-39, con s
       `docs.py::_prune`. Tests: `tests/test_healthlog.py::test_append_writes_first_line`,
       `::test_append_skips_when_unchanged_and_recent`, `::test_append_writes_even_if_unchanged_after_24h`,
       `::test_prune_keeps_newest_lines_via_tmp_replace`.
-- [ ] **`check.py`**: `run()` (o `cli.py` después de imprimir — decidir en la tarea real cuál capa
+- [x] **`check.py`**: `run()` (o `cli.py` después de imprimir — decidir en la tarea real cuál capa
       es dueña) llama `healthlog.append(cfg, F)`.
-- [ ] **Break-test** (`tests/test_breaks.py`) — "health.jsonl append-only / no rewrite" (R12): con
+- [x] **Break-test** (`tests/test_breaks.py`) — "health.jsonl append-only / no rewrite" (R12): con
       `mock.patch.object` desactivar la condición "solo si cambió o pasaron 24h" y confirmar que
       dos llamadas seguidas con los MISMOS conteos producen dos líneas en vez de una; por separado,
       desactivar la poda por `history_days` y confirmar que el archivo crece sin límite en vez de
       recortarse.
-- [ ] **`server.py`**: `GET /api/health-history` — lee `health.jsonl`, devuelve la serie para la
+- [x] **`server.py`**: `GET /api/health-history` — lee `health.jsonl`, devuelve la serie para la
       sparkline.
-- [ ] **UI**: sparkline (mismo patrón SVG que la Tarea 25 de Fase 1b) en la pestaña Projects,
+- [x] **UI**: sparkline (mismo patrón SVG que la Tarea 25 de Fase 1b) en la pestaña Projects,
       leyendo `/api/health-history`.
-- [ ] **"Tablero de proyectos" (R13, ahora definido)**: TILES de solo lectura por proyecto —
+- [x] **"Tablero de proyectos" (R13, ahora definido)**: TILES de solo lectura por proyecto —
       `{last_session, health (crit/warn/info), active/idle (misma señal aditiva de la Tarea 20/21),
       open_findings_count}`. Explícitamente NADA de estados tipo tarea, asignados, ni texto de
       tareas — no es un Kanban, es un resumen de una sola mirada. Vive como una vista dentro de la

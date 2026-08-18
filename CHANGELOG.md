@@ -36,7 +36,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   UI polls until the scan really finishes (no more fixed 45 s wait) and shows "scan: N ago".
 - **Export** (`GET /api/export?activity&detail`, downloads a JSON; `--titles` deliberately not
   exposed) and **Compare** (upload another machine's export, see the delta) from the UI.
-
+- **Health over time (Fase 3)**: `healthlog.py` keeps `<state_dir>/health.jsonl`, one
+  `{when, crit, warn, info}` line per `cabina check` (full runs only, and `GET /api/health`),
+  appended only when the counts change or a day has passed, pruned to `check.history_days`
+  (default 180) atomically. `GET /api/health-history?days=N` serves the series.
+- **Projects at a glance**: `GET /api/tiles` — one read-only tile per project with
+  `last_session`, `active`, per-project `health` (crit/warn/info) and `open_findings_count`,
+  active first; rendered as a compact grid with a 30-day health sparkline at the top of the
+  Projects tab (never in hub mode). Nothing task-like by design (no status/assignee/free text).
+- `cabina check` findings carry an optional `projects` list when the finding is genuinely about
+  specific projects (invalid/warn agents, docs-in-agents, dead/broken hooks, stale worktrees,
+  rules drift, never-invoked agents) — never guessed from text; global findings carry no key.
 
 ### Security
 
