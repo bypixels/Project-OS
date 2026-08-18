@@ -1433,57 +1433,959 @@ queden implícitas:
 
 ---
 
-# Fase 2 — equipos: export --activity, hub, compare (checklist, actualizado R9/R10)
+# Fase 2 — equipos: export --activity, hub, compare (tareas granulares, R9/R10/P1-P5)
 
 Analogía: si Fase 1/1b es el medidor de electricidad de una casa, Fase 2 junta la lectura de varias
-casas en una sola hoja — sin que ninguna casa le dé permiso de escritura a las demás.
+casas en una sola hoja — sin que ninguna casa le dé permiso de escritura a las demás. Cada casa
+sigue midiendo lo suyo (`sessions.json` local, nunca se toca); lo único nuevo es una hoja de cálculo
+de solo lectura que junta varias lecturas ya hechas.
 
-- [ ] **`snapshot.py` — `export_activity(cfg, projects=None, detail=False, titles=False)`** (R9):
-      por default, AGREGADO por proyecto solamente:
-      `{project, sessions, hours, tokens{in,out}, commits, files_touched:<count>, tool_calls{name:n},
-      agents{name:n}, skills{name:n}}`. `detail=True` agrega filas por sesión con `branch` + rutas
-      de archivo RELATIVAS. `titles=True` agrega títulos — **requiere** `detail=True` (si se pide
-      sin detalle, es un error de uso, no un flag ignorado en silencio). `cwd` y `source_path`
-      **nunca** se exportan bajo ninguna combinación de flags — esto se verifica con una función
-      dedicada que filtra esas dos claves explícitamente antes de serializar, no confiando en que
-      nadie las vuelva a agregar por accidente. Tests: `tests/test_snapshot.py`::
-      `test_export_activity_aggregated_by_default`, `::test_export_activity_detail_adds_per_session_rows`,
-      `::test_export_activity_titles_requires_detail`, `::test_export_activity_never_includes_cwd_or_source_path`.
-- [ ] **`cli.py`**: `cabina export --activity [--detail] [--titles] [--project P]` (`--project`
-      repetible, `action="append"`) hacia `snapshot.export_activity`. Test:
-      `tests/test_cli.py::TestExportActivity::test_export_activity_flag_and_project_filter`.
-- [ ] **`snapshot.compare()`**: deltas de actividad agregada entre dos exports (sesiones/horas por
-      proyecto). Test: `tests/test_snapshot.py::test_compare_activity_deltas`.
-- [ ] **`hub.py` (nuevo módulo) — `HubApp`, clase SEPARADA de `App`** (R10, no "`App` con `POSTS`
-      vacío"): sirve la misma UI (`static/index.html`) sobre archivos `*.json` encontrados
-      DIRECTAMENTE bajo `DIR` (no recursivo). `do_POST` responde **405 siempre**, para cualquier
-      ruta — el break-test recorre cada ruta de escritura conocida (`/api/archive`, `/api/create`,
-      `/api/archive-skill`, `/api/save-doc`, `/api/open`, `/api/focus`, `/api/rescan`,
-      `/api/commit`) y confirma 405 en todas. Bindea `127.0.0.1` fijo, ignorando
-      `cfg["server"]["host"]`. Confinamiento por `realpath`: cada archivo se resuelve y debe seguir
-      bajo `DIR` (un symlink que apunte afuera se rechaza). Límite de tamaño por archivo
-      `cfg["hub"]["max_file_mb"]` (default 5) — un archivo más grande no se lee entero, se marca
-      "too large". `json.loads` envuelto en `try/except` por archivo — uno corrupto aparece como
-      "unreadable" en el agregado, nunca tumba el hub entero. Tests:
-      `tests/test_hub.py::test_hub_lists_sessions_from_multiple_exports`,
-      `::test_hub_rejects_symlink_escaping_dir`, `::test_hub_skips_oversized_file`,
-      `::test_hub_marks_corrupt_json_as_unreadable_without_crashing`.
-- [ ] **`cli.py`**: subcomando `cabina hub DIR`.
-- [ ] **Break-test** (`tests/test_breaks.py`) — "hub has no write path" (R10): para CADA una de
-      las rutas de escritura conocidas del servidor normal, `POST` contra `HubApp` y confirmar 405;
-      además, `mock.patch` intentando inyectar un método `api_*` de escritura en `HubApp` y
-      confirmar que sigue sin haber ningún camino que lo invoque (a diferencia de `App`, `HubApp`
-      no tiene ningún diccionario `POSTS` — el guard real es la ausencia total de esa tabla, no una
-      tabla vacía que alguien podría rellenar por error).
-- [ ] **Test de XSS** (R10) — fixture de export con `title` = `<img src=x onerror=alert(1)>`:
-      dado que `hub` sirve el mismo `index.html` cuyo JS ya interpola `x.title` SIEMPRE a través de
-      `esc()` (confirmado en la Tarea 25 de Fase 1b), la verificación práctica en Python es
-      **estructural**: un test que lee `static/index.html` y confirma con una expresión regular que
-      `x.title` dentro de `renderActivity`/`renderSessionDetail` aparece siempre envuelto en
-      `esc(...)`, nunca interpolado crudo en un template string. Esto NO es una prueba de
-      ejecución real de JS (el repo no tiene un runner de navegador) — ver "Preguntas abiertas" más
-      abajo sobre si esto alcanza o hace falta algo más pesado (p. ej. Playwright).
-- [ ] **`config.py`**: agregar `"hub": {"max_file_mb": 5}` a `DEFAULTS`.
+### Tarea 26: Fixtures para Fase 2 — sesiones reales pobladas + un export sintético de "otra máquina"
+**Archivos:** Modificar `tests/_env.py` · Crear `tests/test_hub.py`
+
+Dos piezas chicas de infraestructura que van a usar casi todas las tareas siguientes: (1) un método
+en `Env` que corre `sessions.refresh()` de verdad (para tener `activity` poblada antes de exportar),
+y (2) una función que arma el JSON de un export de OTRA máquina sin tener que levantar un segundo
+entorno sintético completo — como tener una segunda hoja de cálculo ya llena a mano, en vez de
+montar una segunda oficina entera solo para sacarle una foto.
+
+- [ ] Paso 1: test que falla:
+  ```python
+  import unittest
+  import _helpers  # noqa
+  from _env import Env, sample_export
+
+  class TestHubFixtures(unittest.TestCase):
+      def test_refresh_sessions_and_sample_export_shape(self):
+          env = Env()
+          try:
+              items = env.refresh_sessions()
+              self.assertTrue(any(s["session_id"] == "sess-1" for s in items))
+          finally:
+              env.cleanup()
+          ex = sample_export("mac-mini")
+          self.assertEqual(ex["machine"], "mac-mini")
+          self.assertEqual(ex["activity"]["aggregated"][0]["project"], "alpha")
+
+  if __name__ == "__main__":
+      unittest.main()
+  ```
+- [ ] Paso 2: `python3 -m unittest discover -s tests -p "test_hub.py" -v` →
+      `ImportError: cannot import name 'sample_export'` (y luego, arreglado eso,
+      `AttributeError: 'Env' object has no attribute 'refresh_sessions'`).
+- [ ] Paso 3: en `tests/_env.py`, agregar el método a la clase `Env` (junto a `touch_session`):
+  ```python
+      def refresh_sessions(self):
+          """Conveniencia para tests que necesitan `activity` poblada antes de llamar a
+          snapshot.export_activity o de golpear el hub: corre sessions.refresh() de verdad
+          contra el cfg de este Env, devuelve la lista de resúmenes."""
+          from cabina import sessions as SESS
+          return SESS.refresh(self.cfg)
+  ```
+  y, al final del archivo (fuera de la clase), la función de nivel de módulo:
+  ```python
+  def sample_export(machine, project="alpha", sessions=1, hours=1.0):
+      """Un payload de `cabina export --activity` mínimo pero realista — para tests de hub que
+      necesitan DOS O MÁS máquinas sin levantar un segundo Env sintético completo por cada una."""
+      return {"cabina": 1, "machine": machine, "os": "Linux", "when": "2026-08-18T10:00",
+              "agents": [], "skills": [], "harness": [], "projects": [project],
+              "activity": {"aggregated": [{"project": project, "sessions": sessions, "hours": hours,
+                                            "tokens": {"in": 100, "out": 200}, "commits": 1,
+                                            "files_touched": 3, "tool_calls": {"Edit": 2},
+                                            "agents": {}, "skills": {}}]}}
+  ```
+- [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_hub.py" -v` → `Ran 1 test ... OK`.
+- [x] Paso 5: `git commit -am "test: Env.refresh_sessions() + sample_export() — Fase 2 fixtures for export/hub tests"`
+
+### Tarea 27: `snapshot.export_activity` — agregados por proyecto, guardia de campos locales (R9/P1)
+**Archivos:** Modificar `src/cabina/snapshot.py` · Crear `tests/test_snapshot.py`
+
+Analogía: es el resumen que un jefe de sucursal manda a la oficina central — cuántas horas se
+trabajó y cuánto se facturó en cada proyecto, nunca la agenda con el detalle de quién estaba en cada
+escritorio (eso es `cwd`/`source_path`, que se quedan en la máquina). `--detail` agrega una fila por
+sesión (sigue sin nombres de escritorio); `--titles` agrega el título, y solo tiene sentido si ya
+pediste el detalle — pedirlo sin detalle es un error de uso, no algo que se ignore en silencio.
+
+- [ ] Paso 1: test que falla (archivo nuevo):
+  ```python
+  import json, unittest
+  import _helpers  # noqa
+  from _env import Env
+  from cabina import snapshot as SNAP
+
+  class TestExportActivity(unittest.TestCase):
+      def setUp(self):
+          self.env = Env(); self.env.refresh_sessions()
+      def tearDown(self):
+          self.env.cleanup()
+
+      def test_export_activity_aggregated_by_default(self):
+          out = SNAP.export_activity(self.env.cfg)
+          self.assertNotIn("sessions", out)
+          row = next(a for a in out["aggregated"] if a["project"] == "alpha")
+          self.assertEqual(row["sessions"], 1)
+          self.assertIn("tokens", row); self.assertIn("tool_calls", row)
+
+      def test_export_activity_detail_adds_per_session_rows(self):
+          out = SNAP.export_activity(self.env.cfg, detail=True)
+          row = next(s for s in out["sessions"] if s["project"] == "alpha")
+          self.assertIn("branch", row); self.assertNotIn("title", row)
+          self.assertEqual(row["files_touched"], ["src/widget.py"])
+
+      def test_export_activity_titles_requires_detail(self):
+          with self.assertRaises(ValueError):
+              SNAP.export_activity(self.env.cfg, titles=True)
+
+      def test_export_activity_never_includes_cwd_or_source_path(self):
+          out = SNAP.export_activity(self.env.cfg, detail=True, titles=True)
+          dumped = json.dumps(out)
+          self.assertNotIn("source_path", dumped)
+          self.assertNotIn('"cwd"', dumped)
+
+  if __name__ == "__main__":
+      unittest.main()
+  ```
+- [ ] Paso 2: `python3 -m unittest discover -s tests -p "test_snapshot.py" -v` →
+      `AttributeError: module 'cabina.snapshot' has no attribute 'export_activity'`.
+- [ ] Paso 3: en `src/cabina/snapshot.py`, agregar (después de los imports, antes de `export`):
+  ```python
+  _LOCAL_ONLY_FIELDS = ("cwd", "source_path", "mtime", "size", "offset")
+
+
+  def _strip_local_only(row):
+      """R9 (cwd/source_path) + P1 (también mtime/size/offset): campos que nunca deben salir de
+      esta máquina, sin importar cómo se haya construido la fila. Se aplica en el límite mismo de
+      la exportación — no confía en que quien construye la fila nunca los vuelva a agregar."""
+      return {k: v for k, v in row.items() if k not in _LOCAL_ONLY_FIELDS}
+
+
+  def _detail_row(s, titles):
+      """Una fila de `export --activity --detail`, como lista blanca explícita a partir de un
+      resumen de sesión completo `s` (que SÍ trae cwd/source_path/mtime/size/offset — sessions.py
+      los guarda solo localmente, no para exportar). titles=True agrega el título."""
+      row = {"project": s.get("project"), "started": s.get("started"), "ended": s.get("ended"),
+             "duration_s": s.get("duration_s"), "turns": s.get("turns"), "commits": s.get("commits"),
+             "branch": s.get("branch"), "files_touched": s.get("files_touched") or [],
+             "agents": s.get("agents") or {}, "skills": s.get("skills") or {},
+             "tokens": s.get("tokens") or {"in": 0, "out": 0}, "subagents": s.get("subagents", 0)}
+      if titles:
+          row["title"] = s.get("title")
+      return row
+
+
+  def export_activity(cfg, projects=None, detail=False, titles=False):
+      """R9/P1: agregado por proyecto por default; detail=True agrega filas por sesión; titles=True
+      requiere detail=True (error de uso si no, nunca un flag ignorado en silencio). cwd y
+      source_path (más mtime/size/offset) nunca salen de acá — _strip_local_only corre sobre CADA
+      fila, agregada o por sesión, justo antes de devolverla."""
+      if titles and not detail:
+          raise ValueError("--titles requires --detail")
+      from . import sessions
+      items = sessions.load(cfg)
+      if projects:
+          want = {p.lower() for p in projects}
+          items = [s for s in items if (s.get("project") or "").lower() in want]
+      agg = {}
+      for s in items:
+          p = s.get("project") or "unknown"
+          a = agg.setdefault(p, {"project": p, "sessions": 0, "hours": 0.0, "tokens": {"in": 0, "out": 0},
+                                 "commits": 0, "files_touched": 0, "tool_calls": {}, "agents": {}, "skills": {}})
+          a["sessions"] += 1
+          a["hours"] += (s.get("duration_s") or 0) / 3600.0
+          a["tokens"]["in"] += (s.get("tokens") or {}).get("in", 0)
+          a["tokens"]["out"] += (s.get("tokens") or {}).get("out", 0)
+          a["commits"] += s.get("commits", 0)
+          a["files_touched"] += len(s.get("files_touched") or [])
+          for k, v in (s.get("tool_calls") or {}).items(): a["tool_calls"][k] = a["tool_calls"].get(k, 0) + v
+          for k, v in (s.get("agents") or {}).items(): a["agents"][k] = a["agents"].get(k, 0) + v
+          for k, v in (s.get("skills") or {}).items(): a["skills"][k] = a["skills"].get(k, 0) + v
+      aggregated = []
+      for p in sorted(agg):
+          a = agg[p]; a["hours"] = round(a["hours"], 2)
+          aggregated.append(_strip_local_only(a))
+      out = {"aggregated": aggregated}
+      if detail:
+          out["sessions"] = [_strip_local_only(_detail_row(s, titles)) for s in items]
+      return out
+  ```
+- [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_snapshot.py" -v` → `Ran 4 tests ... OK`.
+- [x] Paso 5: `git commit -am "feat: snapshot.export_activity — aggregated-by-default session activity export, local-only fields stripped (R9/P1)"`
+
+### Tarea 28: `snapshot.export(cfg, activity=None)` + CLI `cabina export --activity`
+**Archivos:** Modificar `src/cabina/snapshot.py`, `src/cabina/cli.py` · Modificar `tests/test_cli.py`
+
+- [ ] Paso 1: test que falla (agregar a `tests/test_cli.py`, imports: agregar `from unittest import mock`):
+  ```python
+  class TestExportActivity(unittest.TestCase):
+      def test_export_activity_flag_and_project_filter(self):
+          env = Env(); scan.save(env.cfg, scan.run(env.cfg)); env.refresh_sessions()
+          with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False) as f:
+              f.write(f"claude_home = '{env.claude}'\ncodex_home = '{env.codex}'\nroots = ['{env.projects}']\nstate_dir = '{env.state}'\n[live]\nprovider = \"none\"\n[scan]\nmeasure_worktrees = false\ncheck_mcp = false\n")
+              cfgp = f.name
+          outdir = tempfile.mkdtemp(); outp = os.path.join(outdir, "export.json")
+          src = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
+          r = subprocess.run([sys.executable, "-m", "cabina", "--config", cfgp, "export", "--activity", "--detail", "--project", "alpha", "-o", outp],
+                              capture_output=True, text=True, env={**os.environ, "PYTHONPATH": src}, timeout=60)
+          self.assertEqual(r.returncode, 0, r.stderr)
+          data = json.load(open(outp))
+          self.assertIn("activity", data)
+          self.assertTrue(data["activity"]["sessions"])
+          self.assertTrue(all(s["project"] == "alpha" for s in data["activity"]["sessions"]))
+          os.unlink(cfgp); env.cleanup()
+  ```
+- [ ] Paso 2: `python3 -m unittest discover -s tests -p "test_cli.py" -v -k export_activity` →
+      falla: `error: unrecognized arguments: --activity` (exit code 2).
+- [ ] Paso 3a: en `src/cabina/snapshot.py`, cambiar la firma y el cuerpo de `export`:
+  ```python
+  def export(cfg, activity=None):
+      data = scan.ensure(cfg)
+      R = Roster(cfg, data); rows, items = R.load(refresh_usage=False)
+      agents = [{"name": r.name, "project": p, "tool": t, "category": r.category, "model": r.fields.get("model", ""),
+                 "uses": items.get(r.name, {}).get("n_total", 0)} for p, r, path, t in rows if r.is_agent]
+      sk = [{"name": s["name"], "project": s["project"], "state": s["state"], "symlink": s["symlink"]} for s in SK.load(cfg, data)]
+      hs = [{"project": e["name"], "level": e["level"], "hooks_dead": e["hooks_dead"], "hooks_broken": e["hooks_broken"]} for e in HAR.states(data)]
+      out = {"cabina": 1, "machine": socket.gethostname(), "os": platform.system(), "when": datetime.now().isoformat(timespec="minutes"),
+             "agents": agents, "skills": sk, "harness": hs, "projects": sorted(p["name"] for p in data.get("projects", []))}
+      if activity is not None:
+          out["activity"] = activity
+      return out
+  ```
+- [ ] Paso 3b: en `src/cabina/cli.py`, en el subparser `export`, agregar:
+  ```python
+      ex.add_argument("--activity", action="store_true", help="also export session activity (aggregated per project by default)")
+      ex.add_argument("--detail", action="store_true", help="with --activity: add per-session rows")
+      ex.add_argument("--titles", action="store_true", help="with --activity --detail: add session titles")
+      ex.add_argument("--project", action="append", help="with --activity: restrict to this project (repeatable)")
+  ```
+  y reemplazar el bloque `if a.cmd == "export":` por:
+  ```python
+      if a.cmd == "export":
+          from . import snapshot
+          activity = None
+          if a.activity:
+              try:
+                  activity = snapshot.export_activity(cfg, projects=a.project, detail=a.detail, titles=a.titles)
+              except ValueError as e:
+                  print(f"usage: {e}", file=sys.stderr); return 2
+          d = snapshot.export(cfg, activity=activity); txt = json.dumps(d, indent=1, ensure_ascii=False)
+          if a.out:
+              open(a.out, "w", encoding="utf-8").write(txt)
+              print(f"exported {len(d['agents'])} agents, {len(d['skills'])} skills, {len(d['projects'])} projects"
+                    + (" + activity" if activity else "") + f" -> {a.out}")
+          else:
+              print(txt)
+          return 0
+  ```
+- [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_cli.py" -v` → todos en verde.
+- [x] Paso 5: `git commit -am "feat: export() embeds activity when given; CLI cabina export --activity/--detail/--titles/--project"`
+
+### Tarea 29: Break-test — `export --activity` nunca filtra cwd/source_path/mtime/size/offset (P1)
+**Archivos:** Modificar `tests/test_breaks.py`
+
+Igual que la Tarea 15/17 de Fase 1: el canario tiene que inyectar de verdad un campo local en una
+fila y demostrar que `_strip_local_only` lo atrapa — no basta con confirmar que hoy no aparece
+(eso solo probaría que nadie lo puso ahí, no que la guardia funciona).
+
+- [ ] Paso 1: test que falla:
+  ```python
+      def test_export_activity_never_leaks_local_only_guard(self):
+          from cabina import snapshot as SNAP
+          import json as _json
+          env = Env()
+          try:
+              env.refresh_sessions()
+              real_row = SNAP._detail_row
+              def leaky_row(s, titles):
+                  r = real_row(s, titles)
+                  r["cwd"] = s.get("cwd"); r["source_path"] = s.get("source_path")
+                  return r
+              with mock.patch.object(SNAP, "_detail_row", leaky_row):
+                  out = SNAP.export_activity(env.cfg, detail=True)
+              self.assertNotIn("cwd", _json.dumps(out))                              # guard present: caught
+              with mock.patch.object(SNAP, "_detail_row", leaky_row), \
+                   mock.patch.object(SNAP, "_strip_local_only", lambda row: row):
+                  out2 = SNAP.export_activity(env.cfg, detail=True)
+              self.assertIn(env.alpha, _json.dumps(out2))                            # guard removed -> cwd leaks -> canary red
+          finally:
+              env.cleanup()
+  ```
+- [ ] Paso 2: `python3 -m unittest discover -s tests -p "test_breaks.py" -v -k export_activity` →
+      `AttributeError: module 'cabina.snapshot' has no attribute '_detail_row'` (ya la resuelve la
+      Tarea 27; si se ejecuta en orden, este paso solo confirma que el primer `assertNotIn` pasa
+      pero el segundo `assertIn` falla porque `_strip_local_only` real seguía activo por error de
+      copy-paste — verificar que el `with` interno de verdad reemplaza ambos).
+- [ ] Paso 3: sin cambios de producción — el guard ya existe desde la Tarea 27; este test solo lo
+      ejercita de punta a punta con una inyección real (mismo patrón que el canario R8 de Fase 1).
+- [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_breaks.py" -v` → todos en verde
+      (los 12 anteriores + este).
+- [x] Paso 5: `git commit -am "test: break-test — export_activity local-only guard genuinely exercised via injected leak"`
+
+### Tarea 30: `snapshot.compare`/`render_compare` — deltas de actividad entre dos exports (P4)
+**Archivos:** Modificar `src/cabina/snapshot.py` · Modificar `tests/test_snapshot.py`
+
+Solo cuando AMBOS exports traen `activity` agregada — si uno de los dos no la tiene (una máquina
+corrió `cabina export` sin `--activity`), el comparador simplemente no dice nada de actividad, en
+vez de asumir ceros que serían un delta falso.
+
+- [ ] Paso 1: test que falla:
+  ```python
+  class TestCompareActivity(unittest.TestCase):
+      def test_compare_activity_deltas(self):
+          a = {"machine": "m1", "agents": [], "skills": [], "projects": [],
+               "activity": {"aggregated": [{"project": "alpha", "sessions": 2, "hours": 1.5, "commits": 1}]}}
+          b = {"machine": "m2", "agents": [], "skills": [], "projects": [],
+               "activity": {"aggregated": [{"project": "alpha", "sessions": 5, "hours": 4.0, "commits": 3}]}}
+          r = SNAP.compare(a, b)
+          self.assertEqual(r["activity"][0]["sessions"], {"a": 2, "b": 5})
+          txt = SNAP.render_compare(r, "m1", "m2")
+          self.assertIn("alpha", txt)
+  ```
+- [ ] Paso 2: `python3 -m unittest discover -s tests -p "test_snapshot.py" -v -k compare_activity` →
+      `KeyError: 'activity'`.
+- [ ] Paso 3: en `src/cabina/snapshot.py`, en `compare`, agregar antes del `return out` (cambiando
+      `return {...}` por `out = {...}` primero):
+  ```python
+      aa, ab = (a.get("activity") or {}).get("aggregated"), (b.get("activity") or {}).get("aggregated")
+      if aa and ab:
+          pa2 = {x["project"]: x for x in aa}; pb2 = {x["project"]: x for x in ab}
+          out["activity"] = [{"project": p,
+                              "sessions": {"a": pa2.get(p, {}).get("sessions", 0), "b": pb2.get(p, {}).get("sessions", 0)},
+                              "hours": {"a": pa2.get(p, {}).get("hours", 0), "b": pb2.get(p, {}).get("hours", 0)},
+                              "commits": {"a": pa2.get(p, {}).get("commits", 0), "b": pb2.get(p, {}).get("commits", 0)}}
+                             for p in sorted(set(pa2) | set(pb2))]
+      return out
+  ```
+  y en `render_compare`, antes del `return "\n".join(out)` final:
+  ```python
+      if r.get("activity"):
+          out.append(f"  activity: sessions/hours/commits, {la} → {lb}")
+          for x in r["activity"]:
+              out.append(f"     {x['project']:<20} sessions {x['sessions']['a']:>3}→{x['sessions']['b']:<3}  "
+                         f"hours {x['hours']['a']:.1f}→{x['hours']['b']:.1f}  commits {x['commits']['a']}→{x['commits']['b']}")
+  ```
+- [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_snapshot.py" -v` → todos en verde.
+- [x] Paso 5: `git commit -am "feat: snapshot.compare/render_compare — activity deltas between two exports when both carry it (P4)"`
+
+### Tarea 31: `hub.py` — `load_dir()`: mezclar N exports con confinamiento y límite de tamaño (P2)
+**Archivos:** Modificar `src/cabina/config.py` · Crear `src/cabina/hub.py` · Modificar `tests/test_hub.py`
+
+Analogía: es el archivero que junta las carpetas que cada sucursal mandó por correo — antes de
+meter una carpeta al archivero, revisa que de verdad vino de la bandeja de entrada (no de un atajo
+que apunta a otro lado), que no pesa más de la cuenta, y que se puede abrir. Una carpeta rota se
+marca "ilegible" y se sigue con las demás; no se cierra el archivero entero por una carpeta mala.
+
+- [ ] Paso 1: cuatro tests que fallan (agregar a `tests/test_hub.py`, creado en la Tarea 26):
+  ```python
+  import json, os, tempfile, unittest
+  from cabina import hub as HUB
+
+  class TestHubLoadDir(unittest.TestCase):
+      def test_hub_lists_sessions_from_multiple_exports(self):
+          with tempfile.TemporaryDirectory() as d:
+              open(os.path.join(d, "m1.json"), "w").write(json.dumps({"cabina": 1, "machine": "m1", "os": "macOS", "when": "x",
+                  "agents": [], "skills": [], "harness": [], "projects": ["alpha"],
+                  "activity": {"aggregated": [{"project": "alpha", "sessions": 2, "hours": 1.0}]}}))
+              open(os.path.join(d, "m2.json"), "w").write(json.dumps({"cabina": 1, "machine": "m2", "os": "Linux", "when": "y",
+                  "agents": [], "skills": [], "harness": [], "projects": ["alpha"],
+                  "activity": {"aggregated": [{"project": "alpha", "sessions": 3, "hours": 2.0}]}}))
+              out = HUB.load_dir(d, 5)
+              self.assertEqual(len(out["files"]), 2)
+              self.assertTrue(all(f["status"] == "ok" for f in out["files"]))
+              machines = {row["machine"] for row in out["merged"]["activity"]["aggregated"]}
+              self.assertEqual(machines, {"m1", "m2"})
+
+      def test_hub_rejects_symlink_escaping_dir(self):
+          with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as outside:
+              secret = os.path.join(outside, "secret.json")
+              open(secret, "w").write(json.dumps({"machine": "evil", "agents": [{"name": "leaked"}], "skills": [], "harness": [], "projects": []}))
+              os.symlink(secret, os.path.join(d, "escape.json"))
+              out = HUB.load_dir(d, 5)
+              self.assertEqual(out["files"][0]["status"], "outside")
+              self.assertEqual(out["merged"]["agents"], [])
+
+      def test_hub_skips_oversized_file(self):
+          with tempfile.TemporaryDirectory() as d:
+              open(os.path.join(d, "big.json"), "w").write(json.dumps({"machine": "m1", "agents": [], "skills": [], "harness": [], "projects": [], "pad": "x" * 2000}))
+              out = HUB.load_dir(d, max_mb=0.001)          # ~1 KB cap, file is bigger
+              self.assertEqual(out["files"][0]["status"], "too-large")
+
+      def test_hub_marks_corrupt_json_as_unreadable_without_crashing(self):
+          with tempfile.TemporaryDirectory() as d:
+              open(os.path.join(d, "bad.json"), "w").write("{not valid json")
+              open(os.path.join(d, "good.json"), "w").write(json.dumps({"machine": "m1",
+                  "agents": [{"name": "x", "project": "p", "tool": "claude", "category": "valid", "model": "sonnet", "uses": 1}],
+                  "skills": [], "harness": [], "projects": ["p"]}))
+              out = HUB.load_dir(d, 5)
+              statuses = {f["name"]: f["status"] for f in out["files"]}
+              self.assertEqual(statuses["bad.json"], "unreadable")
+              self.assertEqual(statuses["good.json"], "ok")
+              self.assertEqual(out["merged"]["agents"][0]["machine"], "m1")
+
+  if __name__ == "__main__":
+      unittest.main()
+  ```
+- [ ] Paso 2: `python3 -m unittest discover -s tests -p "test_hub.py" -v` →
+      `ModuleNotFoundError: No module named 'cabina.hub'`.
+- [ ] Paso 3a: en `src/cabina/config.py`, en `DEFAULTS`, agregar (junto a `"activity"`):
+      `"hub": {"max_file_mb": 5},`
+- [ ] Paso 3b: crear `src/cabina/hub.py`:
+  ```python
+  """cabina hub — lee N archivos de `cabina export --activity` de una carpeta compartida y sirve
+  la MISMA UI (static/index.html) sobre su mezcla. Read-only por diseño (R10): HubApp (definida
+  aquí también) no tiene NINGUNA ruta de escritura."""
+  import json, os
+
+
+  def _confined(real_path, real_dir):
+      """Guard (R10): una ruta resuelta cuenta como 'adentro' de real_dir solo si es igual o cae
+      bajo él. Aislado como función propia (no inline) para que un break-test pueda desactivarlo
+      sin tocar os.path.realpath en sí."""
+      return real_path == real_dir or real_path.startswith(real_dir + os.sep)
+
+
+  def load_dir(dir_, max_mb=5):
+      """Archivos *.json DIRECTAMENTE bajo dir_ (no recursivo). Cada archivo: confinado por
+      realpath a dir_ (un symlink que escapa -> status "outside"), tope de tamaño max_mb MB (->
+      "too-large"), json.loads envuelto por archivo (-> "unreadable"). Un archivo malo nunca
+      aborta a los demás. Devuelve {files: [...], merged: {agents, skills, projects, harness,
+      activity}}."""
+      real_dir = os.path.realpath(dir_)
+      files, agents, skills, harness = [], [], [], []
+      projects_set, agg_by_key, detail_rows, has_detail = set(), {}, [], False
+      if os.path.isdir(dir_):
+          for name in sorted(os.listdir(dir_)):
+              if not name.endswith(".json"):
+                  continue
+              path = os.path.join(dir_, name)
+              entry = {"name": name, "machine": None, "os": None, "when": None, "status": "ok"}
+              real_path = os.path.realpath(path)
+              if not _confined(real_path, real_dir):
+                  entry["status"] = "outside"; files.append(entry); continue
+              try:
+                  size = os.path.getsize(real_path)
+              except OSError as e:
+                  entry["status"] = "unreadable"; entry["error"] = str(e); files.append(entry); continue
+              if size > max_mb * 1024 * 1024:
+                  entry["status"] = "too-large"; files.append(entry); continue
+              try:
+                  with open(real_path, encoding="utf-8") as f:
+                      d = json.load(f)
+              except Exception as e:
+                  entry["status"] = "unreadable"; entry["error"] = str(e); files.append(entry); continue
+              machine = d.get("machine") or name
+              entry["machine"], entry["os"], entry["when"] = machine, d.get("os"), d.get("when")
+              files.append(entry)
+              for a in d.get("agents") or []: agents.append({**a, "machine": machine})
+              for s in d.get("skills") or []: skills.append({**s, "machine": machine})
+              for h in d.get("harness") or []: harness.append({**h, "machine": machine})
+              for p in d.get("projects") or []: projects_set.add(p)
+              act = d.get("activity") or {}
+              for row in act.get("aggregated") or []:
+                  agg_by_key[(row.get("project"), machine)] = {**row, "machine": machine}
+              if act.get("sessions"):
+                  has_detail = True
+                  for row in act["sessions"]: detail_rows.append({**row, "machine": machine})
+      activity = {"sessions": detail_rows} if has_detail else {"aggregated": list(agg_by_key.values())}
+      merged = {"agents": agents, "skills": skills, "projects": sorted(projects_set), "harness": harness, "activity": activity}
+      return {"files": files, "merged": merged}
+  ```
+- [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_hub.py" -v` → `Ran 5 tests ... OK`
+      (los 4 nuevos + el de la Tarea 26).
+- [x] Paso 5: `git commit -am "feat: hub.py — load_dir() merges N exports with realpath confinement and a per-file size cap (P2)"`
+
+### Tarea 32: `hub.HubApp` — servidor de solo lectura + placeholder `__HUB__` (P2, R10)
+**Archivos:** Modificar `src/cabina/hub.py`, `src/cabina/server.py`, `src/cabina/static/index.html` · Modificar `tests/test_hub.py`, `tests/test_server.py`
+
+`HubApp` es una clase SEPARADA de `App` — no "`App` con `POSTS` vacío" (R10): no tiene ningún
+diccionario `POSTS`, ni ningún método `api_archive`/`api_create`/`api_save_doc`/`api_commit`/
+`api_open`/`api_focus`/`api_rescan`. `do_POST` responde 405 siempre, sin mirar nada. El placeholder
+`__HUB__` en `index.html` es el mismo mecanismo que `__TOKEN__`/`__LANG__` (Tarea 25 de Fase 1b): el
+servidor normal (`App`) lo sustituye por `"0"`, `HubApp` por `"1"` — el JS lo lee más adelante
+(Tarea 35) para decidir qué esconder.
+
+- [ ] Paso 1: tests que fallan:
+  ```python
+  # tests/test_server.py, agregar a TestServer
+      def test_index_marks_hub_false(self):
+          with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+          self.assertNotIn("__HUB__", html)
+          self.assertIn('HUB="0"==="1"', html)
+  ```
+  ```python
+  # tests/test_hub.py, nueva clase
+  import threading, urllib.request, urllib.error
+  from http.server import ThreadingHTTPServer
+  from cabina import config as CFG
+
+  class TestHubServer(unittest.TestCase):
+      @classmethod
+      def setUpClass(cls):
+          cls.dir = tempfile.mkdtemp()
+          open(os.path.join(cls.dir, "m1.json"), "w").write(json.dumps({
+              "cabina": 1, "machine": "m1", "os": "macOS", "when": "x",
+              "agents": [{"name": "rev", "project": "alpha", "tool": "claude", "category": "valid", "model": "sonnet", "uses": 1}],
+              "skills": [], "harness": [{"project": "alpha", "level": "partial", "hooks_dead": [], "hooks_broken": []}],
+              "projects": ["alpha"],
+              "activity": {"aggregated": [{"project": "alpha", "sessions": 1, "hours": 0.5, "tokens": {"in": 1, "out": 1},
+                                            "commits": 0, "files_touched": 0, "tool_calls": {}, "agents": {}, "skills": {}}]}}))
+          cls.cfg = CFG.load(None)
+          cls.app = HUB.HubApp(cls.dir, cls.cfg)
+          cls.srv = ThreadingHTTPServer(("127.0.0.1", 0), HUB.make_hub_handler(cls.app))
+          cls.port = cls.srv.server_address[1]
+          threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+      @classmethod
+      def tearDownClass(cls): cls.srv.shutdown()
+
+      def get(self, path):
+          with urllib.request.urlopen(f"http://127.0.0.1:{self.port}{path}") as r: return json.loads(r.read())
+
+      def test_index_marks_hub_true(self):
+          with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+          self.assertIn('HUB="1"==="1"', html)
+
+      def test_endpoints_and_404s(self):
+          self.assertEqual(len(self.get("/api/hub")["files"]), 1)
+          self.assertEqual(self.get("/api/agents")["agents"][0]["machine"], "m1")
+          self.assertTrue(self.get("/api/activity")["aggregated"])
+          for p in ("/api/live", "/api/docs", "/api/doc", "/api/references", "/api/in-repo"):
+              with self.assertRaises(urllib.error.HTTPError):
+                  self.get(p)
+
+      def test_post_is_always_405(self):
+          req = urllib.request.Request(f"http://127.0.0.1:{self.port}/api/rescan", data=b"{}", method="POST")
+          try:
+              urllib.request.urlopen(req); self.fail("expected 405")
+          except urllib.error.HTTPError as e:
+              self.assertEqual(e.code, 405)
+  ```
+- [ ] Paso 2: `python3 -m unittest discover -s tests -p "test_hub.py" -v` →
+      `AttributeError: module 'cabina.hub' has no attribute 'HubApp'`; y
+      `python3 -m unittest discover -s tests -p "test_server.py" -v -k hub_false` → falla porque
+      `__HUB__` no existe todavía en `index.html`.
+- [ ] Paso 3a: en `src/cabina/static/index.html`, cambiar
+      `const TOKEN="__TOKEN__", LANG="__LANG__";` por
+      `const TOKEN="__TOKEN__", LANG="__LANG__", HUB="__HUB__"==="1";`
+- [ ] Paso 3b: en `src/cabina/server.py`, en `do_GET`, cambiar
+      `html = html.replace("__TOKEN__", app.token).replace("__LANG__", lang)` por
+      `html = html.replace("__TOKEN__", app.token).replace("__LANG__", lang).replace("__HUB__", "0")`
+- [ ] Paso 3c: en `src/cabina/hub.py`, agregar `import threading, webbrowser` a los imports y,
+      al final del archivo:
+  ```python
+  from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+  from urllib.parse import urlparse, parse_qs
+  from .i18n import STRINGS
+
+  STATIC = os.path.join(os.path.dirname(__file__), "static")
+
+
+  class HubApp:
+      """Sin diccionario POSTS, sin métodos api_archive/api_create/api_save_doc/api_commit/
+      api_open/api_focus/api_rescan en ninguna parte de esta clase — la AUSENCIA es la guardia (R10)."""
+      def __init__(self, dir_, cfg):
+          self.dir = dir_
+          self.max_mb = (cfg.get("hub") or {}).get("max_file_mb", 5)
+          self.lang = cfg["language"] if cfg.get("language") in STRINGS else "en"
+
+      def _merged(self):
+          return load_dir(self.dir, self.max_mb)
+
+      def api_hub(self, q=None):
+          return {"files": self._merged()["files"]}
+
+      def api_agents(self, q=None):
+          m = self._merged()["merged"]
+          return {"agents": m["agents"], "projects": m["projects"], "window": None, "codex_present": False}
+
+      def api_skills(self, q=None):
+          return {"skills": self._merged()["merged"]["skills"], "window": None}
+
+      def api_projects(self, q=None):
+          return {"projects": [{"name": p} for p in self._merged()["merged"]["projects"]]}
+
+      def api_harness(self, q=None):
+          m = self._merged()["merged"]
+          return {"states": m["harness"], "runlogs": [], "drift": {"codex_present": False}}
+
+      def api_activity(self, q=None):
+          act = self._merged()["merged"]["activity"]
+          return {"aggregated": act.get("aggregated") or [], "sessions": act.get("sessions") or [], "active_seconds": None}
+
+
+  def make_hub_handler(app):
+      GETS = {"/api/hub": app.api_hub, "/api/agents": app.api_agents, "/api/skills": app.api_skills,
+              "/api/projects": app.api_projects, "/api/harness": app.api_harness, "/api/activity": app.api_activity}
+
+      class H(BaseHTTPRequestHandler):
+          def log_message(self, *a): pass
+          def _json(self, obj, code=200):
+              b = json.dumps(obj, ensure_ascii=False).encode()
+              self.send_response(code); self.send_header("Content-Type", "application/json; charset=utf-8")
+              self.send_header("Content-Length", str(len(b))); self.send_header("Cache-Control", "no-store"); self.end_headers(); self.wfile.write(b)
+          def do_GET(self):
+              u = urlparse(self.path)
+              if u.path in ("/", "/index.html"):
+                  html = open(os.path.join(STATIC, "index.html"), encoding="utf-8").read()
+                  html = html.replace("__TOKEN__", "").replace("__LANG__", app.lang).replace("__HUB__", "1")
+                  b = html.encode(); self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8")
+                  self.send_header("Content-Length", str(len(b))); self.send_header("Cache-Control", "no-store"); self.end_headers(); self.wfile.write(b); return
+              fn = GETS.get(u.path)
+              if not fn: return self._json({"error": "not found"}, 404)
+              try: return self._json(fn(parse_qs(u.query)))
+              except Exception as e: return self._json({"ok": False, "message": str(e)}, 500)
+          def do_POST(self):
+              return self._json({"ok": False, "message": "cabina hub is read-only: no write route exists"}, 405)
+      return H
+
+
+  def serve_hub(dir_, cfg, port=None, open_browser=True):
+      app = HubApp(dir_, cfg)
+      port = port or cfg["server"]["port"]
+      srv = ThreadingHTTPServer(("127.0.0.1", port), make_hub_handler(app))   # 127.0.0.1 fijo (R10) — nunca cfg["server"]["host"]
+      url = f"http://127.0.0.1:{srv.server_address[1]}/"
+      print(f"cabina hub (read-only) at {url}  — {dir_}  (Ctrl-C to stop)")
+      if open_browser:
+          threading.Timer(0.6, lambda: webbrowser.open(url)).start()
+      try:
+          srv.serve_forever()
+      except KeyboardInterrupt:
+          print("\nstopped.")
+      return srv
+  ```
+- [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_hub.py" -v` → `Ran 8 tests ... OK`;
+      `python3 -m unittest discover -s tests -p "test_server.py" -v` → todos en verde.
+- [x] Paso 5: `git commit -am "feat: hub.HubApp — read-only server over merged exports; __HUB__ placeholder (App=0, HubApp=1) (P2, R10)"`
+
+### Tarea 33: CLI `cabina hub DIR [--port] [--no-open]`
+**Archivos:** Modificar `src/cabina/cli.py` · Modificar `tests/test_cli.py`
+
+- [ ] Paso 1: test que falla (imports: agregar `from unittest import mock` si no se agregó ya en
+      la Tarea 28):
+  ```python
+  class TestHubCommand(unittest.TestCase):
+      def test_hub_command_calls_serve_hub_with_dir_and_port(self):
+          from cabina import cli as CLI
+          called = {}
+          def fake(dir_, cfg, port=None, open_browser=True):
+              called.update(dir=dir_, port=port, open_browser=open_browser)
+          with tempfile.TemporaryDirectory() as d:
+              with mock.patch("cabina.hub.serve_hub", fake):
+                  CLI.main(["hub", d, "--port", "9999", "--no-open"])
+          self.assertEqual(called["dir"], d); self.assertEqual(called["port"], 9999); self.assertFalse(called["open_browser"])
+  ```
+- [ ] Paso 2: `python3 -m unittest discover -s tests -p "test_cli.py" -v -k hub_command` → falla:
+      `invalid choice: 'hub'`.
+- [ ] Paso 3: en `src/cabina/cli.py`, agregar el subparser junto a los demás:
+  ```python
+      hb = sub.add_parser("hub", help="serve the UI, read-only, over N `cabina export --activity` files in DIR")
+      hb.add_argument("dir"); hb.add_argument("--port", type=int); hb.add_argument("--no-open", action="store_true")
+  ```
+  y el handler (junto a los otros `if a.cmd == ...:`):
+  ```python
+      if a.cmd == "hub":
+          from . import hub
+          hub.serve_hub(a.dir, cfg, port=a.port, open_browser=not a.no_open); return 0
+  ```
+- [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_cli.py" -v` → todos en verde.
+- [x] Paso 5: `git commit -am "feat: cabina hub DIR — CLI entrypoint for the read-only hub server"`
+
+### Tarea 34: Break-tests — el hub nunca escribe, el hub nunca sale de su carpeta (P5)
+**Archivos:** Modificar `tests/test_breaks.py`
+
+Dos guardias distintas de R10, cada una con su canario real. La primera prueba que `do_POST` es
+INCONDICIONAL (nunca llega a mirar una tabla de rutas), no que hoy nadie definió esa tabla — para
+eso, el canario cambia `do_POST` mismo por una versión "como `App`" (que sí consulta una tabla) y
+confirma que ESA versión sí dejaría pasar una escritura. La segunda ya se diseñó en la Tarea 31
+(`_confined` como función aislada) — acá solo se ejercita como break-test.
+
+- [ ] Paso 1: dos tests que fallan:
+  ```python
+      def test_hub_no_write_path_guard(self):
+          from cabina import hub as HUB, config as CFG
+          self.assertFalse(hasattr(HUB.HubApp, "POSTS"))
+          for m in ("api_archive", "api_create", "api_archive_skill", "api_save_doc", "api_commit", "api_open", "api_focus", "api_rescan"):
+              self.assertFalse(hasattr(HUB.HubApp, m))
+          import threading, urllib.request, urllib.error
+          from http.server import ThreadingHTTPServer
+          with tempfile.TemporaryDirectory() as d:
+              app = HUB.HubApp(d, CFG.load(None))
+              H = HUB.make_hub_handler(app)
+              def run_posts():
+                  srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+                  port = srv.server_address[1]
+                  threading.Thread(target=srv.serve_forever, daemon=True).start()
+                  try:
+                      codes = []
+                      for path in ("/api/archive", "/api/create", "/api/archive-skill", "/api/save-doc",
+                                   "/api/open", "/api/focus", "/api/rescan", "/api/commit"):
+                          req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", data=b"{}", method="POST")
+                          try:
+                              urllib.request.urlopen(req); codes.append(200)
+                          except urllib.error.HTTPError as e:
+                              codes.append(e.code)
+                      return codes
+                  finally:
+                      srv.shutdown()
+              self.assertEqual(run_posts(), [405] * 8)                                  # guard present: every write route blocked
+              leaky_do_post = lambda self: self._json({"ok": True, "message": "SHOULD NEVER HAPPEN"}, 200)
+              with mock.patch.object(H, "do_POST", leaky_do_post):
+                  self.assertEqual(run_posts(), [200] * 8)                              # guard removed -> canary red
+
+      def test_hub_path_confinement_guard(self):
+          from cabina import hub as HUB
+          with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as outside:
+              secret = os.path.join(outside, "secret.json")
+              open(secret, "w").write('{"machine": "evil", "agents": [{"name": "leaked"}], "skills": [], "harness": [], "projects": []}')
+              os.symlink(secret, os.path.join(d, "escape.json"))
+              out = HUB.load_dir(d, 5)
+              self.assertEqual(out["files"][0]["status"], "outside")                     # guard present: rejected
+              self.assertEqual(out["merged"]["agents"], [])
+              with mock.patch.object(HUB, "_confined", return_value=True):               # guard disabled
+                  out2 = HUB.load_dir(d, 5)
+              self.assertEqual(out2["files"][0]["status"], "ok")                          # confinement bypassed -> canary red
+              self.assertEqual(out2["merged"]["agents"][0]["name"], "leaked")
+  ```
+- [ ] Paso 2: `python3 -m unittest discover -s tests -p "test_breaks.py" -v -k hub` → falla en el
+      `assertFalse(hasattr(...))` o en `ModuleNotFoundError` según el orden de ejecución de tareas
+      (si Tareas 31/32 ya están hechas, este paso solo confirma que ambos canarios se ponen rojos
+      como se espera).
+- [ ] Paso 3: sin cambios de producción — ambas guardias ya existen desde las Tareas 31/32; este
+      test las ejercita de punta a punta.
+- [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_breaks.py" -v` → todos en verde
+      (los 13 anteriores + estos 2 = 15).
+- [x] Paso 5: `git commit -am "test: break-tests — hub do_POST is unconditional (P5), hub path confinement genuinely exercised"`
+
+### Tarea 35: UI — modo hub esconde Live/Docs y los botones de crear/reescanear (P3)
+**Archivos:** Modificar `src/cabina/static/index.html` · Modificar `tests/test_server.py`
+
+Como no hay corredor de navegador en este repo, la verificación es **estructural** (lee el HTML
+servido y confirma con texto/patrones que el código está ahí) — igual que la Tarea 25 de Fase 1b.
+
+- [ ] Paso 1: test que falla:
+  ```python
+      def test_hub_mode_hides_live_docs_and_write_buttons(self):
+          with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+          self.assertIn('["agents","skills","projects","harness","activity"]', html)   # hub-mode VIEWS, sin live/docs
+          self.assertIn('HUB?"":', html)                                               # al menos un control de escritura condicionado
+  ```
+- [ ] Paso 2: `python3 -m unittest discover -s tests -p "test_server.py" -v -k hub_mode_hides` →
+      falla, ninguna de las dos cadenas está en el HTML.
+- [ ] Paso 3a: en `src/cabina/static/index.html`, cambiar
+      `const VIEWS=["agents","live","skills","projects","harness","docs","activity"];` por
+      `const VIEWS=HUB?["agents","skills","projects","harness","activity"]:["agents","live","skills","projects","harness","docs","activity"];`
+- [ ] Paso 3b: en `renderAgents`, cambiar la línea de `$("filters").innerHTML=...` para que el
+      botón "+ Crear" sea condicional:
+  ```js
+   $("filters").innerHTML=`<input id="q" placeholder="${T("search")}" value="${esc(S.q)}">`+chips.map(([k,l])=>`<button class="chip ${S.chips.has(k)?"on":""}" data-c="${k}">${l}</button>`).join("")+chipFocus()+(HUB?"":`<button class="btn primary" id="btnCreate" style="margin-left:auto">${T("create")}</button>`);
+   bindFocus();$("q").oninput=e=>{S.q=e.target.value;renderAgents();};document.querySelectorAll(".chip[data-c]").forEach(c=>c.onclick=()=>{const k=c.dataset.c;S.chips.has(k)?S.chips.delete(k):S.chips.add(k);renderAgents();});
+   if(!HUB)$("btnCreate").onclick=()=>{S.mode="create";S.sel=null;renderAgents();renderCreate();};
+  ```
+- [ ] Paso 3c: en `renderProjects`, hacer lo mismo con "Reescanear":
+  ```js
+   $("filters").innerHTML=`<span class="muted">${T("projHint")}</span>`+chipFocus()+(HUB?"":`<button class="btn" id="bRescan" style="margin-left:auto" title="${T("rescanT")}">${T("rescan")}</button>`);bindFocus();
+   if(!HUB)$("bRescan").onclick=async()=>{toast((await POST("/api/rescan",{})).message);setTimeout(()=>{loadAgents();loadSkills();loadProjs();loadHar();loadDocs();},45000);};
+  ```
+- [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_server.py" -v` → todos en verde.
+- [x] Paso 5: `git commit -am "feat: UI — hub mode hides Live/Docs tabs and the create/rescan buttons (P3)"`
+
+### Tarea 36: UI — esconder el resto de controles de escritura + chip de máquina + banner del hub (P3)
+**Archivos:** Modificar `src/cabina/static/index.html` · Modificar `tests/test_server.py`
+
+Los botones "Abrir"/"Archivar"/"Referencias" de Agentes y Skills, y "Abrir carpeta" de Proyectos,
+llaman rutas POST que en el hub siempre dan 405 — se esconden también en la UI para no ofrecer un
+botón que sabe de antemano que va a fallar. "Enfocar" NO se esconde: es un filtro solo del lado del
+cliente (`S.focus`), nunca llama al servidor. Tarea más grande que el resto de Fase 2 por la
+cantidad de puntos que toca — ver Concern al final de la sección.
+
+- [ ] Paso 1: test que falla:
+  ```python
+      def test_hub_mode_hides_remaining_write_buttons_and_has_machine_chip(self):
+          with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+          self.assertIn("function mchip", html)
+          self.assertIn("function renderHubBanner", html)
+  ```
+- [ ] Paso 2: `python3 -m unittest discover -s tests -p "test_server.py" -v -k hub_mode_hides_remaining`
+      → falla, ninguna de las dos funciones existe.
+- [ ] Paso 3a: en `src/cabina/static/index.html`, agregar cerca de `chipFocus()`/`bindFocus()`:
+  ```js
+  function mchip(x){return x.machine?` <span class="tl">${esc(x.machine)}</span>`:"";}
+  ```
+- [ ] Paso 3b: en el objeto `S`, agregar `hub:null,` (junto a `activity:null,`).
+- [ ] Paso 3c: en `renderAgents`, agregar `${mchip(x)}` al final del `<span class="w">` de cada
+      fila (después de `${u}`); en `renderAgentDetail`, cambiar el bloque de acciones:
+  ```js
+   h+=`<div id="refs"></div><div class="actions">`+(HUB?"":`<button class="btn primary" id="bOpen">${T("openFile")}</button><button class="btn" id="bRefs">${T("refs")}</button><button class="btn danger" id="bArch">${T("archive")}</button>`)+`</div>`;
+   $("detail").innerHTML=h;
+   if(!HUB){$("bOpen").onclick=async()=>{toast((await POST("/api/open",{path:x.path})).message);};
+    $("bRefs").onclick=async()=>{$("refs").innerHTML=`<div class="muted">${T("searching")}</div>`;const r=await GET("/api/references?name="+encodeURIComponent(x.name));$("refs").innerHTML=r.references.length?`<div class="box warn"><b>${T("refsFound",{n:r.references.length,name:esc(x.name)})}</b><ul>${r.references.map(f=>`<li><code>${esc(f)}</code></li>`).join("")}</ul></div>`:`<div class="box info">${T("refsNone")}</div>`;};
+    $("bArch").onclick=()=>renderArchive(x,"/api/archive",{name:x.name,project:x.project,tool:x.tool},"agents/"+x.project,renderAgentDetail,loadAgents);}
+  ```
+- [ ] Paso 3d: en `renderSkillDetail`, el mismo patrón:
+  ```js
+   h+=`<div id="refs"></div>`+(HUB?"":`<div class="actions"><button class="btn primary" id="bOpen">${T("openFolder")}</button><button class="btn" id="bRefs">${T("refs")}</button><button class="btn danger" id="bArch">${T("archive")}</button></div>`);$("detail").innerHTML=h;
+   if(!HUB){$("bOpen").onclick=async()=>{toast((await POST("/api/open",{path:x.path})).message);};
+    $("bRefs").onclick=async()=>{$("refs").innerHTML=`<div class="muted">${T("searching")}</div>`;const r=await GET("/api/references?name="+encodeURIComponent(x.name));$("refs").innerHTML=r.references.length?`<div class="box warn"><b>${T("refsFound",{n:r.references.length,name:esc(x.name)})}</b><ul>${r.references.map(f=>`<li><code>${esc(f)}</code></li>`).join("")}</ul></div>`:`<div class="box info">${T("refsNone")}</div>`;};
+    $("bArch").onclick=()=>renderArchive(x,"/api/archive-skill",{name:x.name,project:x.project,path:x.path},"skills/"+x.project,renderSkillDetail,loadSkills,x.symlink?T("skArchLink"):T("skArch")+` <code>_archive/&lt;today&gt;/skills/${esc(x.project)}/</code>.`);}
+  ```
+- [ ] Paso 3e: en `renderProjDetail`, esconder solo "Abrir carpeta" (Enfocar queda):
+  ```js
+   h+=`<div class="actions"><button class="btn primary" id="bFocus">${S.focus===x.name?T("focusOff"):T("focusOn")}</button>`+(HUB?"":`<button class="btn" id="bFolder">${T("openFolder")}</button>`)+`</div>`;$("detail").innerHTML=h;
+   $("bFocus").onclick=()=>{S.focus=S.focus===x.name?null:x.name;renderProjects();renderProjDetail();toast(S.focus?T("focused",{p:S.focus}):T("unfocused"));};
+   if(!HUB)$("bFolder").onclick=async()=>{toast((await POST("/api/open",{path:x.path})).message);};
+  ```
+- [ ] Paso 3f: en `renderHarness`, agregar `${mchip(e)}` dentro del `<span class="w">` de cada fila
+      de proyecto (después de la parte de MEM).
+- [ ] Paso 3g: agregar el banner del hub, junto a `loadActivity`:
+  ```js
+  async function loadHub(){if(!HUB)return;S.hub=await GET("/api/hub");renderHubBanner();}
+  function renderHubBanner(){if(!HUB||!S.hub)return;let el=$("hubBanner");if(!el){el=document.createElement("div");el.id="hubBanner";
+   el.style.cssText="padding:8px 18px;background:var(--slate-soft);color:var(--slate);font-size:12px;border-bottom:1px solid var(--line)";
+   document.querySelector(".top").after(el);}
+   el.innerHTML=S.hub.files.map(f=>`<span>${esc(f.name)} (${esc(f.machine||"?")}) · ${esc(f.status)}</span>`).join("  ·  ");}
+  ```
+- [ ] Paso 3h: al final del archivo, cambiar la línea de arranque
+      `loadAgents();loadLive();loadSkills();loadProjs();loadHar();loadDocs();loadActivity();setInterval(loadLive,1000);`
+      por:
+  ```js
+  loadAgents();loadSkills();loadProjs();loadHar();loadActivity();loadHub();
+  if(!HUB){loadLive();loadDocs();setInterval(loadLive,1000);}
+  ```
+      (evita que el hub llame `/api/live` y `/api/docs`, que dan 404 ahí — ver "no console errors"
+      en la Tarea 39).
+- [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_server.py" -v` → todos en verde.
+- [x] Paso 5: `git commit -am "feat: UI — hide remaining write buttons in hub mode, machine chip on agent/harness rows, hub banner (P3)"`
+
+### Tarea 37: UI — pestaña Actividad soporta filas agregadas y filas por sesión (P3)
+**Archivos:** Modificar `src/cabina/static/index.html` · Modificar `tests/test_server.py`
+
+Cuando el hub mezcla exports sin `--detail`, `/api/activity` no trae `sessions` (solo `aggregated`)
+— la pestaña Actividad tiene que poder mostrar ESO también, no asumir siempre que hay filas por
+sesión.
+
+- [ ] Paso 1: test que falla:
+  ```python
+      def test_activity_supports_aggregated_shape(self):
+          with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+          self.assertIn("function renderActivityAggregated", html)
+  ```
+- [ ] Paso 2: `python3 -m unittest discover -s tests -p "test_server.py" -v -k activity_supports` →
+      falla, la función no existe.
+- [ ] Paso 3: en `src/cabina/static/index.html`, reemplazar `renderActivity` completo por:
+  ```js
+  function renderActivity(){if(!S.activity){$("rows").innerHTML=`<div class="empty">${T("loading")}</div>`;$("filters").innerHTML="";return;}
+   const detail=(S.activity.sessions||[]).length>0;
+   if(!detail){renderActivityAggregated();return;}
+   const a=S.activity.sessions,activeSecs=S.activity.active_seconds||600,now=Date.now()/1000;
+   $("filters").innerHTML=actTimeline(a)+`<input id="q" placeholder="${T("search")}" value="${esc(S.q)}">`+chipFocus();
+   bindFocus();$("q").oninput=e=>{S.q=e.target.value;renderActivity();};
+   const q=S.q.toLowerCase();let sel=a.filter(x=>{if(S.focus&&x.project!==S.focus)return false;if(q&&!((x.project||"")+" "+(x.title||"")+" "+(x.machine||"")).toLowerCase().includes(q))return false;return true;});
+   $("rows").innerHTML=sel.length?sel.map(x=>{const key=x.source_path||(x.project+"|"+x.started+"|"+(x.machine||""));const active=x.mtime&&(now-x.mtime)<activeSecs;
+    return `<button class="row ${S.sel===key?"sel":""}" data-k="${esc(key)}"><span class="dot d-${active?"working":"valid"}"></span><span class="n">${esc(x.title||T("untitled"))}${active?` <span class="tl">${T("activeNow",{n:Math.round(now-x.mtime)})}</span>`:""}${mchip(x)}</span><span class="w">${esc(x.project||"—")} · ${Math.round((x.duration_s||0)/60)}m</span></button>`;}).join(""):`<div class="empty">${T("noSessions")}</div>`;
+   document.querySelectorAll(".row").forEach(r=>r.onclick=()=>{S.sel=r.dataset.k;renderActivity();});
+   $("foot").textContent=T("sessionsFoot",{n:sel.length});
+   if(!S.sel)$("detail").innerHTML=`<div class="muted">${T("pickSession")}</div>`;else renderSessionDetail();}
+  function renderActivityAggregated(){const a=S.activity.aggregated||[];
+   $("filters").innerHTML=`<input id="q" placeholder="${T("search")}" value="${esc(S.q)}">`+chipFocus();bindFocus();
+   $("q").oninput=e=>{S.q=e.target.value;renderActivityAggregated();};
+   const q=S.q.toLowerCase();let sel=a.filter(x=>{if(S.focus&&x.project!==S.focus)return false;if(q&&!((x.project||"")+" "+(x.machine||"")).toLowerCase().includes(q))return false;return true;});
+   $("rows").innerHTML=sel.length?sel.map(x=>{const key=(x.project||"")+"|"+(x.machine||"");
+    return `<button class="row ${S.sel===key?"sel":""}" data-k="${esc(key)}"><span class="dot d-valid"></span><span class="n">${esc(x.project||"—")}${mchip(x)}</span><span class="w">${x.sessions||0} · ${(x.hours||0).toFixed(1)}h</span></button>`;}).join(""):`<div class="empty">${T("noSessions")}</div>`;
+   document.querySelectorAll(".row").forEach(r=>r.onclick=()=>{S.sel=r.dataset.k;renderActivityAggregated();});
+   $("foot").textContent=T("sessionsFoot",{n:sel.length});
+   if(!S.sel){$("detail").innerHTML=`<div class="muted">${T("pickSession")}</div>`;return;}
+   const x=a.find(y=>(y.project||"")+"|"+(y.machine||"")===S.sel);if(!x)return;
+   $("detail").innerHTML=`<div class="h">${esc(x.project||"—")}${mchip(x)}</div><div class="meta"><span>${T("sessCommits")}</span><b>${x.commits||0}</b><span>${T("sessDuration")}</span><b>${(x.hours||0).toFixed(1)}h</b><span>${T("sessTokens")}</span><b>${(x.tokens&&x.tokens.in)||0} / ${(x.tokens&&x.tokens.out)||0}</b></div>`;}
+  ```
+  y en `renderSessionDetail`, agregar `${mchip(x)}` junto al título:
+  `let h=`<div class="h">${esc(x.title||T("untitled"))}${mchip(x)}</div>...`
+- [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_server.py" -v` → todos en verde.
+- [x] Paso 5: `git commit -am "feat: UI — Activity tab renders aggregated (project x machine) rows when no per-session detail exists (P3)"`
+
+### Tarea 38: Test estructural — los campos de Actividad/hub siempre pasan por `esc()` (R10, XSS)
+**Archivos:** Modificar `tests/test_server.py`
+
+No hay corredor de navegador en este repo (sin dependencias de test nuevas — ver Concern), así que
+la prueba práctica es de código fuente: una expresión regular que agarra cada bloque `${...}` de la
+sección de Actividad y confirma que, si menciona `x.title`/`x.project`/`x.machine`/`x.branch`,
+`esc(` aparece dentro de ESE mismo bloque. Distingue interpolación real (riesgo de XSS) de un
+simple `if(x.machine?...)` de JS plano, que no se renderiza como HTML y no necesita `esc()`.
+
+- [ ] Paso 1: test que falla:
+  ```python
+      def test_activity_and_hub_fields_always_escaped(self):
+          with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+          import re
+          start = html.index("// ---------- ACTIVITY ----------")
+          end = html.index("// ---------- PROJECTS ----------")
+          body = html[start:end]
+          pattern = re.compile(r"\$\{([^{}]*\bx\.(?:title|project|machine|branch)\b[^{}]*)\}")
+          hits = list(pattern.finditer(body))
+          self.assertGreater(len(hits), 0)                    # sanity: the section actually interpolates these fields
+          for m in hits:
+              self.assertIn("esc(", m.group(1), f"unescaped interpolation: ${{{m.group(1)}}}")
+  ```
+- [ ] Paso 2: `python3 -m unittest discover -s tests -p "test_server.py" -v -k always_escaped` →
+      pasa o falla según si Tareas 36/37 ya dejaron todo envuelto en `esc()` — si falla, es una
+      interpolación real sin escapar que hay que corregir antes de seguir (no se toca este test
+      para hacerlo pasar; se corrige `index.html`).
+- [ ] Paso 3: sin cambios de producción esperados si las Tareas 36/37 se siguieron al pie de la
+      letra; si el test encuentra un caso sin `esc()`, envolverlo ahí mismo en `index.html`.
+- [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_server.py" -v` → todos en verde.
+- [x] Paso 5: `git commit -am "test: structural esc() guard over the Activity/hub section of index.html (R10, XSS)"`
+
+### Tarea 39: Verificación manual — export real + hub sobre dos archivos
+**Archivos:** ninguno (verificación, no código)
+
+- [ ] Paso 1: `PYTHONPATH=src python3 -m cabina export --activity --detail -o /tmp/m1.json` en esta
+      máquina (después de haber usado Claude Code acá al menos una vez, para que `sessions.json`
+      tenga algo real).
+- [ ] Paso 2: copiar `/tmp/m1.json` a `/tmp/m2.json` y editarle a mano el campo `"machine"` (simula
+      una segunda máquina sin necesitar una de verdad).
+- [ ] Paso 3: `PYTHONPATH=src python3 -m cabina hub /tmp` — abre el navegador; confirmar: no aparecen
+      las pestañas Live/Docs, aparece un chip de máquina en las filas de Agentes/Actividad, el
+      banner del hub lista los dos archivos como "ok", la pestaña Actividad muestra filas por sesión
+      (porque el export se hizo con `--detail`).
+- [ ] Paso 4: abrir la consola del navegador (skill `run` si hace falta) — confirmar CERO errores
+      (en particular, que no se llame `/api/live` ni `/api/docs`, que darían 404 en el hub).
+- [ ] Paso 5: — (verificación manual, sin commit).
+
+---
+
+# Concerns (Fase 2)
+
+1. **Tarea 36 es más grande que el resto.** Toca seis puntos distintos de `index.html`
+   (Agentes, Skills, Proyectos, Harness, banner nuevo, arranque). Se mantuvo como una sola tarea
+   por cohesión (todo es "esconder controles de escritura + mostrar de dónde vino cada fila"), pero
+   si al ejecutarla resulta pesada, se puede partir en 2-3 sub-tareas por vista sin perder nada.
+2. **`HubApp.api_projects` es deliberadamente pobre.** `export()` solo guarda una lista de NOMBRES
+   de proyecto (`data.get("projects", [])` → strings), no el detalle rico que sirve `App.api_projects`
+   (rama, dirty, worktrees, docs...). El hub no puede mostrar eso porque el export nunca lo llevó.
+   La pestaña Proyectos en modo hub queda utilizable pero visualmente más pobre que en modo normal
+   — no se resolvió porque el brief no pidió enriquecer `export()` con esos campos, y hacerlo sería
+   ampliar el alcance de Fase 2 sin que se haya pedido.
+3. **El test de XSS (Tarea 38) sigue siendo estructural, no ejecución real de navegador**, igual que
+   ya advertía R10/Concern 5 de Fase 1b — ver "Preguntas abiertas" más abajo.
+4. **`--titles` sin `--detail` en el CLI (Tarea 28) no tiene un test dedicado a nivel CLI** — solo
+   se prueba a nivel de `snapshot.export_activity` (Tarea 27). El CLI reusa el mismo `ValueError`
+   como única fuente de verdad (evita duplicar la regla en dos lugares), así que cubrirlo en
+   `snapshot.py` cubre la lógica real; falta solo el "cableado" (exit code 2, mensaje a stderr).
+5. **El banner del hub (Tarea 36) no tiene test de contenido**, solo se confirma que la función
+   existe en el HTML servido (estructural, como el resto de esta fase). Su comportamiento real solo
+   se confirma en la Tarea 39 (verificación manual).
+6. **`HubApp` no valida que `cfg["hub"]["max_file_mb"]` sea un número positivo** — un valor negativo
+   o cero en un `.cabina.toml` a mano haría que TODO archivo cuente como "too-large". No se agregó
+   validación porque `config.py` hoy no valida ningún otro valor numérico (mismo criterio que el
+   resto del archivo).
+
+# Preguntas abiertas (Fase 2)
+
+- ¿El test estructural de XSS (Tarea 38) alcanza, o el equipo quiere sumar un runner de navegador
+  real (Playwright) — la primera dependencia de solo-test del proyecto? Sigue siendo la misma
+  pregunta que R10/Concern 5 de Fase 1b dejó abierta; Fase 2 no la resuelve, solo la hereda.
+- ¿Vale la pena enriquecer `export()` (agregar rama/dirty/worktrees por proyecto) para que
+  `HubApp.api_projects` deje de ser tan pobre (Concern 2), o el hub se queda deliberadamente
+  centrado en agentes/skills/harness/actividad y Proyectos es una vista secundaria ahí?
+- ¿El banner del hub (Tarea 36) debería poder colapsarse/cerrarse, o para el tamaño típico (2-5
+  máquinas de equipo) una línea fija alcanza?
 
 # Fase 3 — salud en el tiempo: health.jsonl, sparkline, tablero de proyectos (checklist, R12/R13)
 
