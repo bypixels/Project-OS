@@ -4,7 +4,7 @@ save doc (guarded), open path, rescan cache."""
 import os, sys, json, secrets, threading, webbrowser, time
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
-from . import scan, skills as SK, projects as PROJ, harness as HAR, usage, live as LIVE, host, drift as DR, gitops as GO
+from . import scan, skills as SK, projects as PROJ, harness as HAR, usage, live as LIVE, host, drift as DR, gitops as GO, sessions as SESS
 from .roster import Roster
 from .docs import Docs
 from .i18n import STRINGS
@@ -38,7 +38,12 @@ class App:
         return Docs(self.roots(), os.path.join(self.cfg["state_dir"], "doc-backups"), d["backup_retention_days"], d["max_per_dir"])
 
     def working(self):
-        return LIVE.working_projects(self.live, self.roots())
+        base = set(LIVE.working_projects(self.live, self.roots()))
+        try:
+            base |= LIVE.TranscriptProvider(self.cfg).active_projects(self.roots())
+        except Exception:
+            pass                                                 # never let this signal break the guard itself
+        return sorted(base)
 
     # ---- GET ----
     def api_agents(self):

@@ -4,7 +4,8 @@ import os, tempfile, unittest
 from datetime import datetime, timedelta
 from unittest import mock
 import _helpers  # noqa
-from cabina import contract as C, docs as D, harness as H, sessions as SESS, usage as U
+from cabina import contract as C, docs as D, harness as H, server as SRV, sessions as SESS, usage as U
+from _env import Env
 
 class TestBreaks(unittest.TestCase):
     def test_contract_kebab_guard(self):
@@ -73,4 +74,19 @@ class TestBreaks(unittest.TestCase):
         # as long as it is within retention (no os.path.exists check anywhere in here)
         fresh_reg = {"/no/such/file/deleted.jsonl": {"summary": {"ended": now_local.isoformat()}}}
         self.assertIn("/no/such/file/deleted.jsonl", SESS._prune_by_retention(fresh_reg, 365, now_local))
+
+    def test_transcript_activity_blocks_the_real_save_path(self):
+        env = Env()
+        try:
+            env.touch_session(fresh=True)                        # simulate recent activity
+            app = SRV.App(env.cfg)                                # herdr absent (Env forces live.provider="none")
+            d = app.docs().read("alpha", "CLAUDE.md")
+            r = app.docs().save("alpha", "CLAUDE.md", d["content"], d["hash"], working=app.working())
+            self.assertFalse(r["ok"])                             # fresh transcript -> blocked, even without herdr
+            env.touch_session(fresh=False)                        # backdate past active_seconds
+            app2 = SRV.App(env.cfg)
+            r2 = app2.docs().save("alpha", "CLAUDE.md", d["content"], d["hash"], working=app2.working())
+            self.assertTrue(r2["ok"], r2)                          # stale -> allowed
+        finally:
+            env.cleanup()
 if __name__ == "__main__": unittest.main()
