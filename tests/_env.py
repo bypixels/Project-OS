@@ -73,3 +73,21 @@ class Env:
         sub = os.path.join(os.path.dirname(self.session_file), self.session_id, "subagents", "agent-1.jsonl")
         for p in (self.session_file, sub):
             os.utime(p, (t, t))
+
+    def refresh_sessions(self):
+        """Conveniencia para tests que necesitan `activity` poblada antes de llamar a
+        snapshot.export_activity o de golpear el hub: corre sessions.refresh() de verdad
+        contra el cfg de este Env, devuelve la lista de resúmenes."""
+        from cabina import sessions as SESS
+        return SESS.refresh(self.cfg)
+
+
+def sample_export(machine, project="alpha", sessions=1, hours=1.0):
+    """Un payload de `cabina export --activity` mínimo pero realista — para tests de hub que
+    necesitan DOS O MÁS máquinas sin levantar un segundo Env sintético completo por cada una."""
+    return {"cabina": 1, "machine": machine, "os": "Linux", "when": "2026-08-18T10:00",
+            "agents": [], "skills": [], "harness": [], "projects": [project],
+            "activity": {"aggregated": [{"project": project, "sessions": sessions, "hours": hours,
+                                          "tokens": {"in": 100, "out": 200}, "commits": 1,
+                                          "files_touched": 3, "tool_calls": {"Edit": 2},
+                                          "agents": {}, "skills": {}}]}}
