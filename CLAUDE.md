@@ -58,12 +58,25 @@ Tool homes are always `~/.claude` and `~/.codex`. `$CABINA_CONFIG` overrides the
 touching `usage.py`/`scan.py`. `host.notify()` passes text to `osascript`/PowerShell via env vars,
 never interpolated into the script (injection guard, `tests/test_platform.py`).
 
-**Usage is best-effort and attributed by cwd.** `usage.py` regex-greps Claude Code's internal
-`.jsonl` transcripts under `~/.claude/projects/` for `subagent_type` / `Skill` calls; each hit is
-credited to the project whose root contains the line's `cwd` (longest root wins), which is what
-distinguishes homonymous agents across projects. `usage.merge` accumulates last-use dates into
-`<state_dir>/usage-agents.json` and must never regress a later date (break-tested). If the
-transcript format changes, usage becomes "unknown" — nothing else may break.
+**Usage is best-effort, incremental, and attributed by cwd.** `usage.refresh()` (called by
+`roster.py`/`server.py`/`check.py`) no longer re-greps the whole `~/.claude/projects/` tree on
+every call: `<state_dir>/usage-history.json` keeps a byte-`offset` per source `.jsonl`, so a
+refresh only reads what was appended since last time (same idea as `sessions.py`'s registry,
+independent implementation — `usage._read_new_lines`/`_scan_file` duplicate `sessions.py`'s
+reader rather than import it, to avoid a cycle). Each new line's `subagent_type` / `Skill` hit is
+credited to the project whose root contains the line's `cwd` (longest root wins, symlinks
+resolved on both sides), which is what distinguishes homonymous agents across projects. Per-file
+baselines are aggregated and reconciled against `<state_dir>/usage-agents.json` /
+`usage-skills.json` via `usage._accumulate`/`_file_delta` — a diff against the registry's
+previous total, not a raw re-count, so a file that shrinks (rotated/rewritten) corrects the total
+instead of double-counting it; `usage.merge` still guarantees dates never regress
+(break-tested). A single `refresh()` call updates BOTH `usage-agents.json` and
+`usage-skills.json` under the hood (`_refresh_both`), and the whole read-scan-write sequence is
+serialized by a module-level lock (`server.py` runs `ThreadingHTTPServer`). The old
+`grep -rhF`/Python-fallback path (`usage._lines`/`extract`/`extract_agents`/`extract_skills`)
+still exists as a standalone, unused-by-`refresh()` code path — kept only because
+`tests/test_platform.py::TestNoGrep` exercises it directly; nothing in the hot path calls it
+anymore. If the transcript format changes, usage becomes "unknown" — nothing else may break.
 
 **Server = thin HTTP over the same modules.** `server.py` binds `127.0.0.1`, serves
 `static/index.html` (single file, `__TOKEN__`/`__LANG__` substituted), and requires an
