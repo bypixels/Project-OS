@@ -15,6 +15,8 @@ cfg.activity.retention_days (default 365).
 """
 import json, os, re
 
+from . import usage
+
 _COMMIT = re.compile(r"\bgit\s+commit\b")
 FILE_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 
@@ -97,3 +99,60 @@ def _merge_lines(state, lines):
                 if name == "Bash" and _COMMIT.search(inp.get("command") or ""):
                     state["commits"] += 1
     return state
+
+
+def _guess_project_from_encoded_dir(source_path, roots):
+    """Best-effort fallback when a session has no cwd-bearing lines at all: Claude Code encodes
+    the cwd into the directory name by replacing '/' with '-'. Lossy (a real '-' in a path looks
+    the same as an encoded '/'), so this is a guess, never treated as fact elsewhere."""
+    enc = os.path.basename(os.path.dirname(source_path))
+    return usage._project_of(enc.replace("-", "/"), roots) or "unknown"
+
+
+def _to_local_iso(ts):
+    if not ts:
+        return None
+    try:
+        from datetime import datetime
+        return datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone().isoformat()
+    except Exception:
+        return None
+
+
+def _finalize(state, source_path, roots, offset):
+    from datetime import datetime
+    roots = roots or {}
+    counts = state["cwd_counts"]
+    if counts:
+        cwd = max(counts, key=counts.get)
+        cwd_changed = len(counts) > 1
+        project = usage._project_of(cwd, roots)
+    else:
+        cwd, cwd_changed = None, False
+        project = _guess_project_from_encoded_dir(source_path, roots)
+    started, ended = _to_local_iso(state["started"]), _to_local_iso(state["ended"])
+    duration_s = 0
+    try:
+        if started and ended:
+            duration_s = max(0, int((datetime.fromisoformat(ended) - datetime.fromisoformat(started)).total_seconds()))
+    except Exception:
+        pass
+    files = state["files_touched"]
+    base = roots.get(project) if project else None
+    if base:
+        files = [os.path.relpath(f, base) if os.path.isabs(f) and (f == base or f.startswith(base + os.sep)) else f for f in files]
+    try:
+        st = os.stat(source_path)
+        size, mtime = st.st_size, st.st_mtime
+    except OSError:
+        size, mtime = 0, 0
+    return {
+        "session_id": state["session_id"] or os.path.splitext(os.path.basename(source_path))[0],
+        "project": project, "cwd_changed": cwd_changed, "cwd": cwd, "branch": state["branch"],
+        "tool": "claude", "title": state["title"], "started": started, "ended": ended,
+        "duration_s": duration_s, "turns": state["turns"], "tool_calls": state["tool_calls"],
+        "files_touched": files, "agents": state["agents"], "skills": state["skills"],
+        "commits": state["commits"], "tokens": state["tokens"], "version": state["version"],
+        "sidechain_lines": state["sidechain_lines"], "source_path": source_path,
+        "size": size, "mtime": mtime, "offset": offset,
+    }

@@ -75,5 +75,31 @@ class TestMergeLinesCore(unittest.TestCase):
         self.assertEqual(state["skills"], {"sessions-demo-skill": 1})
         self.assertEqual(state["commits"], 1)
 
+class TestFinalize(unittest.TestCase):
+    def setUp(self):
+        self.env = Env()
+    def tearDown(self):
+        self.env.cleanup()
+
+    def test_finalize_majority_cwd_and_local_time(self):
+        lines, off = S._read_new_lines(self.env.session_file, 0)
+        state = S._merge_lines(S._new_state(), lines)
+        roots = {"alpha": self.env.alpha}
+        summary = S._finalize(state, self.env.session_file, roots, off)
+        self.assertEqual(summary["cwd"], self.env.alpha)          # 3 lines with alpha vs 1 with alpha/apps
+        self.assertTrue(summary["cwd_changed"])
+        self.assertEqual(summary["project"], "alpha")
+        self.assertEqual(summary["started"], S._to_local_iso("2026-08-10T09:00:00Z"))
+        self.assertEqual(summary["ended"], S._to_local_iso("2026-08-10T09:03:00Z"))
+        self.assertEqual(summary["duration_s"], 180)
+        self.assertEqual(summary["files_touched"], ["src/widget.py"])   # relative to the project root now
+
+    def test_finalize_unknown_project_when_no_cwd_lines(self):
+        state = S._merge_lines(S._new_state(), ['{"type":"ai-title","aiTitle":"x"}'])
+        summary = S._finalize(state, "/tmp/fake/-nowhere/s.jsonl", {}, 0)
+        self.assertEqual(summary["project"], "unknown")
+        self.assertIsNone(summary["cwd"])
+        self.assertFalse(summary["cwd_changed"])
+
 if __name__ == "__main__":
     unittest.main()
