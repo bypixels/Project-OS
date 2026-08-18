@@ -44,7 +44,7 @@ en:{tabs:{agents:"Agents",live:"Live",skills:"Skills",projects:"Projects",harnes
  pickSession:"Select a session.",noSessions:"No sessions in this window.",untitled:"(untitled)",
  sessStarted:"started",sessDuration:"duration",sessTurns:"turns",sessFiles:"files touched",
  sessAgents:"agents used",sessSkills:"skills used",sessCommits:"commits",sessSubagents:"subagents",
- sessTokens:"tokens (in/out)",sessBranch:"branch",sessionsFoot:"{n} sessions",activeNow:"active {n}s ago",
+ sessTokens:"tokens (in/out)",sessBranch:"branch",sessionsFoot:"{n} sessions",activeNow:"active {n}s ago",aggRowSessions:"— {n} sessions, {h}h",
  working:"working",done:"done",ok:"ok",warnings:"warnings",invalid:"invalid",idle:"idle",loading:"loading…",nothing:"Nothing to show.",
  pick:"Select an item.",pickAgent:"Select an agent.",pickSkill:"Select a skill.",pickProject:"Select a project.",pickHar:"Select a project or a run log.",pickDoc:"Select a document. It opens read-only; “Edit” asks before saving.",
  search:"search…",global:"global",project:"project",problems:"problems",unused:"unused",documents:"documents",symlink:"symlink",create:"+ Create",tool:"tool",
@@ -80,7 +80,7 @@ es:{tabs:{agents:"Agentes",live:"En vivo",skills:"Skills",projects:"Proyectos",h
  untitled:"(sin título)",sessStarted:"inicio",sessDuration:"duración",sessTurns:"turnos",
  sessFiles:"archivos tocados",sessAgents:"agentes usados",sessSkills:"skills usados",
  sessCommits:"commits",sessSubagents:"subagentes",sessTokens:"tokens (in/out)",sessBranch:"rama",
- sessionsFoot:"{n} sesiones",activeNow:"activo hace {n}s",
+ sessionsFoot:"{n} sesiones",activeNow:"activo hace {n}s",aggRowSessions:"— {n} sesiones, {h}h",
  working:"trabajando",done:"terminó",ok:"ok",warnings:"avisos",invalid:"inválidos",idle:"ocioso",loading:"cargando…",nothing:"Nada que mostrar.",
  pick:"Seleccioná un elemento.",pickAgent:"Seleccioná un agente.",pickSkill:"Seleccioná un skill.",pickProject:"Seleccioná un proyecto.",pickHar:"Seleccioná un proyecto o una bitácora.",pickDoc:"Seleccioná un documento. Se abre en lectura; «Editar» pide confirmación antes de guardar.",
  search:"buscar…",global:"global",project:"proyecto",problems:"con problemas",unused:"sin uso",documents:"documentos",symlink:"symlink",create:"+ Crear",tool:"herramienta",
@@ -204,20 +204,44 @@ function actTimeline(sessions){const days=14;const today=new Date();today.setHou
  const max=Math.max(1,...buckets),w=140,h=28,bw=w/days;
  const bars=buckets.map((v,i)=>{const bh=Math.round((v/max)*h);return `<rect x="${i*bw+1}" y="${h-bh}" width="${bw-2}" height="${Math.max(bh,1)}" rx="1"></rect>`;}).join("");
  return `<svg width="${w}" height="${h}" style="color:var(--moss);fill:currentColor;vertical-align:middle" role="img" aria-label="14-day session count">${bars}</svg>`;}
+function sessKey(x){return x.source_path||(x.project+"|"+x.started+"|"+(x.machine||""));}
 function renderActivity(){if(!S.activity){$("rows").innerHTML=`<div class="empty">${T("loading")}</div>`;$("filters").innerHTML="";return;}
+ const detail=(S.activity.sessions||[]).length>0;
+ if(!detail){renderActivityAggregated();return;}
  const a=S.activity.sessions,activeSecs=S.activity.active_seconds||600,now=Date.now()/1000;
+ // hub amendment: a machine that exported --detail shows up here with real session rows; a
+ // machine that exported ONLY --activity (no --detail) never appears in S.activity.sessions —
+ // its aggregated rows are rendered as non-clickable pseudo-rows below so its data never
+ // silently disappears from the list.
+ const detailMachines=new Set(a.map(x=>x.machine));
+ const aggOnly=(S.activity.aggregated||[]).filter(x=>!detailMachines.has(x.machine));
  $("filters").innerHTML=actTimeline(a)+`<input id="q" placeholder="${T("search")}" value="${esc(S.q)}">`+chipFocus();
  bindFocus();$("q").oninput=e=>{S.q=e.target.value;renderActivity();};
- const q=S.q.toLowerCase();let sel=a.filter(x=>{if(S.focus&&x.project!==S.focus)return false;if(q&&!((x.project||"")+" "+(x.title||"")).toLowerCase().includes(q))return false;return true;});
- $("rows").innerHTML=sel.length?sel.map(x=>{const key=x.source_path;const active=x.mtime&&(now-x.mtime)<activeSecs;
-  return `<button class="row ${S.sel===key?"sel":""}" data-k="${esc(key)}"><span class="dot d-${active?"working":"valid"}"></span><span class="n">${esc(x.title||T("untitled"))}${active?` <span class="tl">${T("activeNow",{n:Math.round(now-x.mtime)})}</span>`:""}</span><span class="w">${esc(x.project||"—")} · ${Math.round((x.duration_s||0)/60)}m</span></button>`;}).join(""):`<div class="empty">${T("noSessions")}</div>`;
- document.querySelectorAll(".row").forEach(r=>r.onclick=()=>{S.sel=r.dataset.k;renderActivity();});
+ const q=S.q.toLowerCase();
+ let sel=a.filter(x=>{if(S.focus&&x.project!==S.focus)return false;if(q&&!((x.project||"")+" "+(x.title||"")+" "+(x.machine||"")).toLowerCase().includes(q))return false;return true;});
+ let aggSel=aggOnly.filter(x=>{if(S.focus&&x.project!==S.focus)return false;if(q&&!((x.project||"")+" "+(x.machine||"")).toLowerCase().includes(q))return false;return true;});
+ const rowsHtml=sel.map(x=>{const key=sessKey(x);const active=x.mtime&&(now-x.mtime)<activeSecs;
+  return `<button class="row ${S.sel===key?"sel":""}" data-k="${esc(key)}"><span class="dot d-${active?"working":"valid"}"></span><span class="n">${esc(x.title||T("untitled"))}${active?` <span class="tl">${T("activeNow",{n:Math.round(now-x.mtime)})}</span>`:""}${mchip(x)}</span><span class="w">${esc(x.project||"—")} · ${Math.round((x.duration_s||0)/60)}m</span></button>`;}).join("")
+  +aggSel.map(x=>`<div class="row" style="cursor:default"><span class="dot d-valid"></span><span class="n">${esc(x.project||"—")} · ${esc(x.machine||"?")}</span><span class="w">${T("aggRowSessions",{n:x.sessions||0,h:(x.hours||0).toFixed(1)})}</span></div>`).join("");
+ $("rows").innerHTML=(sel.length||aggSel.length)?rowsHtml:`<div class="empty">${T("noSessions")}</div>`;
+ document.querySelectorAll(".row[data-k]").forEach(r=>r.onclick=()=>{S.sel=r.dataset.k;renderActivity();});
  $("foot").textContent=T("sessionsFoot",{n:sel.length});
  if(!S.sel)$("detail").innerHTML=`<div class="muted">${T("pickSession")}</div>`;else renderSessionDetail();}
-function renderSessionDetail(){const x=(S.activity?.sessions||[]).find(y=>y.source_path===S.sel);if(!x){$("detail").innerHTML=`<div class="muted">${T("pickSession")}</div>`;return;}
+function renderActivityAggregated(){const a=S.activity.aggregated||[];
+ $("filters").innerHTML=`<input id="q" placeholder="${T("search")}" value="${esc(S.q)}">`+chipFocus();bindFocus();
+ $("q").oninput=e=>{S.q=e.target.value;renderActivityAggregated();};
+ const q=S.q.toLowerCase();let sel=a.filter(x=>{if(S.focus&&x.project!==S.focus)return false;if(q&&!((x.project||"")+" "+(x.machine||"")).toLowerCase().includes(q))return false;return true;});
+ $("rows").innerHTML=sel.length?sel.map(x=>{const key=(x.project||"")+"|"+(x.machine||"");
+  return `<button class="row ${S.sel===key?"sel":""}" data-k="${esc(key)}"><span class="dot d-valid"></span><span class="n">${esc(x.project||"—")}${mchip(x)}</span><span class="w">${x.sessions||0} · ${(x.hours||0).toFixed(1)}h</span></button>`;}).join(""):`<div class="empty">${T("noSessions")}</div>`;
+ document.querySelectorAll(".row").forEach(r=>r.onclick=()=>{S.sel=r.dataset.k;renderActivityAggregated();});
+ $("foot").textContent=T("sessionsFoot",{n:sel.length});
+ if(!S.sel){$("detail").innerHTML=`<div class="muted">${T("pickSession")}</div>`;return;}
+ const x=a.find(y=>(y.project||"")+"|"+(y.machine||"")===S.sel);if(!x)return;
+ $("detail").innerHTML=`<div class="h">${esc(x.project||"—")}${mchip(x)}</div><div class="meta"><span>${T("sessCommits")}</span><b>${x.commits||0}</b><span>${T("sessDuration")}</span><b>${(x.hours||0).toFixed(1)}h</b><span>${T("sessTokens")}</span><b>${(x.tokens&&x.tokens.in)||0} / ${(x.tokens&&x.tokens.out)||0}</b></div>`;}
+function renderSessionDetail(){const x=(S.activity?.sessions||[]).find(y=>sessKey(y)===S.sel);if(!x){$("detail").innerHTML=`<div class="muted">${T("pickSession")}</div>`;return;}
  const tc=Object.entries(x.tool_calls||{}).map(([k,v])=>`${k}:${v}`).join(", ")||"—";
  const ag=Object.keys(x.agents||{}).join(", ")||"—",sk=Object.keys(x.skills||{}).join(", ")||"—";
- let h=`<div class="h">${esc(x.title||T("untitled"))}</div><div class="meta"><span>${T("where")}</span><b>${esc(x.project||"—")}</b><span>${T("sessBranch")}</span><b>${esc(x.branch||"—")}</b>`+
+ let h=`<div class="h">${esc(x.title||T("untitled"))}${mchip(x)}</div><div class="meta"><span>${T("where")}</span><b>${esc(x.project||"—")}</b><span>${T("sessBranch")}</span><b>${esc(x.branch||"—")}</b>`+
   `<span>${T("sessStarted")}</span><b>${esc(x.started||"—")}</b><span>${T("sessDuration")}</span><b>${Math.round((x.duration_s||0)/60)}m</b>`+
   `<span>${T("sessTurns")}</span><b>${x.turns}</b><span>${T("sessFiles")}</span><b>${(x.files_touched||[]).length}</b>`+
   `<span>${T("sessAgents")}</span><b>${esc(ag)}</b><span>${T("sessSkills")}</span><b>${esc(sk)}</b>`+
