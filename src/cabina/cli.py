@@ -100,7 +100,14 @@ def main(argv=None):
         return 0
     if a.cmd == "compare":
         from . import snapshot
-        A = json.load(open(a.a, encoding="utf-8")); B = json.load(open(a.b, encoding="utf-8"))
+        def _load(path):
+            try:
+                return json.load(open(path, encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as e:
+                print(f"error: cannot read {path}: {e}", file=sys.stderr); return None
+        A = _load(a.a); B = _load(a.b) if A is not None else None
+        if A is None or B is None:
+            return 2
         print(snapshot.render_compare(snapshot.compare(A, B), A.get("machine") or a.a, B.get("machine") or a.b)); return 0
     if a.cmd == "init":
         from . import repo

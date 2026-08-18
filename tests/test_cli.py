@@ -47,6 +47,35 @@ class TestHubCommand(unittest.TestCase):
                 CLI.main(["hub", d, "--port", "9999", "--no-open"])
         self.assertEqual(called["dir"], d); self.assertEqual(called["port"], 9999); self.assertFalse(called["open_browser"])
 
+class TestCompareCommand(unittest.TestCase):
+    """M3: a missing or unreadable export file used to blow up with a raw FileNotFoundError /
+    JSONDecodeError traceback instead of the clean `error: ...` + exit 2 pattern used elsewhere
+    in main() (see the `export --activity` ValueError branch just above it)."""
+    def test_compare_missing_file_prints_clean_error(self):
+        from cabina import cli as CLI
+        with tempfile.TemporaryDirectory() as d:
+            a = os.path.join(d, "a.json"); b = os.path.join(d, "missing.json")
+            json.dump({"agents": [], "skills": [], "projects": []}, open(a, "w"))
+            buf = io.StringIO()
+            with mock.patch("sys.stderr", buf):
+                rc = CLI.main(["compare", a, b])
+            self.assertEqual(rc, 2)
+            self.assertIn("error:", buf.getvalue())
+            self.assertIn(b, buf.getvalue())
+
+    def test_compare_invalid_json_prints_clean_error(self):
+        from cabina import cli as CLI
+        with tempfile.TemporaryDirectory() as d:
+            a = os.path.join(d, "a.json"); b = os.path.join(d, "bad.json")
+            json.dump({"agents": [], "skills": [], "projects": []}, open(a, "w"))
+            open(b, "w").write("{not valid json")
+            buf = io.StringIO()
+            with mock.patch("sys.stderr", buf):
+                rc = CLI.main(["compare", a, b])
+            self.assertEqual(rc, 2)
+            self.assertIn("error:", buf.getvalue())
+
+
 class TestHooksCommand(unittest.TestCase):
     """H1: `--cmd` on the hooks subparser used to share argparse's own `dest="cmd"` with the
     top-level subcommand selector, so `a.cmd` got overwritten and `cabina hooks` fell through
