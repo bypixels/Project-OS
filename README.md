@@ -173,6 +173,30 @@ When cabina archives an agent or skill, or saves a document at your request, the
 `git commit -- <path>`), never `-A`, never automatically, and refuses mid-merge/rebase. Other files
 you or an agent had staged are left exactly as they were.
 
+### Let the agents ask — MCP server (read-only)
+
+`cabina mcp` is an MCP server over stdio. Registered in Claude Code and/or Codex, the agents
+themselves can consult the control plane **before** acting:
+
+| tool | question it answers |
+|---|---|
+| `cabina_working` | is any agent working in project X right now? (ask before touching `MEMORY.md`) |
+| `cabina_agent` / `cabina_agents` | does this agent meet the contract? where does it exist? how much is it used? |
+| `cabina_references` | who references Y? (ask before archiving or renaming) |
+| `cabina_project` | branch, uncommitted changes, harness level, dead hooks, memory age |
+| `cabina_health` / `cabina_drift` | the same findings `cabina check` reports |
+
+Every tool is read-only; the server has no write path at all.
+
+```sh
+cabina mcp --install                     # prints both registrations:
+claude mcp add cabina -s user -- cabina mcp
+# ~/.codex/config.toml
+[mcp_servers.cabina]
+command = "cabina"
+args = ["mcp"]
+```
+
 ### Run the health check on a schedule
 
 ```sh

@@ -90,9 +90,6 @@ def brief(cfg, cwd=None):
     try:
         prov = LIVE.get(cfg); roots = scan.project_roots(cfg)
         w = LIVE.working_projects(prov, roots)
-        # collapse nested projects into their parent (Webs/actanova/apps/api -> actanova)
-        rr = {n: os.path.realpath(r) for n, r in roots.items() if n != "global"}
-        w = sorted({next((o for o, orr in rr.items() if o != n and rr[n].startswith(orr + os.sep)), n) for n in w})
         if w:
             lines.append(f"[cabina] agents working right now in: {', '.join(w)} — coordinate before touching shared files there")
     except Exception:

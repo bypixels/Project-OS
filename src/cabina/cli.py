@@ -40,6 +40,7 @@ def main(argv=None):
     ex = sub.add_parser("export", help="export this environment as JSON (agents, skills, harness, projects)"); ex.add_argument("-o", "--out")
     cp = sub.add_parser("compare", help="compare two exports (two machines, or then vs now)"); cp.add_argument("a"); cp.add_argument("b")
     ini = sub.add_parser("init", help="print an example .cabina.toml (--ci: the GitHub Actions workflow)"); ini.add_argument("--ci", action="store_true")
+    mc = sub.add_parser("mcp", help="run the read-only MCP server over stdio (register with --install)"); mc.add_argument("--install", action="store_true", help="print how to register it in Claude Code and Codex")
     sub.add_parser("guard", help="hook: PreToolUse on Edit|Write — validate agent files (reads stdin JSON)")
     br = sub.add_parser("brief", help="hook: SessionStart — print a short health/context brief"); br.add_argument("--cwd")
     hk = sub.add_parser("hooks", help="print the settings.json entries for guard+brief; --write merges them")
@@ -88,6 +89,12 @@ def main(argv=None):
         print(repo.CI_YAML if a.ci else repo.EXAMPLE_TOML); return 0
     if a.cmd == "fleet":
         from . import fleet; return fleet.run(cfg) or 0
+    if a.cmd == "mcp":
+        from . import mcp
+        if a.install:
+            sn = mcp.install_snippets()
+            print("# Claude Code:\n" + sn["claude_code"] + "\n\n# Codex (~/.codex/config.toml):\n" + sn["codex_toml"]); return 0
+        mcp.serve(cfg); return 0
     if a.cmd == "guard":
         from . import guard; return guard.run(cfg, guard.read_stdin_briefly(timeout=5.0))
     if a.cmd == "brief":

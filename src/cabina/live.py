@@ -71,4 +71,5 @@ def working_projects(provider, roots):
         for name, r in rr.items():
             if cwd == r or cwd.startswith(r + os.sep):
                 out.add(name)
-    return sorted(out)
+    # collapse nested projects into their parent (Webs/actanova/apps/api -> actanova)
+    return sorted({next((o for o, orr in rr.items() if o != n and rr[n].startswith(orr + os.sep)), n) for n in out})
