@@ -5,7 +5,7 @@ import os, sys, json, copy, re, secrets, threading, webbrowser, time
 from datetime import datetime
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
-from . import scan, skills as SK, projects as PROJ, harness as HAR, usage, live as LIVE, host, drift as DR, gitops as GO, sessions as SESS, check as CHECK, guard as GUARD, snapshot as SNAP, healthlog as HEALTHLOG
+from . import scan, skills as SK, projects as PROJ, harness as HAR, usage, live as LIVE, host, drift as DR, gitops as GO, sessions as SESS, check as CHECK, guard as GUARD, snapshot as SNAP, healthlog as HEALTHLOG, worktrees as WT
 from .roster import Roster
 from .docs import Docs
 from .i18n import STRINGS
@@ -87,6 +87,19 @@ def _open_allowed(path, allowed_roots):
         if real == r or real.startswith(r + os.sep):
             return True
     return False
+
+
+def _terminal_target_ok(path, allowed_roots):
+    """W3: like `_open_allowed`, plus the target must be a directory -- a terminal opens AT a
+    place, opening it "on" a file makes no sense and would be confusing if silently accepted.
+    Isolated from `_open_allowed` (composed, not inlined) so a break-test can disable just this
+    extra check, or `_open_allowed` itself, independently."""
+    if not _open_allowed(path, allowed_roots):
+        return False
+    try:
+        return os.path.isdir(os.path.realpath(path))
+    except Exception:
+        return False
 
 
 def _health_totals(findings):
@@ -264,6 +277,14 @@ class App:
             out["error"] = error
         return out
 
+    def api_worktrees(self, q):
+        """W3: worktree cleanup summary/rows/script for the Projects tab panel, optionally
+        scoped to one project. Reads the cached scan data via worktrees.py -- never re-scans."""
+        project = (q.get("project") or [None])[0] or None
+        return {"summary": WT.summary(self.cfg, data=self.data, project=project),
+                "rows": WT.rows(self.cfg, data=self.data, project=project),
+                "script": WT.script(self.cfg, data=self.data, project=project)}
+
     def _hooks_settings_path(self):
         return os.path.join(self.cfg["claude_home"], "settings.json")
 
@@ -309,6 +330,15 @@ class App:
         if not _open_allowed(p, roots):
             return {"ok": False, "message": "path outside cabina roots"}
         ok, msg = host.open_path(p); return {"ok": ok, "message": msg}
+    def api_open_terminal(self, b):
+        """W3: opens a terminal emulator AT a path -- confined to cabina's own roots (same list
+        as api_open) AND the target must be a directory. The terminal binary itself is picked by
+        host.open_terminal from a fixed per-OS allowlist, never from this request's body."""
+        p = os.path.realpath(os.path.expanduser(b["path"]))
+        roots = list(self.roots().values()) + [self.cfg["claude_home"], self.cfg["codex_home"], self.cfg["state_dir"]]
+        if not _terminal_target_ok(p, roots):
+            return {"ok": False, "message": "path outside cabina roots, or not a directory"}
+        ok, msg = host.open_terminal(p); return {"ok": ok, "message": msg}
     def api_focus(self, b):
         ok, msg = self.live.focus(b["pane"]); return {"ok": ok, "message": msg}
     def api_commit(self, b):
@@ -431,9 +461,9 @@ def make_handler(app):
             "/api/doc": app.api_doc, "/api/references": app.api_references, "/api/in-repo": app.api_in_repo,
             "/api/activity": app.api_activity, "/api/health": lambda q: app.api_health(), "/api/hooks": app.api_hooks,
             "/api/scan-status": lambda q: app.api_scan_status(), "/api/health-history": app.api_health_history,
-            "/api/tiles": lambda q: app.api_tiles()}
+            "/api/tiles": lambda q: app.api_tiles(), "/api/worktrees": app.api_worktrees}
     POSTS = {"/api/archive": app.api_archive, "/api/create": app.api_create, "/api/archive-skill": app.api_archive_skill,
-             "/api/save-doc": app.api_save_doc, "/api/open": app.api_open, "/api/focus": app.api_focus, "/api/rescan": app.api_rescan, "/api/commit": app.api_commit,
+             "/api/save-doc": app.api_save_doc, "/api/open": app.api_open, "/api/open-terminal": app.api_open_terminal, "/api/focus": app.api_focus, "/api/rescan": app.api_rescan, "/api/commit": app.api_commit,
              "/api/hooks-install": app.api_hooks_install, "/api/compare": app.api_compare}
 
     class H(BaseHTTPRequestHandler):

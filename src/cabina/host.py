@@ -38,6 +38,42 @@ def open_path(path):
         return False, str(e)
 
 
+def open_terminal(path):
+    """Open a terminal emulator AT `path` and nothing else -- never types or runs a command
+    inside it. Returns (ok, message). The terminal binary is always chosen HERE from a fixed
+    per-OS allowlist, never from caller input, and every launch is an argument list (never
+    shell=True, never a path interpolated into a string a shell would re-parse)."""
+    if not os.path.isdir(path):
+        return False, "not a directory"
+    try:
+        if sys.platform == "darwin":
+            subprocess.Popen(["open", "-a", "Terminal", path])
+            return True, "opened"
+        if os.name == "nt":
+            if shutil.which("wt"):
+                subprocess.Popen(["wt", "-d", path])
+            else:
+                subprocess.Popen(["cmd", "/c", "start", "powershell", "-NoExit", "-Command", "Set-Location", path])
+            return True, "opened"
+        if shutil.which("x-terminal-emulator"):
+            subprocess.Popen(["x-terminal-emulator", f"--working-directory={path}"],
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return True, "opened"
+        if shutil.which("gnome-terminal"):
+            subprocess.Popen(["gnome-terminal", f"--working-directory={path}"],
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return True, "opened"
+        if shutil.which("konsole"):
+            subprocess.Popen(["konsole", "--workdir", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return True, "opened"
+        if shutil.which("xterm"):
+            subprocess.Popen(["xterm"], cwd=path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return True, "opened"
+        return False, "no terminal emulator found"
+    except Exception as e:
+        return False, str(e)
+
+
 def notify(title, body, urgent=False):
     """Best-effort desktop notification. Silent no-op if unsupported.
     Text is passed OUT-OF-BAND (environment variables), never interpolated into a script."""

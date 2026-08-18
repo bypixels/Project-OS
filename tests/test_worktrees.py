@@ -130,6 +130,65 @@ class TestWorktreesScript(unittest.TestCase):
         self.assertNotIn("worktree prune", text)
 
 
+class TestWorktreesScriptUnsafePaths(unittest.TestCase):
+    """Double quotes alone are not safe across the shells this script targets: `$` and `` ` ``
+    still expand inside double quotes in POSIX shells (command substitution runs when the user
+    pastes the line), a literal `"` in the path closes the quote early, `` ` `` is PowerShell's
+    escape char, and `%`/`!` are cmd's variable markers. A path carrying any of those (or a
+    control character) must never be turned into a command — only a plain space is still safe
+    quoted as-is."""
+
+    def setUp(self):
+        self.env = Env()
+
+    def tearDown(self):
+        self.env.cleanup()
+
+    UNSAFE_PATHS = [
+        '/repo/gamma-wt/wt"quote',
+        '/repo/gamma-wt/wt$(whoami)',
+        '/repo/gamma-wt/wt`cmd`',
+        '/repo/gamma-wt/wt%VAR%',
+        '/repo/gamma-wt/wt!bang',
+        '/repo/gamma-wt/wt\nline',
+    ]
+    SAFE_PATH_WITH_SPACE = '/repo/gamma-wt/wt with space'
+
+    def _fixture(self):
+        wts = [{"path": p, "name": f"n{i}", "mb": 1, "mtime": "2026-08-01", "dirty": 0,
+                "branch": "b", "prunable": False} for i, p in enumerate(self.UNSAFE_PATHS)]
+        wts.append({"path": self.SAFE_PATH_WITH_SPACE, "name": "safe", "mb": 1, "mtime": "2026-08-01",
+                    "dirty": 0, "branch": "b", "prunable": False})
+        return _data(_project("gamma", "/repo/gamma", wts))
+
+    def test_unsafe_worktree_paths_are_never_emitted_as_commands_but_are_commented(self):
+        text = worktrees.script(self.env.cfg, self._fixture())
+        for p in self.UNSAFE_PATHS:
+            self.assertNotIn(f'worktree remove "{p}"', text)
+            self.assertIn(f"# skipped (path needs manual handling — unusual characters): {p}", text)
+        # exactly one safe worktree -> exactly one remove command in the whole script
+        self.assertEqual(text.count("worktree remove"), 1)
+
+    def test_safe_path_with_a_plain_space_is_still_quoted_and_emitted(self):
+        text = worktrees.script(self.env.cfg, self._fixture())
+        self.assertIn(f'git -C "/repo/gamma" worktree remove "{self.SAFE_PATH_WITH_SPACE}"', text)
+
+    def test_unsafe_repo_path_suppresses_all_of_its_worktrees_including_prune(self):
+        repo = '/repo/qu"ote'
+        wts = [
+            {"path": f"{repo}-wt/clean", "name": "clean", "mb": 1, "mtime": "2026-08-01",
+             "dirty": 0, "branch": "b", "prunable": False},
+            {"path": f"{repo}-wt/gone", "name": "gone", "mb": None, "mtime": "2026-07-01",
+             "dirty": None, "branch": "b", "prunable": True},
+        ]
+        data = _data(_project("qrepo", repo, wts))
+        text = worktrees.script(self.env.cfg, data)
+        self.assertNotIn("worktree prune", text)
+        self.assertNotIn("worktree remove", text)
+        self.assertIn(f"# skipped (path needs manual handling — unusual characters): {repo}-wt/clean", text)
+        self.assertIn(f"# skipped (path needs manual handling — unusual characters): {repo}-wt/gone", text)
+
+
 class TestWorktreesSummary(unittest.TestCase):
     def setUp(self):
         self.env = Env()

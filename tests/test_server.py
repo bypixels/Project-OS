@@ -362,6 +362,105 @@ class TestServer(unittest.TestCase):
             code, r = self.post("/api/open", {"path": os.path.join(self.env.alpha, "CLAUDE.md")})
         self.assertTrue(r["ok"], r)
         m.assert_called_once()
+    # ---------- W3: /api/worktrees ----------
+    def test_worktrees_endpoint_shape_and_project_filter(self):
+        orig_data = self.app.data
+        try:
+            self.app.data = copy.deepcopy(orig_data)
+            self.app.data["projects"] = list(self.app.data["projects"]) + [{
+                "name": "wt-proj", "path": "/tmp/wt-proj",
+                "git": {"worktrees": [
+                    {"path": "/tmp/wt-proj-wt/a", "name": "a", "mb": 10, "mtime": "2026-08-01", "dirty": 0, "branch": "b", "prunable": False},
+                    {"path": "/tmp/wt-proj-wt/b", "name": "b", "mb": None, "mtime": "2026-08-02", "dirty": 2, "branch": "c", "prunable": False},
+                ]},
+                "agents": [], "skills": [], "commands": [], "rules": [],
+                "claude_md": None, "agents_md": None, "agents_md_link": None,
+            }]
+            d = self.get("/api/worktrees?project=wt-proj")
+            self.assertEqual(d["summary"]["total"], 2)
+            self.assertEqual(d["summary"]["clean"], 1)
+            self.assertEqual(d["summary"]["dirty"], 1)
+            self.assertFalse(d["summary"]["mb_measured"])
+            self.assertEqual({r["name"] for r in d["rows"]}, {"a", "b"})
+            self.assertIn("git -C", d["script"])
+            d_all = self.get("/api/worktrees")
+            self.assertGreaterEqual(len(d_all["rows"]), 2)
+        finally:
+            self.app.data = orig_data
+    # ---------- W3: /api/open-terminal ----------
+    def test_open_terminal_outside_roots_refused_and_never_calls_host(self):
+        from unittest import mock
+        with mock.patch("cabina.server.host.open_terminal") as m:
+            code, r = self.post("/api/open-terminal", {"path": "/tmp"})
+        self.assertFalse(r["ok"], r)
+        m.assert_not_called()
+    def test_open_terminal_refuses_a_file(self):
+        from unittest import mock
+        with mock.patch("cabina.server.host.open_terminal") as m:
+            code, r = self.post("/api/open-terminal", {"path": os.path.join(self.env.alpha, "CLAUDE.md")})
+        self.assertFalse(r["ok"], r)
+        m.assert_not_called()
+    def test_open_terminal_inside_project_root_allowed(self):
+        from unittest import mock
+        with mock.patch("cabina.server.host.open_terminal", return_value=(True, "opened")) as m:
+            code, r = self.post("/api/open-terminal", {"path": self.env.alpha})
+        self.assertTrue(r["ok"], r)
+        m.assert_called_once()
+    def test_open_terminal_requires_token(self):
+        code, _ = self.post("/api/open-terminal", {"path": self.env.alpha}, token="wrong")
+        self.assertEqual(code, 403)
+    # ---------- W3: Projects tab worktree panel (UI) ----------
+    def test_worktree_panel_hub_gated_source_guards(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        self.assertIn("function loadWorktreePanel", html)
+        self.assertIn('!HUB&&x.worktrees?', html)
+        self.assertIn("if(!HUB&&x.worktrees)loadWorktreePanel(x)", html)
+        # internal guard too (double-gate), in case the function is ever called from elsewhere
+        start = html.index("async function loadWorktreePanel")
+        self.assertIn("if(HUB)return;", html[start:start + 200])
+    def test_worktree_panel_script_output_escaped(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        self.assertIn("esc(r.script)", html)
+    def test_server_module_never_shells_out_directly(self):
+        # W3: cabina never runs `git worktree remove`/prune itself -- the script is only ever
+        # text for the user to review and paste. Guard the ENTIRE server.py module, not just the
+        # new endpoint, so a future change here regresses loudly.
+        server_path = os.path.join(os.path.dirname(server.__file__), "server.py")
+        src = open(server_path, encoding="utf-8").read()
+        self.assertNotIn("subprocess", src)
+        self.assertNotIn("worktree remove", src)
+        self.assertNotIn("worktree prune", src)
+    def test_worktree_i18n_keys_present_in_both_languages(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        start = html.index("const I18N={")
+        end = html.index("const T=(k,v)=>")
+        block = html[start:end]
+        split = block.index("\nes:{")
+        en_block, es_block = block[:split], block[split:]
+        for key in ("wtStats", "wtSizeGb", "wtSizeUnmeasured", "wtRescanSizes", "wtCopyScript", "wtOpenTerminal"):
+            self.assertIn(key + ":", en_block, key)
+            self.assertIn(key + ":", es_block, key)
+    def test_project_row_and_footer_never_show_a_fake_zero_gb_for_unmeasured_worktrees(self):
+        # Follow-up to the worktree panel: the ORIGINAL project row and the tab footer still
+        # computed (x.worktrees_mb/1024).toFixed(1) unconditionally, so an unmeasured project
+        # (worktrees_mb defaults to 0) rendered a lying "0.0G"/"(0.0 GB)". Both the row text and
+        # the footer aggregate must key off worktrees_mb_measured, and the size-based warn dot
+        # heuristic must never fire on an unmeasured (i.e. zero) size either.
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        start = html.index("function renderProjects(){if(!S.projs)")
+        end = html.index("function renderProjDetail(){")
+        body = html[start:end]
+        # row text: GB only when measured, "?G" otherwise -- never a raw toFixed(1) on an
+        # unmeasured size
+        self.assertIn('x.worktrees_mb_measured?(x.worktrees_mb/1024).toFixed(1)+"G":"?G"', body)
+        # footer: GB total only when every project with worktrees was measured, "? GB" otherwise,
+        # and omitted entirely when nothing has worktrees at all (no more unconditional "(0.0 GB)")
+        self.assertIn("wtMeasured?wtG.toFixed(1)", body)
+        self.assertIn('"? GB"', body)
+        self.assertIn("wtProjects.length?", body)
+        # the red/amber dot must never trigger the size condition on an unmeasured project
+        self.assertIn("x.worktrees_mb_measured&&x.worktrees_mb>5000", body)
+        self.assertNotIn('x.worktrees_mb>5000?"invalid"', body)   # the old, ungated heuristic
     def test_create_then_archive_agent(self):
         code, r = self.post("/api/create", {"project": "alpha", "name": "new-one", "description": "Does new things well", "model": "sonnet", "tools": "Read", "body": "You are new."})
         self.assertTrue(r["ok"], r); self.assertTrue(os.path.isfile(os.path.join(self.env.alpha, ".claude", "agents", "new-one.md")))

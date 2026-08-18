@@ -129,4 +129,72 @@ class TestFleetWithoutCurses(unittest.TestCase):
             self.assertFalse(fleet.available())
             self.assertEqual(fleet.run({}), 2)
 
+
+class TestOpenTerminal(unittest.TestCase):
+    """host.open_terminal(path): opens a terminal emulator AT path, never types/runs a command,
+    always picks the binary itself from a per-OS allowlist, never via shell=True."""
+    def _capture(self, platform, name, which_map, isdir=True):
+        calls = []
+        def fake_popen(args, **kw): calls.append((args, kw)); return mock.Mock()
+        with mock.patch.object(host.sys, "platform", platform), mock.patch.object(host.os, "name", name), \
+             mock.patch.object(host.subprocess, "Popen", fake_popen), \
+             mock.patch.object(host.shutil, "which", lambda n: which_map.get(n)), \
+             mock.patch.object(host.os.path, "isdir", return_value=isdir):
+            ok, msg = host.open_terminal("/some/dir")
+        return ok, msg, calls
+
+    def test_refuses_non_directory_without_launching_anything(self):
+        ok, msg, calls = self._capture("darwin", "posix", {}, isdir=False)
+        self.assertFalse(ok)
+        self.assertEqual(calls, [])
+
+    def test_macos_opens_terminal_app(self):
+        ok, msg, calls = self._capture("darwin", "posix", {})
+        self.assertTrue(ok, msg)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][0], ["open", "-a", "Terminal", "/some/dir"])
+
+    def test_windows_uses_windows_terminal_when_present(self):
+        ok, msg, calls = self._capture("win32", "nt", {"wt": r"C:\wt.exe"})
+        self.assertTrue(ok, msg)
+        self.assertEqual(calls[0][0], ["wt", "-d", "/some/dir"])
+
+    def test_windows_falls_back_to_powershell_without_wt(self):
+        ok, msg, calls = self._capture("win32", "nt", {})
+        self.assertTrue(ok, msg)
+        self.assertEqual(calls[0][0], ["cmd", "/c", "start", "powershell", "-NoExit", "-Command", "Set-Location", "/some/dir"])
+
+    def test_linux_prefers_x_terminal_emulator(self):
+        ok, msg, calls = self._capture("linux", "posix", {"x-terminal-emulator": "/usr/bin/x-terminal-emulator", "gnome-terminal": "/usr/bin/gnome-terminal", "konsole": "/usr/bin/konsole", "xterm": "/usr/bin/xterm"})
+        self.assertTrue(ok, msg)
+        self.assertEqual(calls[0][0], ["x-terminal-emulator", "--working-directory=/some/dir"])
+
+    def test_linux_falls_back_to_gnome_terminal(self):
+        ok, msg, calls = self._capture("linux", "posix", {"gnome-terminal": "/usr/bin/gnome-terminal", "konsole": "/usr/bin/konsole", "xterm": "/usr/bin/xterm"})
+        self.assertEqual(calls[0][0], ["gnome-terminal", "--working-directory=/some/dir"])
+
+    def test_linux_falls_back_to_konsole(self):
+        ok, msg, calls = self._capture("linux", "posix", {"konsole": "/usr/bin/konsole", "xterm": "/usr/bin/xterm"})
+        self.assertEqual(calls[0][0], ["konsole", "--workdir", "/some/dir"])
+
+    def test_linux_falls_back_to_xterm_with_cwd_not_argv(self):
+        ok, msg, calls = self._capture("linux", "posix", {"xterm": "/usr/bin/xterm"})
+        self.assertEqual(calls[0][0], ["xterm"])
+        self.assertEqual(calls[0][1].get("cwd"), "/some/dir")
+
+    def test_linux_none_found(self):
+        ok, msg, calls = self._capture("linux", "posix", {})
+        self.assertFalse(ok)
+        self.assertIn("no terminal emulator", msg)
+        self.assertEqual(calls, [])
+
+    def test_never_uses_shell_true(self):
+        for platform, name, which_map in (("darwin", "posix", {}), ("win32", "nt", {}),
+                                           ("win32", "nt", {"wt": "x"}), ("linux", "posix", {"xterm": "x"})):
+            _, _, calls = self._capture(platform, name, which_map)
+            for args, kw in calls:
+                self.assertNotEqual(kw.get("shell"), True)
+                self.assertIsInstance(args, list)
+
+
 if __name__ == "__main__": unittest.main()

@@ -510,4 +510,38 @@ class TestBreaks(unittest.TestCase):
             m.assert_called_once()
         finally:
             env.cleanup()
+
+    def test_terminal_target_confinement_guard(self):
+        # W3: POST /api/open-terminal must refuse any path outside cabina's own roots (same
+        # confinement as /api/open, plus a directory check).
+        env = Env()
+        try:
+            app = SRV.App(env.cfg)
+            roots = list(app.roots().values()) + [env.cfg["claude_home"], env.cfg["codex_home"], env.cfg["state_dir"]]
+            self.assertFalse(SRV._terminal_target_ok("/tmp", roots))           # guard present: rejected
+            with mock.patch.object(SRV, "_terminal_target_ok", return_value=True):   # guard disabled
+                with mock.patch.object(SRV.host, "open_terminal", return_value=(True, "opened")) as m:
+                    r = app.api_open_terminal({"path": "/tmp"})
+            self.assertTrue(r["ok"])                                        # would open a terminal anywhere -> canary red
+            m.assert_called_once()
+        finally:
+            env.cleanup()
+
+    def test_terminal_target_directory_only_guard(self):
+        # W3: even a path INSIDE the allowed roots must be refused if it is a regular file --
+        # a terminal opens AT a directory, never "on" a file.
+        env = Env()
+        try:
+            app = SRV.App(env.cfg)
+            roots = list(app.roots().values()) + [env.cfg["claude_home"], env.cfg["codex_home"], env.cfg["state_dir"]]
+            claude_md = os.path.join(env.alpha, "CLAUDE.md")
+            self.assertTrue(os.path.isfile(claude_md))
+            self.assertFalse(SRV._terminal_target_ok(claude_md, roots))        # guard present: rejected (not a dir)
+            with mock.patch.object(SRV.os.path, "isdir", return_value=True):   # guard disabled
+                with mock.patch.object(SRV.host, "open_terminal", return_value=(True, "opened")) as m:
+                    r = app.api_open_terminal({"path": claude_md})
+            self.assertTrue(r["ok"])                                        # would open a terminal on a file -> canary red
+            m.assert_called_once()
+        finally:
+            env.cleanup()
 if __name__ == "__main__": unittest.main()

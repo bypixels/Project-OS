@@ -3,6 +3,22 @@ and run themselves — cabina never shells out to `git worktree remove`/`prune` 
 the cached scan data (via `scan.ensure`), same as every other consumer; it never re-walks disk."""
 from . import scan
 
+# Characters that cannot be quoted safely in a SINGLE line meant to paste unchanged into zsh,
+# bash, PowerShell and cmd: "$" and "`" still expand inside POSIX double quotes (command
+# substitution would RUN when the user pastes the line), "`" is also PowerShell's escape
+# character, "%" and "!" are cmd's variable / delayed-expansion markers, and a literal `"` or
+# `'` breaks the quoting itself. Control characters (incl. newlines) are never safe either. A
+# plain space is fine — it stays inside the double quotes.
+_UNSAFE_CHARS = frozenset('"\'$`%!')
+
+
+def _is_unsafe(path):
+    """True when `path` cannot be embedded in a double-quoted shell argument that is safe
+    across zsh/bash/PowerShell/cmd at once (see _UNSAFE_CHARS above)."""
+    if not path:
+        return True
+    return any(ch in _UNSAFE_CHARS or ord(ch) < 32 for ch in path)
+
 
 def _rows_from_data(data, project=None):
     out = []
@@ -50,24 +66,41 @@ def script(cfg, data=None, project=None):
         "# Branches are kept; only worktree directories are affected.",
         "",
     ]
-    prunable_repos = sorted({r["repo"] for r in rs if r["prunable"]})
-    for repo in prunable_repos:
+
+    # Bucket every row into exactly one group. Unsafe paths come first: an unsafe REPO path
+    # takes down every one of its worktrees (no prune line either, per the invariant that
+    # cabina never hands the user a command it did not fully intend), and an unsafe worktree
+    # path is skipped regardless of its dirty/prunable state — we cannot safely reference it in
+    # any command, so there is nothing else to check about it.
+    unsafe, prunable_repos, removable, skipped_dirty, skipped_unknown = [], set(), [], [], []
+    for r in rs:
+        if _is_unsafe(r["repo"]) or _is_unsafe(r["path"]):
+            unsafe.append(r)
+        elif r["prunable"]:
+            prunable_repos.add(r["repo"])
+        elif r["dirty"] > 0:
+            skipped_dirty.append(r)
+        elif r["dirty"] < 0:
+            skipped_unknown.append(r)
+        else:
+            removable.append(r)
+
+    for repo in sorted(prunable_repos):
         lines.append(f'git -C "{repo}" worktree prune')
     if prunable_repos:
         lines.append("")
 
-    removable = [r for r in rs if not r["prunable"] and r["dirty"] == 0]
     for r in removable:
         lines.append(f'git -C "{r["repo"]}" worktree remove "{r["path"]}"')
 
-    skipped_dirty = [r for r in rs if not r["prunable"] and r["dirty"] > 0]
-    skipped_unknown = [r for r in rs if not r["prunable"] and r["dirty"] < 0]
-    if removable and (skipped_dirty or skipped_unknown):
+    if removable and (skipped_dirty or skipped_unknown or unsafe):
         lines.append("")
     for r in skipped_dirty:
         lines.append(f'# skipped (uncommitted changes): {r["path"]}')
     for r in skipped_unknown:
         lines.append(f'# skipped (status unknown — run: cabina scan): {r["path"]}')
+    for r in unsafe:
+        lines.append(f'# skipped (path needs manual handling — unusual characters): {r["path"]}')
 
     return "\n".join(lines) + "\n"
 
