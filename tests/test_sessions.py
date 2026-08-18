@@ -1,6 +1,7 @@
 import json, os, unittest
 import _helpers  # noqa
 from _env import Env
+from cabina import scan
 
 class TestSessionsFixture(unittest.TestCase):
     def setUp(self):
@@ -170,6 +171,29 @@ class TestSessionsRefresh(unittest.TestCase):
         os.remove(self.env.session_file)
         items = S.load(self.env.cfg)
         self.assertTrue(any(s["session_id"] == "sess-1" for s in items))
+
+class TestGitProjectFallback(unittest.TestCase):
+    """A session whose cwd is a git repo WITHOUT a .claude/ dir (so scan.py never registers it
+    as a project) must not be dropped as project=None — it gets attributed to its own repo."""
+    def setUp(self):
+        self.env = Env()
+    def tearDown(self):
+        self.env.cleanup()
+
+    def test_git_repo_without_claude_dir_is_attributed_by_its_own_root(self):
+        beta = os.path.join(self.env.projects, "beta")
+        os.makedirs(os.path.join(beta, ".git"))
+        os.makedirs(os.path.join(beta, "src"))
+        roots = scan.project_roots(self.env.cfg, scan.run(self.env.cfg))
+        state = S._new_state()
+        state["cwd_counts"] = {os.path.join(beta, "src"): 1}
+        summary = S._finalize(state, "/fake/source.jsonl", roots, 0, cfg_roots=[self.env.projects])
+        self.assertEqual(summary["project"], "beta")
+
+        outside_state = S._new_state()
+        outside_state["cwd_counts"] = {"/somewhere/else/entirely": 1}
+        outside_summary = S._finalize(outside_state, "/fake/source2.jsonl", roots, 0, cfg_roots=[self.env.projects])
+        self.assertIsNone(outside_summary["project"])
 
 if __name__ == "__main__":
     unittest.main()

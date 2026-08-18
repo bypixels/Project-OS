@@ -126,6 +126,37 @@ def _merge_lines(state, lines):
     return state
 
 
+def _git_project_fallback(cwd, cfg_roots, roots):
+    """Fallback for a session whose cwd matches no scanned project (scan.py only registers a
+    project when it finds a `.claude/` dir there): walk up from `cwd` looking for a git repo
+    root (a `.git` dir or file, e.g. a worktree) while still inside one of `cfg_roots`. Found ->
+    attribute the session to that repo, so cabina never silently hides real work just because
+    the repo has no cabina-visible assets yet. Name follows scan._unique_name's convention:
+    basename, or — if that basename is already a DIFFERENT project in `roots` — the path
+    relative to the containing cfg root. None if no `.git` turns up before leaving every cfg
+    root (or cwd/cfg_roots is empty)."""
+    if not cwd:
+        return None
+    cfg_roots_r = [os.path.realpath(r) for r in (cfg_roots or [])]
+    if not cfg_roots_r:
+        return None
+    cur = os.path.realpath(cwd)
+    while True:
+        containing = next((r for r in cfg_roots_r if cur == r or cur.startswith(r.rstrip("/") + "/")), None)
+        if containing is None:
+            return None
+        if os.path.exists(os.path.join(cur, ".git")):
+            name = os.path.basename(cur)
+            existing = roots.get(name)
+            if existing is not None and os.path.realpath(existing) != cur:
+                name = os.path.relpath(cur, containing)
+            return name
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            return None
+        cur = parent
+
+
 def _guess_project_from_encoded_dir(source_path, roots):
     """Best-effort fallback when a session has no cwd-bearing lines at all: Claude Code encodes
     the cwd into the directory name by replacing '/' with '-'. Lossy (a real '-' in a path looks
@@ -268,7 +299,7 @@ def refresh(cfg, days=30):
         try:
             new_lines, new_offset = _read_new_lines(fp, offset)
             state = _redact_partial_state(_merge_lines(state, new_lines))
-            summary = _redact_unknown_fields(_finalize(state, fp, roots, new_offset))
+            summary = _redact_unknown_fields(_finalize(state, fp, roots, new_offset, cfg_roots=cfg.get("roots") or []))
             reg[fp] = {"offset": new_offset, "size": st.st_size, "mtime": st.st_mtime,
                        "partial_state": state, "summary": summary}
         except Exception:
@@ -287,7 +318,7 @@ def load(cfg):
     return sorted((e["summary"] for e in reg.values()), key=lambda s: s.get("started") or "", reverse=True)
 
 
-def _finalize(state, source_path, roots, offset):
+def _finalize(state, source_path, roots, offset, cfg_roots=()):
     from datetime import datetime
     roots = roots or {}
     counts = state["cwd_counts"]
@@ -295,6 +326,8 @@ def _finalize(state, source_path, roots, offset):
         cwd = max(counts, key=counts.get)
         cwd_changed = len(counts) > 1
         project = usage._project_of(cwd, roots)
+        if project is None and cwd:
+            project = _git_project_fallback(cwd, cfg_roots, roots)
     else:
         cwd, cwd_changed = None, False
         project = _guess_project_from_encoded_dir(source_path, roots)
