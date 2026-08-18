@@ -165,5 +165,11 @@ class TestSessionsRefresh(unittest.TestCase):
         raw = open(S.registry_path(self.env.cfg), encoding="utf-8").read()
         self.assertNotIn("PROMPT_MARKER_DO_NOT_LEAK", raw)
 
+    def test_load_reads_cache_without_touching_source_files(self):
+        S.refresh(self.env.cfg, days=30)
+        os.remove(self.env.session_file)
+        items = S.load(self.env.cfg)
+        self.assertTrue(any(s["session_id"] == "sess-1" for s in items))
+
 if __name__ == "__main__":
     unittest.main()

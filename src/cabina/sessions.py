@@ -280,6 +280,13 @@ def refresh(cfg, days=30):
     return sorted((e["summary"] for e in kept.values()), key=lambda s: s.get("started") or "", reverse=True)
 
 
+def load(cfg):
+    """Read the cached registry only — never opens a transcript. Used where a request must not
+    pay parsing cost (server GET handler, MCP tool)."""
+    reg = _load_registry(registry_path(cfg))
+    return sorted((e["summary"] for e in reg.values()), key=lambda s: s.get("started") or "", reverse=True)
+
+
 def _finalize(state, source_path, roots, offset):
     from datetime import datetime
     roots = roots or {}
