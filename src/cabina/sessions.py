@@ -338,6 +338,7 @@ def _finalize(state, source_path, roots, offset, cfg_roots=()):
             duration_s = max(0, int((datetime.fromisoformat(ended) - datetime.fromisoformat(started)).total_seconds()))
     except Exception:
         pass
+    project = project or "unknown"                        # one sentinel for "no project", never None (R8)
     files = state["files_touched"]
     base = roots.get(project) if project else None
     if base:

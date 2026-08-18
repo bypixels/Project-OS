@@ -193,7 +193,7 @@ class TestGitProjectFallback(unittest.TestCase):
         outside_state = S._new_state()
         outside_state["cwd_counts"] = {"/somewhere/else/entirely": 1}
         outside_summary = S._finalize(outside_state, "/fake/source2.jsonl", roots, 0, cfg_roots=[self.env.projects])
-        self.assertIsNone(outside_summary["project"])
+        self.assertEqual(outside_summary["project"], "unknown")   # one sentinel for "no project", never None
 
 if __name__ == "__main__":
     unittest.main()
