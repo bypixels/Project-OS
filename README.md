@@ -14,6 +14,12 @@ hooks that nobody wired, worktrees that nobody removed, and `MEMORY.md` files th
 true a month ago. None of it fails loudly. Cabina makes it visible — and gives every asset a
 contract, a real usage count, and a place in one window.
 
+## Screenshots
+
+<!-- TODO(danny): recorded GIF/PNG of the Agents tab with real (but non-sensitive) data,
+     before tagging v0.1.0. Suggested: one GIF showing archive-with-references-check,
+     one static shot of the health check output. -->
+
 ## What you get
 
 | Command | What it does |
