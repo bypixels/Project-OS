@@ -26,12 +26,19 @@ contract, a real usage count, and a place in one window.
 
 | Command | What it does |
 |---|---|
-| `cabina` | Opens the UI in your browser (local server on 127.0.0.1) — six tabs: Agents, Live, Skills, Projects, Harness, Docs |
+| `cabina` | Opens the UI in your browser (local server on 127.0.0.1) — seven tabs: Agents, Live, Skills, Projects, Harness, Docs, Activity |
 | `cabina check` | Health check. 9 detectors, exit code 1 on critical. Run it from cron / launchd / a systemd timer |
+| `cabina check --repo .` | CI mode: validates one repository's agents against `.cabina.toml` on its own — no user home, no cache |
 | `cabina agents` | Agent roster with contract state and real usage. `--invalid`, `--unused`, `--project`, `archive` |
 | `cabina scan` | Rebuild the environment cache (fast; `--worktrees` and `--mcp` opt into the slow parts) |
 | `cabina fleet` | Terminal TUI over the live provider |
 | `cabina config` | Show effective config; `--example` prints a starter `config.toml` |
+| `cabina activity` | Session activity read from local transcripts. `--project`, `--days`, `--json` |
+| `cabina hub DIR` | Read-only UI over N `cabina export --activity` files dropped in `DIR` — several machines, one view |
+| `cabina export` / `cabina compare` | Export this environment as JSON (optionally `--activity`); diff two exports (two machines, or then vs. now) |
+| `cabina init` | Print a starter `.cabina.toml` (`--ci` for the GitHub Actions workflow) |
+| `cabina mcp` | Read-only MCP server over stdio, so agents can consult the control plane before acting (`--install` for the registration snippets) |
+| `cabina hooks` | Print (or `--write`) the `settings.json` entries for the `guard`/`brief` hooks |
 
 ### The contract
 
@@ -60,6 +67,18 @@ Last-use dates are accumulated in `state_dir` so they survive history rotation (
 
 > This reads an **undocumented, internal** transcript format. If Claude Code changes it, usage
 > degrades to "unknown" — nothing else breaks.
+
+### Session activity
+
+The Activity tab and `cabina activity [--project P] [--days N] [--json]` read the same local
+transcripts as usage: per session, turns, tokens, tool calls, files touched, agents/skills
+invoked, commits, and duration. Nothing is sent anywhere; it never opens a network connection.
+
+By default this stays on your machine only. `cabina export --activity` shares it: aggregated per
+project unless you add `--detail` (per-session rows); `--titles` adds the AI-generated one-line
+session title on top, and requires `--detail` (a usage error otherwise, never a silently ignored
+flag). Even with every flag on, it never exports the session's `cwd` or absolute file paths — a
+path outside the project root is counted, not named.
 
 ### The guards
 
@@ -102,8 +121,10 @@ cabina scan                  # first cache (~2 s)
 cabina                       # opens http://127.0.0.1:8930
 ```
 
-Requires Python 3.11+. No other dependencies. `git` is used for project status; `herdr` is optional
-(powers the Live tab).
+Requires Python 3.11+. No other dependencies.
+
+Optional: `git` (project status), `herdr` (Live tab), Codex CLI (its own roster and drift), the
+`claude` CLI (only for `cabina scan --mcp`). Everything degrades with a notice; nothing fails.
 
 ### Platforms
 
@@ -136,6 +157,9 @@ measure_worktrees = false                    # ~2 s per worktree when on
 ```
 
 `cabina config --example` prints the full file.
+
+> Known limitation: `cabina --help` and every subcommand's `--help` are English-only, even with
+> `language = "es"` — `argparse`'s own help text does not go through `i18n.py`.
 
 ### The doorman: hooks for Claude Code
 
@@ -173,6 +197,20 @@ cabina export -o mac.json           # on the Mac
 cabina export -o win.json           # on the Windows box
 cabina compare mac.json win.json    # agents/skills/projects only on one side; agents whose state differs
 ```
+
+### Hub — several machines, one read-only view
+
+`compare` is a one-shot diff of two files. `cabina hub` is a live view over as many as you like:
+
+```sh
+cabina export --activity -o mac.json      # on each machine
+cabina hub ~/shared/cabina-exports/       # point it at a folder with those files copied in
+```
+
+It serves the same UI over the merged exports — agent/project/harness rows carry a machine chip
+and are keyed by name **and** machine, so two machines with a same-named project or agent do not
+collide. It is read-only by design: no Live tab, no Docs tab, no create/archive/rescan/commit
+buttons — there is nothing in `hub` for any of those to write to.
 
 ### Committing what cabina changed (opt-in)
 
@@ -216,7 +254,7 @@ args = ["mcp"]
 
 ```sh
 git clone … && cd cabina
-python -m unittest discover -s tests -v      # 126 tests, stdlib only
+python -m unittest discover -s tests -v      # the full suite, stdlib only
 PYTHONPATH=src python -m cabina check
 ```
 
