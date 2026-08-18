@@ -26,6 +26,7 @@ DEFAULTS = {
     },
     "live": {"provider": "auto", "active_seconds": 600}, # "auto" | "herdr" | "none"; 600s = "active" window for TranscriptProvider
     "activity": {"retention_days": 365},
+    "hub": {"max_file_mb": 5},
     "docs": {"backup_retention_days": 30, "max_per_dir": 60},
     "check": {"worktree_stale_days": 14, "memory_stale_days": 30},
 }
