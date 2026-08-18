@@ -1,17 +1,18 @@
 """`cabina` (UI) — local HTTP server on 127.0.0.1 with a per-session CSRF token.
 Reads through the modules; writes only via: create/archive agent, archive skill,
 save doc (guarded), open path, rescan cache, install hooks (guarded)."""
-import os, sys, json, secrets, threading, webbrowser, time
+import os, sys, json, copy, re, secrets, threading, webbrowser, time
 from datetime import datetime
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
-from . import scan, skills as SK, projects as PROJ, harness as HAR, usage, live as LIVE, host, drift as DR, gitops as GO, sessions as SESS, check as CHECK, guard as GUARD
+from . import scan, skills as SK, projects as PROJ, harness as HAR, usage, live as LIVE, host, drift as DR, gitops as GO, sessions as SESS, check as CHECK, guard as GUARD, snapshot as SNAP
 from .roster import Roster
 from .docs import Docs
 from .i18n import STRINGS
 
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 _activity_refresh_lock = threading.Lock()   # non-blocking: skip a refresh already in flight, never queue one behind the request thread
+MAX_POST_BODY = 5 * 1024 * 1024   # S3-C: /api/compare accepts an arbitrary export from another machine
 
 
 class App:
@@ -23,6 +24,9 @@ class App:
         self.live = LIVE.get(cfg)
         self._roster = None; self._rows = None; self._items = None; self._t = 0
         self._skills = None; self._skills_t = 0
+        self._scan_lock = threading.Lock()          # non-blocking: a second POST /api/rescan while one runs is refused, not queued
+        self._scanning = False
+        self._scan_started = None; self._scan_finished = None; self._scan_error = None
 
     # ---- helpers ----
     def roster(self, fresh=False):
@@ -196,12 +200,72 @@ class App:
         return {"ok": ok, "message": msg, "status": GUARD.hooks_status(sp, cmd)}
 
     def api_rescan(self, b):
+        """S3-A: `mcp`/`worktrees` in the body opt into the slow scan passes, same as `cabina scan
+        --mcp --worktrees`, but gated on a COPY of self.cfg — self.cfg is never mutated, so a
+        one-off slow rescan does not silently turn the option on for every future rescan. The
+        lock is acquired here, synchronously, on the request thread: a second POST while one is
+        in flight must be refused regardless of how fast the background thread gets scheduled."""
+        if not self._scan_lock.acquire(blocking=False):
+            return {"ok": False, "message": "a scan is already running"}
+        self._scanning = True
+        self._scan_started = datetime.now().isoformat(timespec="seconds")
+        self._scan_finished = None
+        self._scan_error = None
+        body = b or {}
         def go():
-            d = scan.run(self.cfg); scan.save(self.cfg, d)
-            with self.lock:
-                self.data = d; self._roster = None; self._skills = None
+            d = None
+            try:
+                cfg = copy.deepcopy(self.cfg)
+                cfg["scan"]["check_mcp"] = cfg["scan"].get("check_mcp") or bool(body.get("mcp"))
+                cfg["scan"]["measure_worktrees"] = cfg["scan"].get("measure_worktrees") or bool(body.get("worktrees"))
+                d = scan.run(cfg)
+                scan.save(self.cfg, d)
+            except Exception as e:
+                self._scan_error = str(e)
+            # Release the lock and flip _scanning False BEFORE touching self.data/_roster/
+            # _skills: a poller (any caller, including tests) that treats "_roster is None" as
+            # "the rescan finished" must never be able to observe that while the lock is still
+            # held or _scanning is still True — within this one thread's sequential execution,
+            # everything below only becomes visible to other threads AFTER everything above it.
+            self._scan_finished = datetime.now().isoformat(timespec="seconds")
+            self._scan_lock.release()
+            self._scanning = False
+            if d is not None:
+                with self.lock:
+                    self.data = d; self._roster = None; self._skills = None
         threading.Thread(target=go, daemon=True).start()
         return {"ok": True, "message": "rescanning in the background"}
+
+    def api_scan_status(self):
+        scanned_at = None
+        try:
+            scanned_at = datetime.fromtimestamp(os.path.getmtime(scan.cache_path(self.cfg))).isoformat(timespec="seconds")
+        except OSError:
+            pass
+        return {"scanning": self._scanning, "started": self._scan_started, "finished": self._scan_finished,
+                "error": self._scan_error, "scanned_at": scanned_at}
+
+    def api_export(self, q):
+        """S3-B: `cabina export [--activity [--detail]]` from the browser. `--titles` is
+        deliberately NOT exposed here — session titles can echo prompt content, and this path is
+        for handing the file to a teammate or another machine, unlike the CLI flag which is a
+        conscious opt-in on your own box."""
+        want_activity = (q.get("activity", ["0"])[0]) == "1"
+        want_detail = (q.get("detail", ["0"])[0]) == "1"
+        activity = SNAP.export_activity(self.cfg, detail=want_detail) if want_activity else None
+        return SNAP.export(self.cfg, activity=activity)
+
+    def api_compare(self, b):
+        other = b.get("other")
+        if not isinstance(other, dict) or "agents" not in other:
+            return {"ok": False, "message": "not a cabina export"}
+        # P4 (snapshot.compare): only pull local activity into A when B's export carries it too —
+        # otherwise A vs B would compare a real activity aggregate against nothing, a false delta.
+        activity = SNAP.export_activity(self.cfg) if isinstance(other.get("activity"), dict) else None
+        a = SNAP.export(self.cfg, activity=activity)
+        delta = SNAP.compare(a, other)
+        text = SNAP.render_compare(delta, a.get("machine"), other.get("machine"))
+        return {"ok": True, "text": text, "delta": delta}
 
 
 def make_handler(app):
@@ -209,17 +273,20 @@ def make_handler(app):
             "/api/projects": lambda q: app.api_projects(), "/api/harness": lambda q: app.api_harness(),
             "/api/live": lambda q: app.api_live(), "/api/docs": lambda q: app.api_docs(),
             "/api/doc": app.api_doc, "/api/references": app.api_references, "/api/in-repo": app.api_in_repo,
-            "/api/activity": app.api_activity, "/api/health": lambda q: app.api_health(), "/api/hooks": app.api_hooks}
+            "/api/activity": app.api_activity, "/api/health": lambda q: app.api_health(), "/api/hooks": app.api_hooks,
+            "/api/scan-status": lambda q: app.api_scan_status()}
     POSTS = {"/api/archive": app.api_archive, "/api/create": app.api_create, "/api/archive-skill": app.api_archive_skill,
              "/api/save-doc": app.api_save_doc, "/api/open": app.api_open, "/api/focus": app.api_focus, "/api/rescan": app.api_rescan, "/api/commit": app.api_commit,
-             "/api/hooks-install": app.api_hooks_install}
+             "/api/hooks-install": app.api_hooks_install, "/api/compare": app.api_compare}
 
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a): pass
-        def _json(self, obj, code=200):
+        def _json(self, obj, code=200, extra_headers=None):
             b = json.dumps(obj, ensure_ascii=False).encode()
             self.send_response(code); self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Content-Length", str(len(b))); self.send_header("Cache-Control", "no-store"); self.end_headers(); self.wfile.write(b)
+            self.send_header("Content-Length", str(len(b))); self.send_header("Cache-Control", "no-store")
+            for k, v in (extra_headers or {}).items(): self.send_header(k, v)
+            self.end_headers(); self.wfile.write(b)
         def do_GET(self):
             u = urlparse(self.path)
             if u.path in ("/", "/index.html"):
@@ -228,6 +295,14 @@ def make_handler(app):
                 html = html.replace("__TOKEN__", app.token).replace("__LANG__", lang).replace("__HUB__", "0")
                 b = html.encode(); self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(b))); self.send_header("Cache-Control", "no-store"); self.end_headers(); self.wfile.write(b); return
+            if u.path == "/api/export":
+                try:
+                    obj = app.api_export(parse_qs(u.query))
+                except Exception as e:
+                    return self._json({"ok": False, "message": str(e)}, 500)
+                machine = re.sub(r"[^A-Za-z0-9_.-]", "-", str(obj.get("machine") or "unknown"))
+                fname = f"cabina-{machine}-{datetime.now().strftime('%Y%m%d')}.json"
+                return self._json(obj, extra_headers={"Content-Disposition": f'attachment; filename="{fname}"'})
             fn = GETS.get(u.path)
             if not fn: return self._json({"error": "not found"}, 404)
             try: return self._json(fn(parse_qs(u.query)))
@@ -236,6 +311,15 @@ def make_handler(app):
             if self.headers.get("X-Cabina-Token") != app.token:
                 return self._json({"ok": False, "message": "invalid token"}, 403)
             n = int(self.headers.get("Content-Length", 0))
+            if n > MAX_POST_BODY:
+                # drain the socket in chunks (never buffer the oversized body) so the client's
+                # sendall() completes cleanly instead of a BrokenPipeError from an early close
+                remaining = n
+                while remaining > 0:
+                    chunk = self.rfile.read(min(remaining, 65536))
+                    if not chunk: break
+                    remaining -= len(chunk)
+                return self._json({"ok": False, "message": "request body too large"}, 400)
             try: body = json.loads(self.rfile.read(n) or b"{}")
             except Exception: return self._json({"ok": False, "message": "invalid JSON"}, 400)
             fn = POSTS.get(urlparse(self.path).path)
