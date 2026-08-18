@@ -60,6 +60,14 @@ class TestExampleTomlCoversDefaults(unittest.TestCase):
                 node = node[part]
         self.assertEqual(missing, [], f"keys missing from example_toml(): {missing}")
 
+    def test_state_dir_is_not_a_hardcoded_unix_path(self):
+        example_text = CFG.example_toml()
+        self.assertNotIn("$CABINA_CONFIG", example_text,
+                          "state_dir has no $CABINA_CONFIG override mechanism; the comment must not claim one")
+        parsed = tomllib.loads(example_text)
+        self.assertEqual(os.path.expanduser(parsed["state_dir"]), CFG.DEFAULTS["state_dir"],
+                          "the example's state_dir must be THIS platform's actual default, not a hardcoded Unix path")
+
 class TestNoGrep(unittest.TestCase):
     """Windows has no grep/du: every caller must fall back to Python, never fail open."""
     def test_usage_extract_without_grep(self):

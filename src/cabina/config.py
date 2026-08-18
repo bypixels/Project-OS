@@ -62,14 +62,17 @@ def load(path=None):
 
 
 def example_toml():
-    return '''# cabina configuration — every key is optional; these are the defaults.
+    state_dir = DEFAULTS["state_dir"]
+    if state_dir.startswith(HOME):
+        state_dir = "~" + state_dir[len(HOME):]   # portable across users of the same platform
+    return rf'''# cabina configuration — every key is optional; these are the defaults.
 # Locations: macOS/Linux  ~/.config/cabina/config.toml   state ~/.local/share/cabina
 #            Windows      %APPDATA%\cabina\config.toml   state %LOCALAPPDATA%\cabina
 language = "en"                 # "en" | "es"
 claude_home = "~/.claude"       # same on every OS
 codex_home = "~/.codex"
 roots = ["~/Documents", "~/Desktop"]
-state_dir = "~/.local/share/cabina"   # platform convention above; overridden by $CABINA_CONFIG's sibling on Windows
+state_dir = '{state_dir}'   # your platform's default (macOS/Linux: ~/.local/share/cabina · Windows: %LOCALAPPDATA%\cabina)
 
 [server]
 host = "127.0.0.1"
