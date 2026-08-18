@@ -76,6 +76,32 @@ class TestCompareCommand(unittest.TestCase):
             self.assertIn("error:", buf.getvalue())
 
 
+class TestAgentsRosterDetailColumn(unittest.TestCase):
+    """M0 (ii): the roster's 'detail' column was truncated with a flat [:38] slice, which
+    cuts mid-word whenever the 38th character lands inside a word. The alpha fixture's
+    shadowing `reviewer` agent carries the warning "shadows a global agent with the same
+    name without declaring `overrides: global`" -- [:38] of that lands on "...the same n"
+    (a bare trailing "n" off of "name"). textwrap.shorten(width=38) breaks on a word
+    boundary and appends a placeholder ("…") instead."""
+    def test_long_detail_is_shortened_on_a_word_boundary(self):
+        import argparse
+        from cabina import cli as CLI
+        env = Env()
+        try:
+            scan.save(env.cfg, scan.run(env.cfg))
+            a = argparse.Namespace(action="list", name=None, project=None, force=False,
+                                    invalid=False, unused=False, json=False, tool=None)
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                CLI._agents(env.cfg, a)
+            out = buf.getvalue()
+            line = next(l for l in out.splitlines() if l.startswith("reviewer") and "alpha" in l)
+            self.assertNotRegex(line.rstrip(), r"\bthe same n$")
+            self.assertIn("…", line)
+        finally:
+            env.cleanup()
+
+
 class TestHooksCommand(unittest.TestCase):
     """H1: `--cmd` on the hooks subparser used to share argparse's own `dest="cmd"` with the
     top-level subcommand selector, so `a.cmd` got overwritten and `cabina hooks` fell through

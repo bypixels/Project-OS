@@ -10,6 +10,16 @@ from . import host
 SEV_ORDER = {"crit": 0, "warn": 1, "info": 2}
 
 
+def _warn_kind(w):
+    """The short 'kind' shown in the grouped `check.warn_agents.d` summary: the text of a
+    warning up to its first `(` or top-level `:` — but a `:` INSIDE a backtick-quoted span
+    (e.g. "declaring `overrides: global`") must not count as the cut point, or the kind
+    comes out with a dangling, unbalanced backtick."""
+    masked = re.sub(r"`[^`]*`", lambda m: "`" * len(m.group(0)), w)
+    stops = [i for i in (masked.find("("), masked.find(":")) if i != -1]
+    return w[:min(stops)].strip() if stops else w.strip()
+
+
 def run(cfg, quick=False):
     """Returns list of findings: {sev, title, detail, fix}."""
     L = cfg["language"]; ch = cfg["claude_home"]
@@ -73,7 +83,7 @@ def run(cfg, quick=False):
         kinds = {}
         for _, r in wrn:
             for w in r.warnings:
-                k = w.split("(")[0].split(":")[0].strip(); kinds[k] = kinds.get(k, 0) + 1
+                k = _warn_kind(w); kinds[k] = kinds.get(k, 0) + 1
         add("warn", t(L, "check.warn_agents", n=len(wrn)), t(L, "check.warn_agents.d", kinds=", ".join(f"{v} {k}" for k, v in sorted(kinds.items(), key=lambda x: -x[1]))), t(L, "fix.agents_invalid"))
     if docs:
         add("info", t(L, "check.docs_in_agents", n=len(docs)), t(L, "check.docs_in_agents.d") + "\n    " + ", ".join(f"{p}/{r.name}" for p, r in docs[:6]) + (" …" if len(docs) > 6 else ""))

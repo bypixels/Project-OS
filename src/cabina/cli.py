@@ -8,7 +8,7 @@
   cabina fleet           terminal TUI (live provider + roster)
   cabina config          print the effective config / write an example
 """
-import argparse, json, os, sys
+import argparse, json, os, sys, textwrap
 from . import __version__, config as CFG
 
 
@@ -194,7 +194,7 @@ def _agents(cfg, a):
     for proj, r, u, path, tool in out:
         n = u["here"] if u["attributed"] and u["here"] is not None else u["total"]
         mark = "" if u["attributed"] or hom.get(r.name, 0) < 2 else "≈"
-        det = (r.critical or r.warnings or [""])[0][:38]
+        det = textwrap.shorten((r.critical or r.warnings or [""])[0], width=38, placeholder="…")
         print(f"{r.name:<28} {proj[:20]:<20} {tool:<7} {(r.fields.get('model') or '—')[:6]:<7} {(u['last'] or '—'):<11} {n:>4}{mark:1} {r.category:<9} {det}")
     ag = [r for _, r, _, _, _ in out if r.is_agent]
     nc = sum(1 for _, _, _, _, t in out if t == "codex")
