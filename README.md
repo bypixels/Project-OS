@@ -208,7 +208,7 @@ args = ["mcp"]
 
 ```sh
 git clone … && cd cabina
-python -m unittest discover -s tests -v      # 68 tests, stdlib only
+python -m unittest discover -s tests -v      # 126 tests, stdlib only
 PYTHONPATH=src python -m cabina check
 ```
 
