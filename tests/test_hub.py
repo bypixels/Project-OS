@@ -82,6 +82,23 @@ class TestHubLoadDir(unittest.TestCase):
             out = HUB.load_dir(d, max_mb=0.001)          # ~1 KB cap, file is bigger
             self.assertEqual(out["files"][0]["status"], "too-large")
 
+    @unittest.skipIf(os.name == "nt", "os.mkfifo is POSIX-only")
+    def test_hub_skips_fifo_without_hanging(self):
+        # D1: a FIFO named *.json under DIR would block forever inside open() (_read_export) —
+        # and since every hub endpoint calls load_dir, that hang would take down the whole hub.
+        from cabina import hub as HUB
+        import threading
+        with tempfile.TemporaryDirectory() as d:
+            os.mkfifo(os.path.join(d, "pipe.json"))
+            result = {}
+            def run():
+                result["out"] = HUB.load_dir(d, 5)
+            t = threading.Thread(target=run, daemon=True)
+            t.start()
+            t.join(timeout=5)
+            self.assertFalse(t.is_alive(), "load_dir hung reading a FIFO")
+            self.assertEqual(result["out"]["files"][0]["status"], "not-a-file")
+
     def test_hub_marks_corrupt_json_as_unreadable_without_crashing(self):
         from cabina import hub as HUB
         with tempfile.TemporaryDirectory() as d:

@@ -197,6 +197,19 @@ class TestBreaks(unittest.TestCase):
                 out2 = HUB.load_dir(d, max_mb=0.001)
             self.assertEqual(out2["files"][0]["status"], "ok")                          # cap bypassed -> the oversized file is read -> canary red
 
+    def test_hub_regular_file_guard(self):
+        # D1: a directory named `*.json` is also non-regular, but (unlike a FIFO) safe to probe
+        # here — os.path.getsize/open on it never block, so this canary can disable the guard
+        # without risking a hang, unlike the FIFO case covered in test_hub.py.
+        from cabina import hub as HUB
+        with tempfile.TemporaryDirectory() as d:
+            os.mkdir(os.path.join(d, "dir.json"))
+            out = HUB.load_dir(d, 5)
+            self.assertEqual(out["files"][0]["status"], "not-a-file")                    # guard present: rejected
+            with mock.patch.object(HUB, "_is_regular_file", return_value=True):          # guard disabled
+                out2 = HUB.load_dir(d, 5)
+            self.assertEqual(out2["files"][0]["status"], "unreadable")                   # falls through to open() -> IsADirectoryError -> canary red
+
     def test_hub_unreadable_file_guard(self):
         # Orchestrator amendment: json.loads is wrapped per file via an isolated helper
         # (_read_export). If that per-file try/except around it were ever deleted, a single

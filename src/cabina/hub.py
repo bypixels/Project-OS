@@ -1,7 +1,7 @@
 """cabina hub — lee N archivos de `cabina export --activity` de una carpeta compartida y sirve
 la MISMA UI (static/index.html) sobre su mezcla. Read-only por diseño (R10): HubApp (definida
 aquí también) no tiene NINGUNA ruta de escritura."""
-import json, os, threading, webbrowser
+import json, os, stat, threading, webbrowser
 
 
 def _confined(real_path, real_dir):
@@ -9,6 +9,18 @@ def _confined(real_path, real_dir):
     bajo él. Aislado como función propia (no inline) para que un break-test pueda desactivarlo
     sin tocar os.path.realpath en sí."""
     return real_path == real_dir or real_path.startswith(real_dir + os.sep)
+
+
+def _is_regular_file(path):
+    """Guard (D1): True only if path is a regular file. A FIFO named `*.json` under DIR would
+    otherwise block forever inside `open()` (`_read_export`) — and since every hub endpoint
+    calls `load_dir`, that hang takes down the whole hub. Aislado (no inline) por la misma razón
+    que `_confined`/`_over_cap`: un break-test puede desactivarlo sin tocar os.stat en sí. Any
+    error probing the path (e.g. it vanished) counts as "not a regular file", never as "trust it"."""
+    try:
+        return stat.S_ISREG(os.stat(path).st_mode)
+    except OSError:
+        return False
 
 
 def _over_cap(path, max_mb):
@@ -32,10 +44,11 @@ def _read_export(path):
 
 def load_dir(dir_, max_mb=5):
     """Archivos *.json DIRECTAMENTE bajo dir_ (no recursivo). Cada archivo: confinado por
-    realpath a dir_ (un symlink que escapa -> status "outside"), tope de tamaño max_mb MB (->
-    "too-large"), json.loads envuelto por archivo (-> "unreadable"). Un archivo malo nunca
-    aborta a los demás. Devuelve {files: [...], merged: {agents, skills, projects, harness,
-    activity}}."""
+    realpath a dir_ (un symlink que escapa -> status "outside"), debe ser un archivo regular (un
+    FIFO/directorio/socket -> "not-a-file", D1: evita que open() se cuelgue para siempre),
+    tope de tamaño max_mb MB (-> "too-large"), json.loads envuelto por archivo (-> "unreadable").
+    Un archivo malo nunca aborta a los demás. Devuelve {files: [...], merged: {agents, skills,
+    projects, harness, activity}}."""
     real_dir = os.path.realpath(dir_)
     files, agents, skills, harness = [], [], [], []
     projects_set, agg_by_key, detail_rows, projects_detail = set(), {}, [], []
@@ -48,6 +61,8 @@ def load_dir(dir_, max_mb=5):
             real_path = os.path.realpath(path)
             if not _confined(real_path, real_dir):
                 entry["status"] = "outside"; files.append(entry); continue
+            if not _is_regular_file(real_path):
+                entry["status"] = "not-a-file"; files.append(entry); continue
             if _over_cap(real_path, max_mb):
                 entry["status"] = "too-large"; files.append(entry); continue
             try:
