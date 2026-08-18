@@ -39,6 +39,16 @@ All CLI/UI text lives in `src/cabina/i18n.py`, keyed like `check.dead_hooks` /
 `check.dead_hooks.d`. When you add a message, add it to **both** `STRINGS["en"]` and
 `STRINGS["es"]` — never just one.
 
+## Releasing
+
+```sh
+git tag -a v0.1.0 -m "AI Projects Monitor v0.1.0 — agents, skills, harness, docs, health check, live, MCP"
+git push origin v0.1.0
+```
+
+PyPI publish is a manual step by the owner (`python -m build && twine upload dist/*`), never
+automated.
+
 ## Workflow
 
 1. Write a test that fails first (TDD: red, then green, then refactor).
