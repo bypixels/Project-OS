@@ -17,7 +17,7 @@ class TestMcpInProcess(unittest.TestCase):
         self.assertEqual(r["result"]["serverInfo"]["name"], "cabina"); self.assertIn("READ-ONLY", r["result"]["instructions"])
         self.assertIsNone(self.srv.handle({"jsonrpc": "2.0", "method": "notifications/initialized"}))
         names = {t["name"] for t in self.srv.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})["result"]["tools"]}
-        self.assertEqual(names, {"cabina_health", "cabina_working", "cabina_agent", "cabina_agents", "cabina_references", "cabina_project", "cabina_drift"})
+        self.assertEqual(names, {"cabina_health", "cabina_working", "cabina_agent", "cabina_agents", "cabina_references", "cabina_project", "cabina_drift", "cabina_activity"})
     def test_health_and_working(self):
         h = self.call("cabina_health"); self.assertIn("critical", h); self.assertIsInstance(h["findings"], list)
         w = self.call("cabina_working"); self.assertEqual(w["provider"], "none"); self.assertEqual(w["working"], [])
@@ -29,6 +29,17 @@ class TestMcpInProcess(unittest.TestCase):
         self.assertIn("count", self.call("cabina_references", name="reviewer"))
         p = self.call("cabina_project", name="alpha"); self.assertTrue(p["found"]); self.assertEqual(p["harness"]["hooks_dead"], ["dead.sh"])
         d = self.call("cabina_drift"); self.assertEqual(d["twins"][0]["status"], "same")
+    def test_activity_tool_requires_project_and_hides_titles_paths(self):
+        from cabina import sessions as SESS
+        SESS.refresh(self.env.cfg)
+        r = self.call("cabina_activity", project="alpha")
+        self.assertEqual(r["project"], "alpha")
+        self.assertGreaterEqual(r["aggregate"]["sessions"], 1)
+        dumped = json.dumps(r)
+        self.assertNotIn("title", dumped); self.assertNotIn("source_path", dumped); self.assertNotIn('"cwd"', dumped)
+        resp = self.srv.handle({"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {"name": "cabina_activity", "arguments": {}}})
+        self.assertTrue(resp["result"]["isError"])                # project omitted -> bad arguments
+
     def test_unknown_tool_and_method(self):
         r = self.srv.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "cabina_delete_everything", "arguments": {}}})
         self.assertTrue(r["result"]["isError"])

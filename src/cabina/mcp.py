@@ -26,6 +26,8 @@ def tools_spec():
          "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"], "additionalProperties": False}},
         {"name": "cabina_drift", "description": "Drift between Claude Code and Codex: twin agents that diverged, CLAUDE.md vs AGENTS.md per project, copied skills.",
          "inputSchema": S()},
+        {"name": "cabina_activity", "description": "Session activity from Claude Code transcripts, aggregated for ONE project — no titles, no paths, no cwd (R11 of the design contract). Read-only; reads the cached registry (a `cabina activity` run or a UI visit may be needed first to populate it).",
+         "inputSchema": {"type": "object", "properties": {"project": {"type": "string"}, "days": {"type": "integer", "description": "lookback window in days (default 30)"}}, "required": ["project"], "additionalProperties": False}},
     ]
 
 
@@ -88,6 +90,19 @@ class Server:
     def t_drift(self, **_):
         return DR.report(self.cfg, self.data)
 
+    def t_activity(self, project, days=30, **_):
+        from . import sessions
+        items = [s for s in sessions.load(self.cfg) if s.get("project") == project]
+        agg = {"sessions": len(items), "tokens": {"in": 0, "out": 0}, "commits": 0}
+        out = []
+        for s in items:
+            agg["tokens"]["in"] += (s.get("tokens") or {}).get("in", 0)
+            agg["tokens"]["out"] += (s.get("tokens") or {}).get("out", 0)
+            agg["commits"] += s.get("commits", 0)
+            out.append({"started": s.get("started"), "ended": s.get("ended"), "duration_s": s.get("duration_s"),
+                        "turns": s.get("turns"), "commits": s.get("commits"), "agents": s.get("agents"), "skills": s.get("skills")})
+        return {"project": project, "aggregate": agg, "sessions": out}
+
     # ---- JSON-RPC ----
     def handle(self, msg):
         m, i, params = msg.get("method"), msg.get("id"), msg.get("params") or {}
@@ -105,7 +120,7 @@ class Server:
             name = params.get("name", ""); args = params.get("arguments") or {}
             fn = {"cabina_health": self.t_health, "cabina_working": self.t_working, "cabina_agent": self.t_agent,
                   "cabina_agents": self.t_agents, "cabina_references": self.t_references, "cabina_project": self.t_project,
-                  "cabina_drift": self.t_drift}.get(name)
+                  "cabina_drift": self.t_drift, "cabina_activity": self.t_activity}.get(name)
             if not fn:
                 return self._ok(i, {"content": [{"type": "text", "text": f"unknown tool {name}"}], "isError": True})
             try:
