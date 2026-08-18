@@ -41,6 +41,43 @@ def _lines(history_dir, needle):
         return out
 
 
+def _read_new_lines(path, offset):
+    """Bytes after `offset` -> (list of non-empty line strings, new_offset). Duplicated (not
+    imported) from sessions.py: importing sessions here would create an import cycle
+    (sessions.py already does `from . import scan, usage`). ~10 lines, two call sites — under
+    the project's own 3+ repetitions rule for extracting duplication, this stays duplicated."""
+    with open(path, "rb") as f:
+        f.seek(offset)
+        data = f.read()
+    new_offset = offset + len(data)
+    lines = [l for l in data.decode("utf-8", "replace").splitlines() if l.strip()]
+    return lines, new_offset
+
+
+def _scan_file(path, offset, roots):
+    """Read the new bytes of one .jsonl since `offset`, extract BOTH agents and skills in a
+    single pass (never just one — see the Tarea 43 amendment on the shared history baseline).
+    Returns (agents_delta, skills_delta, new_offset), each delta shaped like extract()'s output
+    but representing only what THIS pass found, not a running total."""
+    lines, new_offset = _read_new_lines(path, offset)
+    agents, skills = {}, {}
+    roots = roots or {}
+    for line in lines:
+        ts = _TS.search(line)
+        d = ts.group(1) if ts else None
+        cw = _CWD.search(line)
+        proj = _project_of(cw.group(1) if cw else None, roots)
+        for out, pattern in ((agents, _AGENT), (skills, _SKILL)):
+            for m in pattern.finditer(line):
+                e = out.setdefault(m.group(1), {"n": 0, "last": None, "by_project": {}})
+                e["n"] += 1
+                if d and (e["last"] is None or d > e["last"]):
+                    e["last"] = d
+                if proj:
+                    e["by_project"][proj] = e["by_project"].get(proj, 0) + 1
+    return agents, skills, new_offset
+
+
 def _project_of(cwd, roots):
     """roots: {project_name: abs_root}. Longest matching root wins. Both sides go through
     os.path.realpath first, so a symlinked root or a symlinked cwd still matches."""

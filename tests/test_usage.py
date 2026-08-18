@@ -59,6 +59,17 @@ class TestUsage(unittest.TestCase):
             link = os.path.join(d, "link"); os.symlink(real, link)
             self.assertEqual(U._project_of(os.path.join(link, "sub"), {"p": real}), "p")
 
+    def test_scan_file_extracts_both_needles_in_one_pass(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "f.jsonl")
+            open(p, "w").write(
+                '{"timestamp":"2026-08-01","cwd":"/x","subagent_type":"reviewer"}\n'
+                '{"timestamp":"2026-08-01","cwd":"/x","name":"Skill","input":{"skill":"deploy"}}\n')
+            agents, skills, new_offset = U._scan_file(p, 0, roots={})
+            self.assertEqual(agents["reviewer"]["n"], 1)
+            self.assertEqual(skills["deploy"]["n"], 1)
+            self.assertGreater(new_offset, 0)
+
     def test_for_agent_view(self):
         items = {"cr": {"n_total": 10, "last": "2026-08-01", "by_project": {"alpha": 7, "beta": 3}}}
         self.assertEqual(U.for_agent(items, "cr", "alpha"), {"total": 10, "last": "2026-08-01", "here": 7, "attributed": True})
