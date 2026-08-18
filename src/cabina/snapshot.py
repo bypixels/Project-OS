@@ -52,6 +52,7 @@ def export_activity(cfg, projects=None, detail=False, titles=False):
     if titles and not detail:
         raise ValueError("--titles requires --detail")
     from . import sessions
+    sessions.refresh(cfg)   # this is a CLI call, not a request thread: refresh the registry
     items = sessions.load(cfg)
     if projects:
         want = {p.lower() for p in projects}

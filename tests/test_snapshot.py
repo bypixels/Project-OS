@@ -49,6 +49,20 @@ class TestExportActivity(unittest.TestCase):
         self.assertEqual(row["files_outside"], 1)
         self.assertNotIn("/Users/x", json.dumps(out))
 
+class TestExportActivityRefreshesRegistry(unittest.TestCase):
+    # Review finding C: export_activity only ever READ the session registry (sessions.load) —
+    # on a machine that never ran `cabina activity`, the registry is empty and export --activity
+    # silently ships an empty payload. export_activity is a CLI call, not a request-thread hot
+    # path, so it must refresh itself first.
+    def test_export_activity_refreshes_without_a_prior_manual_refresh(self):
+        env = Env()
+        try:
+            out = SNAP.export_activity(env.cfg)   # note: no env.refresh_sessions() call before this
+            self.assertTrue(out["aggregated"])
+        finally:
+            env.cleanup()
+
+
 class TestExportProjectsDetail(unittest.TestCase):
     # Orchestrator amendment to Tarea 28 (plan Concern 2): export() also embeds
     # "projects_detail" — per-project fields from projects.load(), never "path" (local-only).
