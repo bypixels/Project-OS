@@ -1,13 +1,21 @@
 """cabina hub — lee N archivos de `cabina export --activity` de una carpeta compartida y sirve
 la MISMA UI (static/index.html) sobre su mezcla. Read-only por diseño (R10): HubApp (definida
-aquí también) no tiene NINGUNA ruta de escritura."""
+aquí también) no tiene NINGUNA ruta de escritura.
+
+Known limitation: hardlinks to files outside DIR are not detected (no symlink to resolve); the
+shared folder must be trusted at the filesystem level — this is a read-only viewer, not a
+sandbox."""
 import json, os, stat, threading, webbrowser
 
 
 def _confined(real_path, real_dir):
     """Guard (R10): una ruta resuelta cuenta como 'adentro' de real_dir solo si es igual o cae
     bajo él. Aislado como función propia (no inline) para que un break-test pueda desactivarlo
-    sin tocar os.path.realpath en sí."""
+    sin tocar os.path.realpath en sí.
+
+    Known limitation: hardlinks to files outside DIR are not detected (no symlink to resolve);
+    the shared folder must be trusted at the filesystem level — this is a read-only viewer, not
+    a sandbox."""
     return real_path == real_dir or real_path.startswith(real_dir + os.sep)
 
 
