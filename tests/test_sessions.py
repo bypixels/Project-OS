@@ -1,4 +1,5 @@
 import json, os, unittest
+from unittest import mock
 import _helpers  # noqa
 from _env import Env
 from cabina import scan
@@ -185,6 +186,25 @@ class TestSessionsRefresh(unittest.TestCase):
         os.remove(self.env.session_file)
         items = S.load(self.env.cfg)
         self.assertTrue(any(s["session_id"] == "sess-1" for s in items))
+
+    def test_refresh_survives_one_unreadable_transcript_keeps_the_rest(self):
+        # A second session file, sitting right next to the fixture's own one — if reading it
+        # raises (permission error, disk hiccup, mid-rotation), refresh() must still return
+        # every OTHER session, and still write the registry to disk (R2/R4's "one bad
+        # transcript is never fatal" promise, exercised end-to-end through refresh()).
+        second = os.path.join(os.path.dirname(self.env.session_file), "sess-2.jsonl")
+        content = open(self.env.session_file, encoding="utf-8").read().replace("sess-1", "sess-2")
+        open(second, "w", encoding="utf-8").write(content)
+        real_read = S._read_new_lines
+        def flaky_read(path, offset):
+            if path.endswith("sess-2.jsonl"):
+                raise OSError("simulated unreadable transcript")
+            return real_read(path, offset)
+        with mock.patch.object(S, "_read_new_lines", flaky_read):
+            items = S.refresh(self.env.cfg, days=30)
+        self.assertTrue(any(s["session_id"] == "sess-1" for s in items))
+        self.assertFalse(any(s["session_id"] == "sess-2" for s in items))
+        self.assertTrue(os.path.isfile(S.registry_path(self.env.cfg)))
 
 class TestGitProjectFallback(unittest.TestCase):
     """A session whose cwd is a git repo WITHOUT a .claude/ dir (so scan.py never registers it
