@@ -110,6 +110,27 @@ class TestServer(unittest.TestCase):
         self.assertGreater(len(hits), 0)                    # sanity: the section actually interpolates these fields
         for m in hits:
             self.assertIn("esc(", m.group(1), f"unescaped interpolation: ${{{m.group(1)}}}")
+    def test_agents_skills_block_fields_always_escaped(self):
+        # F1: the ACTIVITY-only scan above never reaches renderAgents / renderAgentDetail /
+        # renderSkillDetail (all defined before the ACTIVITY marker), and its field list omits
+        # desc. Scan the AGENTS->ACTIVITY block (also covers renderArchive/renderCreate/
+        # renderSkills in between) and add desc/description/name to the fields checked.
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        import re
+        start = html.index("// ---------- AGENTS ----------")
+        end = html.index("// ---------- ACTIVITY ----------")
+        body = html[start:end]
+        # renderArchive interpolates x.name/x.project into a git commit MESSAGE string
+        # (`cabina: archive ${x.name} (${x.project})`), never into innerHTML — not an escaping
+        # concern. Whitelisted by exact substring so any other change to this block is still caught.
+        git_message = "`cabina: archive ${x.name} (${x.project})`"
+        self.assertIn(git_message, body, "git message literal moved; update whitelist")
+        body = body.replace(git_message, "")
+        pattern = re.compile(r"\$\{([^{}]*\bx\.(?:title|project|machine|branch|desc|description|name)\b[^{}]*)\}")
+        hits = list(pattern.finditer(body))
+        self.assertGreater(len(hits), 0)                    # sanity: the section actually interpolates these fields
+        for m in hits:
+            self.assertIn("esc(", m.group(1), f"unescaped interpolation: ${{{m.group(1)}}}")
     def test_hub_banner_and_projects_fields_always_escaped(self):
         # Orchestrator amendment to Tarea 38: the ACTIVITY-only scan above misses renderHubBanner
         # and mchip() (both defined before the ACTIVITY marker) and renderProjects (defined after
