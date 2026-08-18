@@ -2350,6 +2350,23 @@ simple `if(x.machine?...)` de JS plano, que no se renderiza como HTML y no neces
 
 ---
 
+## Enmiendas aplicadas durante la ejecución (Fase 2)
+
+Registro de lo que cambió respecto al texto original de las Tareas 26-39, con su commit:
+
+- `5ae57b5` — `export()` incluye `projects_detail` (P6; resuelve Concern 2 de esta fase).
+- `4ed2b0e` — `export --detail` nunca lleva rutas absolutas en `files_touched`; las cuenta como `files_outside` (P7).
+- `979ce74` — `export_activity` refresca el registro de sesiones antes de leerlo (una máquina nueva exportaba vacío).
+- `7bdebfe` — el hub conserva agregados Y filas por sesión de todas las máquinas; fusiona `projects_detail`.
+- `c68859d` — `sessKey` compartido entre lista y detalle de Actividad (el detalle buscaba por `source_path`, que el export no lleva); máquinas solo-agregado se muestran como filas no clicables.
+- `d1e1766` — break-tests extra: tope de tamaño y aislamiento por archivo del hub.
+- `11b7355` — el hub ignora archivos no regulares (`not-a-file`): un FIFO en la carpeta compartida colgaba todos los endpoints.
+- `6132ce2` — limitación declarada: los hardlinks escapan al confinamiento por `realpath`.
+- `84d0904` — caché del hub hasta que cambie algún archivo de DIR.
+- `4fe2f80` — el detalle de agente en modo hub no revienta; el export lleva `critical`/`warnings`/`desc`.
+- `cbaae03` — detalle de proyecto en hub indexado por nombre+máquina.
+- Tarea 39 (verificación manual) ejecutada por el orquestador en Chrome con dos máquinas, un archivo corrupto, un symlink que escapa y título/rama envenenados con `<img onerror>`: sin XSS, sin errores de consola.
+
 # Concerns (Fase 2)
 
 1. **Tarea 36 es más grande que el resto.** Toca seis puntos distintos de `index.html`
