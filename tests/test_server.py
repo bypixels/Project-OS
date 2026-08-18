@@ -99,6 +99,36 @@ class TestServer(unittest.TestCase):
     def test_activity_supports_aggregated_shape(self):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
         self.assertIn("function renderActivityAggregated", html)
+    def test_activity_and_hub_fields_always_escaped(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        import re
+        start = html.index("// ---------- ACTIVITY ----------")
+        end = html.index("// ---------- PROJECTS ----------")
+        body = html[start:end]
+        pattern = re.compile(r"\$\{([^{}]*\bx\.(?:title|project|machine|branch)\b[^{}]*)\}")
+        hits = list(pattern.finditer(body))
+        self.assertGreater(len(hits), 0)                    # sanity: the section actually interpolates these fields
+        for m in hits:
+            self.assertIn("esc(", m.group(1), f"unescaped interpolation: ${{{m.group(1)}}}")
+    def test_hub_banner_and_projects_fields_always_escaped(self):
+        # Orchestrator amendment to Tarea 38: the ACTIVITY-only scan above misses renderHubBanner
+        # and mchip() (both defined before the ACTIVITY marker) and renderProjects (defined after
+        # the PROJECTS marker) — scan those three spots too so every export-sourced field they
+        # interpolate (machine chip, hub banner file name/machine/status, project branch) is
+        # checked. Scoped tightly to just those three (not the whole file): other functions in
+        # between (e.g. renderArchive) interpolate x.project into a git commit MESSAGE string,
+        # never into innerHTML, so they are not an escaping concern and would be a false positive.
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        import re
+        hub_banner = html[html.index("async function loadHub"):html.index("async function loadLive")]
+        mchip = html[html.index("function mchip"):html.index("// ---------- AGENTS ----------")]
+        projects = html[html.index("// ---------- PROJECTS ----------"):html.index("// ---------- HARNESS ----------")]
+        body = hub_banner + mchip + projects
+        pattern = re.compile(r"\$\{([^{}]*\b(?:x\.(?:title|project|machine|branch)|f\.(?:name|machine|status))\b[^{}]*)\}")
+        hits = list(pattern.finditer(body))
+        self.assertGreater(len(hits), 0)
+        for m in hits:
+            self.assertIn("esc(", m.group(1), f"unescaped interpolation: ${{{m.group(1)}}}")
     def test_unknown_routes(self):
         with self.assertRaises(urllib.error.HTTPError): self.get("/api/nope")
         code, _ = self.post("/api/nope", {}); self.assertEqual(code, 404)
