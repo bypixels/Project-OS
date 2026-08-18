@@ -1,5 +1,5 @@
 """Cross-platform behaviour, simulated (real Windows/macOS/Linux runs happen in CI)."""
-import os, sys, tempfile, unittest, shutil
+import os, sys, tempfile, tomllib, unittest, shutil
 from unittest import mock
 import _helpers  # noqa
 
@@ -37,6 +37,36 @@ class TestPaths(unittest.TestCase):
     def test_config_uses_platform_state_dir(self):
         cfg = CFG.load("/nonexistent")
         self.assertEqual(cfg["state_dir"], host.default_dirs()["state"])
+
+class TestExampleTomlCoversDefaults(unittest.TestCase):
+    """cabina config --example must show every key a user could override, not a stale subset."""
+    def _leaf_paths(self, d, prefix=()):
+        for k, v in d.items():
+            path = prefix + (k,)
+            if isinstance(v, dict):
+                yield from self._leaf_paths(v, path)
+            else:
+                yield path
+
+    def test_every_default_leaf_key_appears_in_the_example(self):
+        example = tomllib.loads(CFG.example_toml())
+        missing = []
+        for path in self._leaf_paths(CFG.DEFAULTS):
+            node = example
+            for part in path:
+                if not isinstance(node, dict) or part not in node:
+                    missing.append(".".join(path))
+                    break
+                node = node[part]
+        self.assertEqual(missing, [], f"keys missing from example_toml(): {missing}")
+
+    def test_state_dir_is_not_a_hardcoded_unix_path(self):
+        example_text = CFG.example_toml()
+        self.assertNotIn("$CABINA_CONFIG", example_text,
+                          "state_dir has no $CABINA_CONFIG override mechanism; the comment must not claim one")
+        parsed = tomllib.loads(example_text)
+        self.assertEqual(os.path.expanduser(parsed["state_dir"]), CFG.DEFAULTS["state_dir"],
+                          "the example's state_dir must be THIS platform's actual default, not a hardcoded Unix path")
 
 class TestNoGrep(unittest.TestCase):
     """Windows has no grep/du: every caller must fall back to Python, never fail open."""

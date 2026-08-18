@@ -80,7 +80,9 @@ per project (`linked` / `copy` / `bridge` / `diverged`), and copied skills that 
 Every roster row carries a `tool` of `claude` or `codex`.
 
 **Strings.** All user-facing CLI/UI text lives in `i18n.py` `STRINGS["en"]` and `["es"]`, keyed
-like `check.dead_hooks` / `check.dead_hooks.d`. Add both languages when adding a message.
+like `check.dead_hooks` / `check.dead_hooks.d`. Add both languages when adding a message. The web
+UI has its own, separate `I18N` string table (en/es) embedded in `static/index.html` — it does not
+read from `i18n.py`.
 
 **Hooks (`guard.py`).** `cabina guard` exits 2 with a reason on stderr to block a write, 0
 otherwise. Any failure of the guard itself must exit 0 — a broken guard must never lock the user
