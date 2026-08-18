@@ -117,5 +117,13 @@ class TestFinalize(unittest.TestCase):
         self.assertNotIn("PROMPT_MARKER_DO_NOT_LEAK", dumped)
         self.assertEqual(set(summary), set(S.SUMMARY_FIELDS))
 
+class TestSessionsRegistry(unittest.TestCase):
+    def test_save_load_roundtrip_and_missing(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "sessions.json")
+            S._save_registry(p, {"a.jsonl": {"offset": 10, "size": 10, "mtime": 1.0, "partial_state": {}, "summary": {"session_id": "a"}}})
+            self.assertEqual(S._load_registry(p)["a.jsonl"]["summary"]["session_id"], "a")
+        self.assertEqual(S._load_registry("/no/such/file.json"), {})
+
 if __name__ == "__main__":
     unittest.main()

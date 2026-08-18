@@ -185,6 +185,26 @@ def _to_local_iso(ts):
         return None
 
 
+def registry_path(cfg):
+    return os.path.join(cfg["state_dir"], "sessions.json")
+
+
+def _load_registry(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _save_registry(path, reg):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(reg, f, ensure_ascii=False, indent=1, sort_keys=True)
+    os.replace(tmp, path)
+
+
 def _finalize(state, source_path, roots, offset):
     from datetime import datetime
     roots = roots or {}
