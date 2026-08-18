@@ -1,8 +1,8 @@
 """Live view of running agents. Pluggable providers; degrades to 'none' gracefully.
 A provider returns {"ok": bool, "agents": [...], "workspaces": [...]} with each agent as
 {"agent","status","workspace","cwd","task","pane","focused"} and status in working|done|idle|unknown."""
-import json, os, shutil
-from . import host
+import json, os, re, shutil, time
+from . import host, usage
 
 
 class NoneProvider:
@@ -48,6 +48,69 @@ class HerdrProvider:
     def focus(self, pane):
         ok = bool(host.run(["herdr", "agent", "focus", pane]))
         return ok, "focused" if ok else "herdr did not respond"
+
+
+class TranscriptProvider:
+    """Reads Claude Code's own transcripts to find projects with very recent activity.
+    ADDITIVE only (R1): used to extend the 'working' set that blocks doc saves — never
+    replaces herdr, never downgrades a herdr 'working' status to idle, and is NOT part of the
+    live.get() provider chain (the Live tab's provider selection is unchanged). Looks at BOTH
+    the session file and any file under its sibling <sid>/subagents/ dir, so a busy subagent
+    alone still counts as 'active'."""
+    name = "transcript"
+
+    def __init__(self, cfg):
+        self.cfg = cfg
+
+    @staticmethod
+    def _peek_cwd(path, limit=40):
+        try:
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                for _ in range(limit):
+                    line = fh.readline()
+                    if not line:
+                        break
+                    m = re.search(r'"cwd":"([^"]+)"', line)
+                    if m:
+                        return m.group(1)
+        except Exception:
+            pass
+        return None
+
+    def active_projects(self, roots):
+        """{project names} with a session or subagent file whose mtime is under
+        cfg.live.active_seconds (default 600)."""
+        pdir = os.path.join(self.cfg["claude_home"], "projects")
+        if not os.path.isdir(pdir):
+            return set()
+        active = (self.cfg.get("live") or {}).get("active_seconds", 600)
+        now = time.time()
+        out = set()
+        for e in os.listdir(pdir):
+            edir = os.path.join(pdir, e)
+            if not os.path.isdir(edir):
+                continue
+            top = [f for f in os.listdir(edir) if f.endswith(".jsonl")]
+            if not top:
+                continue
+            fresh = any(now - os.path.getmtime(os.path.join(edir, f)) < active for f in top)
+            if not fresh:
+                for name in os.listdir(edir):
+                    sub = os.path.join(edir, name, "subagents")
+                    if os.path.isdir(sub) and any(
+                        f.endswith(".jsonl") and now - os.path.getmtime(os.path.join(sub, f)) < active
+                        for f in os.listdir(sub)
+                    ):
+                        fresh = True
+                        break
+            if not fresh:
+                continue
+            newest = max((os.path.join(edir, f) for f in top), key=os.path.getmtime)
+            cwd = self._peek_cwd(newest)
+            proj = usage._project_of(cwd, roots) if cwd else None
+            if proj:
+                out.add(proj)
+        return out
 
 
 def get(cfg):
