@@ -2689,7 +2689,7 @@ llama con `kind="skills"` sobre el mismo archivo recién leído, la segunda llam
   ```
 - [x] Paso 2: `AttributeError: module 'cabina.usage' has no attribute '_refresh_both'` (o el
       escenario de pérdida se reproduce con el código viejo de dos `refresh()` independientes).
-- [ ] Paso 3: implementar `_refresh_both` como se describe arriba; `refresh()` público queda como
+- [x] Paso 3: implementar `_refresh_both` como se describe arriba; `refresh()` público queda como
       envoltorio de una línea. Nombre FIJO para el guardado del resultado que NO fue el `kind`
       pedido (lo usa el break-test de esta tarea tal cual): `_save_sibling_output(state_dir, kind,
       items, meta)` — guarda `usage-agents.json`/`usage-skills.json` según corresponda; `_refresh_both`
@@ -2866,20 +2866,17 @@ bajar el total global — su última contribución conocida se queda en el acumu
 
 ## Enmiendas aplicadas durante la ejecución (Fase 4)
 
-1. **Tarea 43, Paso 3 — NO se borró `_lines()`/el fallback grep+Python ni los imports
-   `subprocess`/`shutil` (conflicto de scope, tarea NO cerrada del todo).** El plan pedía
-   eliminarlos por completo ("constraint (e) resuelta por diseño"), pero
-   `tests/test_platform.py::TestNoGrep.test_usage_extract_without_grep` depende de ese camino
-   via `mock.patch.object(U.shutil, "which", lambda n: None)` sobre `U.extract_agents()` — y
-   `test_platform.py` no está en el scope asignado a este lote (no listado en "Archivos" de la
-   Tarea 43 ni en las cuatro excepciones explícitas del encargo: roster.py/server.py/check.py/
-   CLAUDE.md). Borrar `_lines()` habría roto ese test sin poder arreglarlo. Se dejaron
-   `_lines()`, `extract()`, `extract_agents()`, `extract_skills()`, `subprocess` y `shutil` como
-   código standalone, sin uso desde el camino caliente de `refresh()` (que ahora es 100%
-   `_scan_file`/offset-based) — funcionalmente inertes para el rendimiento, vivos solo para no
-   romper ese test fuera de scope. Queda pendiente para quien tenga permiso de tocar
-   `tests/test_platform.py`: actualizar ese test al nuevo mecanismo (o borrarlo) y entonces sí
-   eliminar `_lines()`+imports.
+1. **Tarea 43, Paso 3 — RESUELTO en la ronda D-F2 (commit `e4c74bd`).** El intento inicial dejó
+   `_lines()`/`extract()`/`extract_agents()`/`extract_skills()`/`subprocess`/`shutil` sin borrar
+   porque `tests/test_platform.py::TestNoGrep.test_usage_extract_without_grep` dependía de ese
+   camino y ese archivo estaba fuera del scope original del lote. El coordinador autorizó
+   tocar `test_platform.py`; se verificó por grep que `extract_agents`/`extract_skills`/`_lines`
+   no tenían más consumidores que ese test + 4 tests de `test_usage.py`, se adaptaron esos 4
+   para usar `_scan_file` directamente (mismo comportamiento), y se eliminó
+   `test_usage_extract_without_grep` con justificación en el docstring de `TestNoGrep`: no queda
+   ninguna rama "con grep" vs "sin grep" que distinguir en `usage.py` (los otros dos tests de esa
+   clase, sobre `roster.py`/`scan.py`, son subsistemas distintos y no se tocaron). `_lines()` y
+   compañía, junto con los imports `subprocess`/`shutil`, quedaron eliminados de `usage.py`.
 2. **Tarea 45, Paso 3(a) — el plan asumía "sin cambios de código nuevos"; eso resultó falso.** El
    texto decía que las Tareas 42/43 ya resolvían la migración desde un `usage-agents.json` viejo
    (formato `max()`, con `n_window`) sin código adicional. Verificado empíricamente que NO es
@@ -2891,16 +2888,17 @@ bajar el total global — su última contribución conocida se queda en el acumu
    incremental), se suma el agregado fresco sobre el registro existente en lugar de
    reconciliarlo por resta — no hay nada contra qué reconciliar todavía. Detalle en el commit
    `664a311`.
-3. **Tarea 48 — el número en frío empeoró (11.3s → 51.1s), no mejoró.** Ver la tabla de medición
-   más abajo en el reporte de cierre del ejecutor. La sospecha (no verificada con profiling) es
-   que `_scan_file` corre DOS regex (`_AGENT.finditer`/`_SKILL.finditer`) sobre CADA línea de
-   CADA archivo sin ningún pre-filtro de substring, mientras el fallback Python viejo
-   (`_lines()`) primero filtraba con `needle in l` (mucho más barato) antes de aplicar el regex.
-   El estado ESTABLE sí cumplió el objetivo (8.75s → ~0.08–0.10s, en línea con `sessions.py`).
-   Por alcance de la Tarea 48 (Paso 3: "no se agrega ninguna otra optimización... sin que el
-   usuario lo pida") no se optimizó el camino en frío — se confirmó que el aviso de
-   `cli.py::_agents` ("scanning usage history…") sigue intacto (no se tocó `cli.py`, fuera de
-   scope de este lote).
+3. **Tarea 48 — el número en frío empeoró primero (11.3s → 51.1s), corregido en la ronda D-F1
+   (commit `9d47a00`).** Causa raíz confirmada (no solo sospechada): `_scan_file` corría
+   `_TS.search`/`_CWD.search`/`_project_of` (y las dos regex `_AGENT`/`_SKILL`) sobre TODAS las
+   líneas, tuvieran o no el needle — a diferencia del `grep -F`/fallback Python viejo, que
+   pre-filtraba por substring antes de tocar una regex. Fix (TDD, test rojo con
+   `mock.patch.object(U, "_project_of", wraps=U._project_of)` contando invocaciones — 20 líneas,
+   solo 2 con needle, `spy.call_count` daba 20 en vez de ≤2): un chequeo de substring en C
+   (`'"subagent_type"' not in line and '"name":"Skill"' not in line: continue`) al tope del loop,
+   antes de cualquier regex. Resultado: frío 51.06s → **4.65s** (mejor que el 11.34s original,
+   sin hacer falta `cProfile`). Ver la tabla actualizada más abajo en el reporte de cierre del
+   ejecutor. El estado ESTABLE se mantuvo en el objetivo (~0.08s).
 
 # Concerns (Fase 4)
 
