@@ -63,7 +63,23 @@ class TranscriptProvider:
         self.cfg = cfg
 
     @staticmethod
-    def _peek_cwd(path, limit=40):
+    def _peek_cwd(path, limit=40, tail_bytes=65536):
+        """The LAST cwd the transcript mentions, not the first: a session can change project
+        mid-way (cd into a different repo), and 'active now' must reflect where the user is
+        working THIS moment, not where the session started. Reads only the tail of the file
+        (bounded, so this stays cheap even for a multi-MB transcript) and returns the last
+        match in it. Falls back to scanning the first `limit` lines only if the tail itself
+        has no cwd at all (e.g. a transcript smaller than one buffer with a header-only start)."""
+        try:
+            size = os.path.getsize(path)
+            with open(path, "rb") as fh:
+                fh.seek(max(0, size - tail_bytes))
+                data = fh.read()
+            matches = re.findall(r'"cwd":"([^"]+)"', data.decode("utf-8", "replace"))
+            if matches:
+                return matches[-1]
+        except Exception:
+            pass
         try:
             with open(path, encoding="utf-8", errors="replace") as fh:
                 for _ in range(limit):
