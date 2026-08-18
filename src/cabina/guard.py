@@ -15,6 +15,25 @@ from . import scan, live as LIVE, check as CHECK
 AGENT_EXT = (".md", ".toml")
 
 
+def _ago(ts):
+    """Local-aware ISO timestamp -> compact 'x minutes/hours/days ago' string. Best-effort.
+    sessions.py already stores started/ended converted to local time with an offset (R7), so
+    this parses it directly — no 'Z' stripping needed here."""
+    if not ts:
+        return "?"
+    try:
+        t0 = datetime.fromisoformat(ts)
+        now = datetime.now(t0.tzinfo) if t0.tzinfo else datetime.now()
+        secs = (now - t0).total_seconds()
+    except Exception:
+        return "?"
+    mins = int(secs // 60)
+    if mins < 60:
+        return f"{mins}m"
+    hours = mins // 60
+    return f"{hours}h" if hours < 24 else f"{hours // 24}d"
+
+
 def _is_agent_path(path, cfg):
     p = os.path.realpath(path)
     return os.path.basename(os.path.dirname(p)) == "agents" and p.endswith(AGENT_EXT) and \
@@ -104,6 +123,13 @@ def brief(cfg, cwd=None):
                 lines.append(f"[cabina] {here}: MEMORY.md last touched {days} day(s) ago" + (" — likely stale" if days > cfg['check']['memory_stale_days'] else ""))
             else:
                 lines.append(f"[cabina] {here}: no MEMORY.md")
+            from . import sessions
+            from .i18n import t as _t
+            sess = [s for s in sessions.load(cfg) if s.get("project") == here]
+            if sess:
+                last = sess[0]
+                lines.append("[cabina] " + _t(cfg["language"], "brief.last_session",
+                                               title=last.get("title") or "(untitled)", ago=_ago(last.get("ended") or last.get("started"))))
     except Exception:
         pass
     return "\n".join(lines) + "\n"

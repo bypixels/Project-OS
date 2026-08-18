@@ -75,6 +75,11 @@ class TestBrief(unittest.TestCase):
         self.assertIn("MEMORY.md", out)          # this project's memory age
     def test_brief_outside_projects_still_works(self):
         out = G.brief(self.env.cfg, cwd="/tmp"); self.assertIn("cabina", out.lower())
+    def test_brief_mentions_last_session(self):
+        from cabina import sessions as SESS
+        SESS.refresh(self.env.cfg)
+        out = G.brief(self.env.cfg, cwd=self.env.alpha)
+        self.assertIn("Refactor the widget loader", out)
 
 class TestHooksInstall(unittest.TestCase):
     def test_snippet_and_write_with_backup(self):

@@ -41,6 +41,7 @@ STRINGS = {
         "fix.wire_or_archive": "wire it in .claude/settings.json or archive it",
         "fix.remove_wire": "remove the settings.json entry or restore the file",
         "fix.worktree": "git -C <repo> worktree remove <path>",
+        "brief.last_session": "last session here: {title} ({ago} ago)",
     },
     "es": {
         "health.title": "SALUD DEL ENTORNO", "health.ok": "todo en orden",
@@ -90,6 +91,7 @@ STRINGS = {
         "fix.wire_or_archive": "cablearlo en .claude/settings.json o archivarlo",
         "fix.remove_wire": "quitar la entrada de settings.json o restaurar el archivo",
         "fix.worktree": "git -C <repo> worktree remove <path>",
+        "brief.last_session": "última sesión aquí: {title} (hace {ago})",
     },
 }
 
