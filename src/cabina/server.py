@@ -171,7 +171,7 @@ def make_handler(app):
             if u.path in ("/", "/index.html"):
                 html = open(os.path.join(STATIC, "index.html"), encoding="utf-8").read()
                 lang = app.cfg["language"] if app.cfg["language"] in STRINGS else "en"
-                html = html.replace("__TOKEN__", app.token).replace("__LANG__", lang)
+                html = html.replace("__TOKEN__", app.token).replace("__LANG__", lang).replace("__HUB__", "0")
                 b = html.encode(); self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(b))); self.send_header("Cache-Control", "no-store"); self.end_headers(); self.wfile.write(b); return
             fn = GETS.get(u.path)

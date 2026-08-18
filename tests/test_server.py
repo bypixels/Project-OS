@@ -27,6 +27,10 @@ class TestServer(unittest.TestCase):
     def test_index_has_token_and_lang(self):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
         self.assertIn(self.app.token, html); self.assertIn('lang="en"', html)
+    def test_index_marks_hub_false(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        self.assertNotIn("__HUB__", html)
+        self.assertIn('HUB="0"==="1"', html)
     def test_index_has_activity_tab(self):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
         self.assertIn('"activity"', html); self.assertIn("/api/activity", html)

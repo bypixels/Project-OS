@@ -1,7 +1,7 @@
 """cabina hub — lee N archivos de `cabina export --activity` de una carpeta compartida y sirve
 la MISMA UI (static/index.html) sobre su mezcla. Read-only por diseño (R10): HubApp (definida
 aquí también) no tiene NINGUNA ruta de escritura."""
-import json, os
+import json, os, threading, webbrowser
 
 
 def _confined(real_path, real_dir):
@@ -56,3 +56,84 @@ def load_dir(dir_, max_mb=5):
     activity = {"sessions": detail_rows} if has_detail else {"aggregated": list(agg_by_key.values())}
     merged = {"agents": agents, "skills": skills, "projects": sorted(projects_set), "harness": harness, "activity": activity}
     return {"files": files, "merged": merged}
+
+
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+from urllib.parse import urlparse, parse_qs
+from .i18n import STRINGS
+
+STATIC = os.path.join(os.path.dirname(__file__), "static")
+
+
+class HubApp:
+    """Sin diccionario POSTS, sin métodos api_archive/api_create/api_save_doc/api_commit/
+    api_open/api_focus/api_rescan en ninguna parte de esta clase — la AUSENCIA es la guardia (R10)."""
+    def __init__(self, dir_, cfg):
+        self.dir = dir_
+        self.max_mb = (cfg.get("hub") or {}).get("max_file_mb", 5)
+        self.lang = cfg["language"] if cfg.get("language") in STRINGS else "en"
+
+    def _merged(self):
+        return load_dir(self.dir, self.max_mb)
+
+    def api_hub(self, q=None):
+        return {"files": self._merged()["files"]}
+
+    def api_agents(self, q=None):
+        m = self._merged()["merged"]
+        return {"agents": m["agents"], "projects": m["projects"], "window": None, "codex_present": False}
+
+    def api_skills(self, q=None):
+        return {"skills": self._merged()["merged"]["skills"], "window": None}
+
+    def api_projects(self, q=None):
+        return {"projects": [{"name": p} for p in self._merged()["merged"]["projects"]]}
+
+    def api_harness(self, q=None):
+        m = self._merged()["merged"]
+        return {"states": m["harness"], "runlogs": [], "drift": {"codex_present": False}}
+
+    def api_activity(self, q=None):
+        act = self._merged()["merged"]["activity"]
+        return {"aggregated": act.get("aggregated") or [], "sessions": act.get("sessions") or [], "active_seconds": None}
+
+
+def make_hub_handler(app):
+    GETS = {"/api/hub": app.api_hub, "/api/agents": app.api_agents, "/api/skills": app.api_skills,
+            "/api/projects": app.api_projects, "/api/harness": app.api_harness, "/api/activity": app.api_activity}
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+        def _json(self, obj, code=200):
+            b = json.dumps(obj, ensure_ascii=False).encode()
+            self.send_response(code); self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(b))); self.send_header("Cache-Control", "no-store"); self.end_headers(); self.wfile.write(b)
+        def do_GET(self):
+            u = urlparse(self.path)
+            if u.path in ("/", "/index.html"):
+                html = open(os.path.join(STATIC, "index.html"), encoding="utf-8").read()
+                html = html.replace("__TOKEN__", "").replace("__LANG__", app.lang).replace("__HUB__", "1")
+                b = html.encode(); self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(b))); self.send_header("Cache-Control", "no-store"); self.end_headers(); self.wfile.write(b); return
+            fn = GETS.get(u.path)
+            if not fn: return self._json({"error": "not found"}, 404)
+            try: return self._json(fn(parse_qs(u.query)))
+            except Exception as e: return self._json({"ok": False, "message": str(e)}, 500)
+        def do_POST(self):
+            return self._json({"ok": False, "message": "cabina hub is read-only: no write route exists"}, 405)
+    return H
+
+
+def serve_hub(dir_, cfg, port=None, open_browser=True):
+    app = HubApp(dir_, cfg)
+    port = port or cfg["server"]["port"]
+    srv = ThreadingHTTPServer(("127.0.0.1", port), make_hub_handler(app))   # 127.0.0.1 fijo (R10) — nunca cfg["server"]["host"]
+    url = f"http://127.0.0.1:{srv.server_address[1]}/"
+    print(f"cabina hub (read-only) at {url}  — {dir_}  (Ctrl-C to stop)")
+    if open_browser:
+        threading.Timer(0.6, lambda: webbrowser.open(url)).start()
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        print("\nstopped.")
+    return srv

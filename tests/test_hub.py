@@ -62,5 +62,57 @@ class TestHubLoadDir(unittest.TestCase):
             self.assertEqual(out["merged"]["agents"][0]["machine"], "m1")
 
 
+class TestHubServer(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        import threading
+        from http.server import ThreadingHTTPServer
+        from cabina import hub as HUB, config as CFG
+        cls.dir = tempfile.mkdtemp()
+        open(os.path.join(cls.dir, "m1.json"), "w").write(json.dumps({
+            "cabina": 1, "machine": "m1", "os": "macOS", "when": "x",
+            "agents": [{"name": "rev", "project": "alpha", "tool": "claude", "category": "valid", "model": "sonnet", "uses": 1}],
+            "skills": [], "harness": [{"project": "alpha", "level": "partial", "hooks_dead": [], "hooks_broken": []}],
+            "projects": ["alpha"],
+            "activity": {"aggregated": [{"project": "alpha", "sessions": 1, "hours": 0.5, "tokens": {"in": 1, "out": 1},
+                                          "commits": 0, "files_touched": 0, "tool_calls": {}, "agents": {}, "skills": {}}]}}))
+        cls.HUB = HUB
+        cls.cfg = CFG.load(None)
+        cls.app = HUB.HubApp(cls.dir, cls.cfg)
+        cls.srv = ThreadingHTTPServer(("127.0.0.1", 0), HUB.make_hub_handler(cls.app))
+        cls.port = cls.srv.server_address[1]
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+
+    def get(self, path):
+        import urllib.request
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}{path}") as r: return json.loads(r.read())
+
+    def test_index_marks_hub_true(self):
+        import urllib.request
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        self.assertIn('HUB="1"==="1"', html)
+
+    def test_endpoints_and_404s(self):
+        import urllib.request, urllib.error
+        self.assertEqual(len(self.get("/api/hub")["files"]), 1)
+        self.assertEqual(self.get("/api/agents")["agents"][0]["machine"], "m1")
+        self.assertTrue(self.get("/api/activity")["aggregated"])
+        for p in ("/api/live", "/api/docs", "/api/doc", "/api/references", "/api/in-repo"):
+            with self.assertRaises(urllib.error.HTTPError):
+                self.get(p)
+
+    def test_post_is_always_405(self):
+        import urllib.request, urllib.error
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}/api/rescan", data=b"{}", method="POST")
+        try:
+            urllib.request.urlopen(req); self.fail("expected 405")
+        except urllib.error.HTTPError as e:
+            self.assertEqual(e.code, 405)
+
+
 if __name__ == "__main__":
     unittest.main()
