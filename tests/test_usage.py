@@ -1,6 +1,7 @@
 import os, tempfile, unittest
 import _helpers  # noqa
 from cabina import usage as U
+from _env import Env
 
 def hist(d, *lines):
     open(os.path.join(d, "s.jsonl"), "w").write("\n".join(lines) + "\n"); return d
@@ -74,6 +75,37 @@ class TestUsage(unittest.TestCase):
         items = {"cr": {"n_total": 10, "last": "2026-08-01", "by_project": {"alpha": 7, "beta": 3}}}
         self.assertEqual(U.for_agent(items, "cr", "alpha"), {"total": 10, "last": "2026-08-01", "here": 7, "attributed": True})
         self.assertEqual(U.for_agent(items, "nope", "alpha")["total"], 0)
+
+
+class TestUsageHistoryRegistry(unittest.TestCase):
+    def setUp(self):
+        self.env = Env()
+
+    def tearDown(self):
+        self.env.cleanup()
+
+    def _paths(self):
+        p = os.path.join(self.env.state, "usage-agents.json")
+        history_dir = os.path.join(self.env.claude, "projects")
+        roots = {"alpha": self.env.alpha}
+        return p, history_dir, roots
+
+    def test_accumulates_across_two_incremental_refreshes(self):
+        # dos refresh() sucesivos con una línea nueva en medio deben SUMAR, no promediar ni pisar
+        p, history_dir, roots = self._paths()
+        items1, _ = U.refresh(p, history_dir, "agents", roots)
+        self.env.append_usage_line(
+            '{"timestamp":"2026-08-05T00:00:00Z","cwd":"%s","x":{"subagent_type":"reviewer"}}' % self.env.alpha)
+        items2, _ = U.refresh(p, history_dir, "agents", roots)
+        self.assertEqual(items2["reviewer"]["n_total"], items1["reviewer"]["n_total"] + 1)
+
+    def test_truncated_file_does_not_double_count(self):
+        p, history_dir, roots = self._paths()
+        U.refresh(p, history_dir, "agents", roots)
+        self.env.truncate_usage_history(
+            '{"timestamp":"2026-08-01T00:00:00Z","cwd":"%s","x":{"subagent_type":"reviewer"}}\n' % self.env.alpha)
+        items, _ = U.refresh(p, history_dir, "agents", roots)
+        self.assertEqual(items["reviewer"]["n_total"], 1)     # no se suma lo viejo + lo nuevo
 
 if __name__ == "__main__":
     unittest.main()

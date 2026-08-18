@@ -119,19 +119,89 @@ def extract_skills(history_dir, roots=None):
     return extract(history_dir, _SKILL, '"name":"Skill","input":{"skill":"', roots)
 
 
-def merge(registry, fresh):
-    """Registry never loses a date; n_total = max(seen); by_project merged by max."""
-    out = {k: dict(v) for k, v in registry.items()}
-    for k, v in fresh.items():
+def _file_delta(new_counts, old_counts):
+    """`new_counts` ("n"-shaped, e.g. from _scan_file or an aggregate across every known
+    source file) vs `old_counts` (registry-shaped, "n_total") — the increment `new_counts`
+    represents beyond what `old_counts` already accounted for. Can be NEGATIVE (a file that
+    shrank after truncation now contributes less than before) — the only thing that never
+    regresses is `last` (a date), same rule as merge()'s historical guarantee. by_project is
+    NOT computed here (see _accumulate: it sums directly from the raw delta, not from this)."""
+    n = new_counts.get("n", 0) - old_counts.get("n_total", 0)
+    last = new_counts.get("last")
+    old_last = old_counts.get("last")
+    if old_last and (not last or old_last > last):
+        last = old_last
+    return {"n": n, "last": last}
+
+
+def _accumulate(registry_items, delta):
+    """Apply `delta` (shaped like _scan_file's output: {name: {"n","last","by_project"}}) onto
+    `registry_items` (registry-shaped: {name: {"n_total","last","by_project"}}). The actual
+    increment applied to n_total is _file_delta(v, registry_items.get(k, {})) — NEVER v's raw
+    "n" directly — so re-applying an already-reflected count (e.g. because a file was fully
+    reparsed and its new total matches what the registry already has) does not double-count.
+    by_project sums directly (extra/unknown by-project keys are additive, not diffed)."""
+    out = {k: dict(v) for k, v in registry_items.items()}
+    for k, v in delta.items():
+        old = out.get(k, {})
+        d = _file_delta(v, old)
         e = out.setdefault(k, {"last": None, "n_total": 0, "by_project": {}})
-        if v.get("last") and (e.get("last") is None or v["last"] > e["last"]):
-            e["last"] = v["last"]
-        e["n_total"] = max(e.get("n_total", 0), v.get("n", 0))
-        e["n_window"] = v.get("n", 0)
+        e["n_total"] = e.get("n_total", 0) + d.get("n", 0)
+        if d.get("last") and (e.get("last") is None or d["last"] > e["last"]):
+            e["last"] = d["last"]
         bp = dict(e.get("by_project") or {})
         for p, n in (v.get("by_project") or {}).items():
-            bp[p] = max(bp.get(p, 0), n)
+            bp[p] = bp.get(p, 0) + n
         e["by_project"] = bp
+    return out
+
+
+def _grow_counts(base, delta):
+    """Fold a _scan_file-shaped delta onto a same-shaped running per-file baseline (both use
+    "n", not "n_total") via plain addition. NOT the guarded _accumulate/_file_delta (which
+    compares an "n"-shaped fresh value against an "n_total"-shaped PRIOR TOTAL, to correct for
+    a full reparse) — growing an already-incremental per-file baseline, or summing several
+    per-file baselines into one aggregate, needs simple addition instead."""
+    out = {k: dict(v) for k, v in base.items()}
+    for k, v in delta.items():
+        e = out.setdefault(k, {"n": 0, "last": None, "by_project": {}})
+        e["n"] = e.get("n", 0) + v.get("n", 0)
+        if v.get("last") and (e.get("last") is None or v["last"] > e["last"]):
+            e["last"] = v["last"]
+        bp = dict(e.get("by_project") or {})
+        for p, n in (v.get("by_project") or {}).items():
+            bp[p] = bp.get(p, 0) + n
+        e["by_project"] = bp
+    return out
+
+
+def _load_history(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _save_history(path, registry):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(registry, f, ensure_ascii=False, indent=1, sort_keys=True)
+    os.replace(tmp, path)
+
+
+def merge(registry, fresh):
+    """Registry accumulates the TRUE incremental change, never a raw re-count: n_total is
+    corrected via _accumulate/_file_delta so re-applying an unchanged aggregate does not
+    double-count (a file that was fully reparsed and shrank can even DECREASE n_total). `last`
+    never regresses. by_project sums by key. `fresh` here is expected to be the CURRENT
+    AGGREGATE across every known source file (see refresh()), not a single file's own delta —
+    comparing that aggregate against the registry's previous total is what makes the guard
+    meaningful across an unbounded number of files."""
+    out = _accumulate(registry, fresh)
+    for k, v in fresh.items():
+        out[k]["n_window"] = v.get("n", 0)
     for e in out.values():
         e.setdefault("n_window", 0); e.setdefault("by_project", {})
     return out
@@ -154,10 +224,67 @@ def save(path, items, meta=None):
     os.replace(tmp, path)
 
 
+def _scan_history_dir(history_dir, roots, history):
+    """Walk `history_dir` (same recursive os.walk as before — includes subagents/), updating
+    `history` (mutated in place, keyed by absolute source_path) for every file that grew,
+    appeared, or shrank since last time. A file whose SIZE matches what's stored is skipped
+    entirely (no open/read) — this is the actual speed win over grep-ing 1.4 GB every call.
+    Returns nothing; `history`'s entries are the source of truth after this call."""
+    if not os.path.isdir(history_dir):
+        return
+    for dp, dn, fn in os.walk(history_dir):
+        for f in fn:
+            if not f.endswith(".jsonl"):
+                continue
+            fp = os.path.join(dp, f)
+            try:
+                st = os.stat(fp)
+            except OSError:
+                continue
+            entry = history.get(fp)
+            if entry is not None and entry.get("size") == st.st_size:
+                continue   # nothing new to read
+            if entry is not None and st.st_size >= entry.get("offset", 0):
+                offset = entry["offset"]
+                base_agents = entry.get("agents", {})
+                base_skills = entry.get("skills", {})
+            else:
+                offset = 0                     # new file, or size < offset: rotated/truncated -> reparse from scratch
+                base_agents, base_skills = {}, {}
+            agents_delta, skills_delta, new_offset = _scan_file(fp, offset, roots)
+            history[fp] = {
+                "offset": new_offset, "size": st.st_size, "mtime": st.st_mtime,
+                "agents": _grow_counts(base_agents, agents_delta),
+                "skills": _grow_counts(base_skills, skills_delta),
+            }
+
+
+def _aggregate(history, kind):
+    """Sum the `kind` ("agents"|"skills") baseline of every file EVER recorded in `history` —
+    not just the ones touched this pass — into one "n"-shaped dict. A file's cached
+    contribution survives it disappearing from disk (rotation is normal), same guarantee as
+    usage.py's own never-regressing dates."""
+    out = {}
+    for entry in history.values():
+        out = _grow_counts(out, entry.get(kind, {}))
+    return out
+
+
 def refresh(path, history_dir, kind="agents", roots=None):
-    """load -> extract -> merge -> save. Returns (items, meta)."""
+    """load -> scan changed files incrementally (via <state_dir>/usage-history.json) ->
+    aggregate -> merge -> save. Returns (items, meta).
+
+    NOTE (Tarea 42 scope): this call only writes `path` (the ONE output file for `kind`) —
+    `_scan_history_dir` always records BOTH agents/skills baselines per file regardless of
+    which kind triggered the call, but the sibling kind's own usage-*.json is only refreshed
+    when IT is explicitly requested. Tarea 43 changes this to write both on every call."""
+    state_dir = os.path.dirname(path)
+    hist_path = os.path.join(state_dir, "usage-history.json")
+    history = _load_history(hist_path)
+    _scan_history_dir(history_dir, roots or {}, history)
+    _save_history(hist_path, history)
     reg = load(path)
-    fresh = (extract_agents if kind == "agents" else extract_skills)(history_dir, roots)
+    fresh = _aggregate(history, kind)
     window = min((v["last"] for v in fresh.values() if v.get("last")), default=None)
     items = merge(reg, fresh)
     meta = {"updated": date.today().isoformat(), "history_window_from": window}

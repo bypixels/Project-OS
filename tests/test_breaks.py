@@ -50,6 +50,15 @@ class TestBreaks(unittest.TestCase):
     def test_usage_never_regresses(self):
         r = U.merge({"a": {"last": "2026-08-10", "n_total": 9}}, {"a": {"last": "2026-08-01", "n": 1}})
         self.assertEqual(r["a"]["last"], "2026-08-10")
+    def test_usage_history_diff_guard(self):
+        # si el registro por archivo se ignorara (se sumara el conteo bruto en vez del delta),
+        # una relectura completa del mismo archivo duplicaría el conteo
+        with mock.patch.object(U, "_file_delta", lambda new, old: new):   # guard disabled: delta = new, ignora old
+            out = U._accumulate({"reviewer": {"n_total": 7}}, {"reviewer": {"n": 7}})   # ya se había contado
+            self.assertEqual(out["reviewer"]["n_total"], 14)                             # duplicado -> canary red
+        out2 = U._accumulate({"reviewer": {"n_total": 7}}, {"reviewer": {"n": 7}})       # guard presente
+        self.assertEqual(out2["reviewer"]["n_total"], 7)                                 # sin cambio: ya estaba contado
+
     def test_sessions_no_text_leak_guard(self):
         leak = {"session_id": "s1", "prompt_text": "the secret prompt string XYZ123"}
         self.assertNotIn("prompt_text", SESS._redact_unknown_fields(leak))                     # guard present
