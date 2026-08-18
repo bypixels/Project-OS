@@ -146,6 +146,33 @@ cabina hooks            # prints the settings.json entries
 cabina hooks --write    # merges them into ~/.claude/settings.json (backup kept, idempotent)
 ```
 
+### The contract travels with the repo — CI mode
+
+`cabina check --repo .` validates **one repository on its own**: no user home, no cache, no history.
+Drop a `.cabina.toml` in the repo root to tune its contract; run it on pull requests so an agent that
+breaks the contract cannot be merged.
+
+```sh
+cabina init > .cabina.toml          # example contract for this repo
+cabina init --ci > .github/workflows/cabina.yml
+cabina check --repo .               # exit 1 on invalid agents ([check] strict = true: warnings too)
+```
+
+### Two machines, one picture
+
+```sh
+cabina export -o mac.json           # on the Mac
+cabina export -o win.json           # on the Windows box
+cabina compare mac.json win.json    # agents/skills/projects only on one side; agents whose state differs
+```
+
+### Committing what cabina changed (opt-in)
+
+When cabina archives an agent or skill, or saves a document at your request, the dialog offers
+*"and commit this change"*. It commits **only that path** (`git add -A -- <path>`, then
+`git commit -- <path>`), never `-A`, never automatically, and refuses mid-merge/rebase. Other files
+you or an agent had staged are left exactly as they were.
+
 ### Run the health check on a schedule
 
 ```sh

@@ -24,6 +24,7 @@ def main(argv=None):
     ck = sub.add_parser("check", help="health check (exit 1 on critical)")
     ck.add_argument("--quick", action="store_true", help="skip slow detectors (usage history)")
     ck.add_argument("--json", action="store_true"); ck.add_argument("--notify", action="store_true", help="desktop notification if anything to see")
+    ck.add_argument("--repo", metavar="PATH", help="check ONE repository on its own (CI mode): .claude/agents against .cabina.toml; no home, no cache")
 
     ag = sub.add_parser("agents", help="agent roster")
     ag.add_argument("action", nargs="?", choices=["list", "archive", "refs"], default="list")
@@ -36,6 +37,9 @@ def main(argv=None):
     sc.add_argument("--worktrees", action="store_true", help="also measure worktree sizes with du (~2 s each)")
 
     sub.add_parser("fleet", help="terminal TUI")
+    ex = sub.add_parser("export", help="export this environment as JSON (agents, skills, harness, projects)"); ex.add_argument("-o", "--out")
+    cp = sub.add_parser("compare", help="compare two exports (two machines, or then vs now)"); cp.add_argument("a"); cp.add_argument("b")
+    ini = sub.add_parser("init", help="print an example .cabina.toml (--ci: the GitHub Actions workflow)"); ini.add_argument("--ci", action="store_true")
     sub.add_parser("guard", help="hook: PreToolUse on Edit|Write — validate agent files (reads stdin JSON)")
     br = sub.add_parser("brief", help="hook: SessionStart — print a short health/context brief"); br.add_argument("--cwd")
     hk = sub.add_parser("hooks", help="print the settings.json entries for guard+brief; --write merges them")
@@ -54,6 +58,10 @@ def main(argv=None):
         cfg["scan"]["measure_worktrees"] = cfg["scan"]["measure_worktrees"] or a.worktrees
         d = scan.run(cfg); p = scan.save(cfg, d)
         print(f"scanned {len(d['projects'])} projects · {len(d['global']['agents'])} global agents · {len(d['global']['skills'])} global skills -> {p}"); return 0
+    if a.cmd == "check" and a.repo:
+        from . import repo
+        r = repo.check_repo(a.repo)
+        print(json.dumps(r, indent=1) if a.json else repo.render(r)); return r["exit"]
     if a.cmd == "check":
         from . import check
         F = check.run(cfg, quick=a.quick)
@@ -63,6 +71,21 @@ def main(argv=None):
         return 1 if any(f["sev"] == "crit" for f in F) else 0
     if a.cmd == "agents":
         return _agents(cfg, a)
+    if a.cmd == "export":
+        from . import snapshot
+        d = snapshot.export(cfg); txt = json.dumps(d, indent=1, ensure_ascii=False)
+        if a.out:
+            open(a.out, "w", encoding="utf-8").write(txt); print(f"exported {len(d['agents'])} agents, {len(d['skills'])} skills, {len(d['projects'])} projects -> {a.out}")
+        else:
+            print(txt)
+        return 0
+    if a.cmd == "compare":
+        from . import snapshot
+        A = json.load(open(a.a, encoding="utf-8")); B = json.load(open(a.b, encoding="utf-8"))
+        print(snapshot.render_compare(snapshot.compare(A, B), A.get("machine") or a.a, B.get("machine") or a.b)); return 0
+    if a.cmd == "init":
+        from . import repo
+        print(repo.CI_YAML if a.ci else repo.EXAMPLE_TOML); return 0
     if a.cmd == "fleet":
         from . import fleet; return fleet.run(cfg) or 0
     if a.cmd == "guard":

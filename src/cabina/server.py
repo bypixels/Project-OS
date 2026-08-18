@@ -4,7 +4,7 @@ save doc (guarded), open path, rescan cache."""
 import os, sys, json, secrets, threading, webbrowser, time
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
-from . import scan, skills as SK, projects as PROJ, harness as HAR, usage, live as LIVE, host, drift as DR
+from . import scan, skills as SK, projects as PROJ, harness as HAR, usage, live as LIVE, host, drift as DR, gitops as GO
 from .roster import Roster
 from .docs import Docs
 from .i18n import STRINGS
@@ -112,6 +112,14 @@ class App:
         ok, msg = host.open_path(os.path.expanduser(b["path"])); return {"ok": ok, "message": msg}
     def api_focus(self, b):
         ok, msg = self.live.focus(b["pane"]); return {"ok": ok, "message": msg}
+    def api_commit(self, b):
+        """Commit ONE path cabina just changed. Only on explicit request from the UI checkbox."""
+        path = os.path.expanduser(b["path"]); msg = (b.get("message") or "cabina: change")[:200]
+        ok, out = GO.commit_path(path, msg)
+        return {"ok": ok, "message": out, "in_repo": GO.repo_root(path) is not None}
+    def api_in_repo(self, q):
+        p = os.path.expanduser(q.get("path", [""])[0]); root = GO.repo_root(p)
+        return {"in_repo": root is not None, "root": root}
     def api_rescan(self, b):
         def go():
             d = scan.run(self.cfg); scan.save(self.cfg, d)
@@ -125,9 +133,9 @@ def make_handler(app):
     GETS = {"/api/agents": lambda q: app.api_agents(), "/api/skills": lambda q: app.api_skills(),
             "/api/projects": lambda q: app.api_projects(), "/api/harness": lambda q: app.api_harness(),
             "/api/live": lambda q: app.api_live(), "/api/docs": lambda q: app.api_docs(),
-            "/api/doc": app.api_doc, "/api/references": app.api_references}
+            "/api/doc": app.api_doc, "/api/references": app.api_references, "/api/in-repo": app.api_in_repo}
     POSTS = {"/api/archive": app.api_archive, "/api/create": app.api_create, "/api/archive-skill": app.api_archive_skill,
-             "/api/save-doc": app.api_save_doc, "/api/open": app.api_open, "/api/focus": app.api_focus, "/api/rescan": app.api_rescan}
+             "/api/save-doc": app.api_save_doc, "/api/open": app.api_open, "/api/focus": app.api_focus, "/api/rescan": app.api_rescan, "/api/commit": app.api_commit}
 
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a): pass
