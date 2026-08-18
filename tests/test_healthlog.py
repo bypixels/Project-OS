@@ -127,6 +127,44 @@ class TestHealthlog(unittest.TestCase):
         finally:
             env.cleanup()
 
+    def test_append_recovers_from_naive_when_in_last_line(self):
+        # A `when` stored without a tz offset (e.g. hand-edited, or written by a future bug)
+        # must not permanently wedge the log: `now - when` on an aware/naive mismatch raises
+        # TypeError, and _should_append must treat that as "yes, append" rather than let the
+        # exception escape to append()'s outer try/except and return False forever.
+        from datetime import datetime
+        env = Env()
+        try:
+            p = HL.path(env.cfg)
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            naive_when = datetime.now().isoformat(timespec="seconds")  # no tzinfo, looks recent
+            with open(p, "w", encoding="utf-8") as f:
+                f.write(json.dumps({"when": naive_when, "crit": 1, "warn": 0, "info": 0}) + "\n")
+            self.assertTrue(HL.append(env.cfg, _findings(crit=1)))  # same counts as the naive line
+            self.assertEqual(len(HL.read(env.cfg)), 2)
+        finally:
+            env.cleanup()
+
+    def test_cli_check_quick_does_not_write_a_health_line(self):
+        env = Env()
+        try:
+            open(os.path.join(env.alpha, ".claude", "agents", "broken.md"), "w").write(
+                "---\nname: broken\nmodel: sonnet\n---\nBody without a description.\n")
+            from cabina import scan
+            scan.save(env.cfg, scan.run(env.cfg))
+            with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False) as f:
+                f.write(f"claude_home = '{env.claude}'\ncodex_home = '{env.codex}'\nroots = ['{env.projects}']\n"
+                        f"state_dir = '{env.state}'\n[live]\nprovider = \"none\"\n[scan]\nmeasure_worktrees = false\ncheck_mcp = false\n")
+                cfgp = f.name
+            src = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
+            r = subprocess.run([sys.executable, "-m", "cabina", "--config", cfgp, "check", "--quick", "--json"],
+                                capture_output=True, text=True, env={**os.environ, "PYTHONPATH": src}, timeout=60)
+            os.unlink(cfgp)
+            self.assertEqual(r.returncode, 1, r.stderr)  # still a crit finding -> exit 1
+            self.assertEqual(HL.read(env.cfg), [])  # quick run: no trend line written
+        finally:
+            env.cleanup()
+
 
 if __name__ == "__main__":
     unittest.main()

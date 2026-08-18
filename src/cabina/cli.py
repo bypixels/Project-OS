@@ -86,7 +86,7 @@ def main(argv=None):
     if a.cmd == "check":
         from . import check, healthlog
         F = check.run(cfg, quick=a.quick)
-        healthlog.append(cfg, F)
+        if not a.quick: healthlog.append(cfg, F)   # a quick run skips slow detectors: never record a false sawtooth
         if a.json: print(json.dumps(F, ensure_ascii=False, indent=1))
         else: print(check.render(cfg, F, color=sys.stdout.isatty()))
         if a.notify: check.notify(cfg, F)

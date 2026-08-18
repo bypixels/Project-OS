@@ -47,16 +47,19 @@ def _last_line(p):
 
 def _should_append(last, counts, now):
     """True unless `last` has the same (crit, warn, info) as `counts` AND is less than 24h old
-    — in which case appending would be a pure duplicate of an unchanged state."""
+    — in which case appending would be a pure duplicate of an unchanged state. Any failure to
+    parse/compare `last["when"]` (missing, malformed, or a naive datetime that can't be diffed
+    against `now`'s tz-aware clock) means "append" rather than get permanently stuck refusing to
+    write over a line it can no longer make sense of."""
     if last is None:
         return True
     if (last.get("crit"), last.get("warn"), last.get("info")) != (counts["crit"], counts["warn"], counts["info"]):
         return True
     try:
         when = datetime.fromisoformat(last["when"])
+        return (now - when) >= timedelta(hours=24)
     except Exception:
         return True
-    return (now - when) >= timedelta(hours=24)
 
 
 def _prune(p, days):
