@@ -40,7 +40,8 @@ pre.doc,pre.preview{font-family:var(--mono);font-size:12.5px;line-height:1.5;whi
 <script>
 const TOKEN="__TOKEN__", LANG="__LANG__", HUB="__HUB__"==="1";
 const I18N={
-en:{tabs:{agents:"Agents",live:"Live",skills:"Skills",projects:"Projects",harness:"Harness",docs:"Docs",activity:"Activity"},
+en:{tabs:{health:"Health",agents:"Agents",live:"Live",skills:"Skills",projects:"Projects",harness:"Harness",docs:"Docs",activity:"Activity"},
+ recheck:"Re-check",checking:"checking…",ranAt:"last run: {t}",copy:"Copy",copied:"Copied",healthOk:"All clear.",sevCrit:"critical",sevWarn:"warnings",sevInfo:"info",
  pickSession:"Select a session.",noSessions:"No sessions in this window.",untitled:"(untitled)",
  sessStarted:"started",sessDuration:"duration",sessTurns:"turns",sessFiles:"files touched",
  sessAgents:"agents used",sessSkills:"skills used",sessCommits:"commits",sessSubagents:"subagents",
@@ -75,7 +76,8 @@ en:{tabs:{agents:"Agents",live:"Live",skills:"Skills",projects:"Projects",harnes
  docsHint:"documents",older:"> 30 days",memHar:"MEMORY / HARNESS",claudeMd:"CLAUDE.md",agentWorking:"● agent working · editing blocked",docsFoot:"{s} of {n} documents · {p} projects",oldFoot:"· {n} untouched for over 30 days",blockedFoot:"· {p}: editing blocked",
  modified:"modified",days:"days",maybeStale:"· possibly stale",blockedMsg:"An agent is working in <b>{p}</b> right now. You can read, but editing is blocked until it finishes — editing now could overwrite its work.",edit:"Edit",openExt:"Open in editor",reload:"Reload",editing:"editing",
  editHint:"Before saving, cabina checks nobody touched the file while you edited, and keeps a copy of the previous version.",save:"Save",noChanges:"no changes",saving:"saving…",seeCurrent:"See current version",loseEdit:"You will lose your current edit. Reload?",discard:"You are editing another document. Discard the changes?"},
-es:{tabs:{agents:"Agentes",live:"En vivo",skills:"Skills",projects:"Proyectos",harness:"Harness",docs:"Documentos",activity:"Actividad"},
+es:{tabs:{health:"Salud",agents:"Agentes",live:"En vivo",skills:"Skills",projects:"Proyectos",harness:"Harness",docs:"Documentos",activity:"Actividad"},
+ recheck:"Volver a chequear",checking:"comprobando…",ranAt:"última corrida: {t}",copy:"Copiar",copied:"Copiado",healthOk:"Todo en orden.",sevCrit:"críticos",sevWarn:"avisos",sevInfo:"info",
  pickSession:"Seleccioná una sesión.",noSessions:"No hay sesiones en esta ventana.",
  untitled:"(sin título)",sessStarted:"inicio",sessDuration:"duración",sessTurns:"turnos",
  sessFiles:"archivos tocados",sessAgents:"agentes usados",sessSkills:"skills usados",
@@ -112,13 +114,13 @@ es:{tabs:{agents:"Agentes",live:"En vivo",skills:"Skills",projects:"Proyectos",h
  modified:"modificado",days:"días",maybeStale:"· posiblemente desactualizado",blockedMsg:"Hay un agente trabajando en <b>{p}</b> ahora mismo. Podés leer, pero la edición está bloqueada hasta que termine — editar ahora podría pisar su trabajo.",edit:"Editar",openExt:"Abrir en el editor",reload:"Recargar",editing:"editando",
  editHint:"Antes de guardar se verifica que nadie haya tocado el archivo mientras editabas, y se guarda una copia de la versión anterior.",save:"Guardar",noChanges:"sin cambios",saving:"guardando…",seeCurrent:"Ver la versión actual",loseEdit:"Vas a perder tu edición actual. ¿Recargar?",discard:"Estás editando otro documento. ¿Descartar los cambios?"}};
 const T=(k,v)=>{let s=(I18N[LANG]||I18N.en)[k]??I18N.en[k]??k; if(typeof s==="object")return s; return v?s.replace(/\{(\w+)\}/g,(_,x)=>v[x]??""):s;};
-const S={view:"agents",data:null,live:null,skills:null,projs:null,har:null,docs:null,doc:null,activity:null,hub:null,editing:false,sel:null,q:"",chips:new Set(),mode:null,focus:null,loaded:new Set()};
+const S={view:HUB?"agents":"health",data:null,live:null,skills:null,projs:null,har:null,docs:null,doc:null,activity:null,hub:null,health:null,healthChecking:false,editing:false,sel:null,q:"",chips:new Set(),mode:null,focus:null,loaded:new Set()};
 const $=id=>document.getElementById(id);const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 async function GET(u){return (await fetch(u)).json();}async function POST(u,b){return (await fetch(u,{method:"POST",headers:{"Content-Type":"application/json","X-Cabina-Token":TOKEN},body:JSON.stringify(b)})).json();}
 let tt;function toast(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(tt);tt=setTimeout(()=>t.classList.remove("show"),2600);}
-const VIEWS=HUB?["agents","skills","projects","harness","activity"]:["agents","live","skills","projects","harness","docs","activity"];
+const VIEWS=HUB?["agents","skills","projects","harness","activity"]:["health","agents","live","skills","projects","harness","docs","activity"];
 $("tabs").innerHTML=VIEWS.map(v=>`<button class="tab" data-v="${v}">${esc(T("tabs")[v])}</button>`).join("");
-const LOADERS={skills:()=>loadSkills(),projects:()=>loadProjs(),harness:()=>loadHar(),activity:()=>loadActivity(),docs:()=>loadDocs()};
+const LOADERS={health:()=>loadHealth(),skills:()=>loadSkills(),projects:()=>loadProjs(),harness:()=>loadHar(),activity:()=>loadActivity(),docs:()=>loadDocs()};
 function ensureLoaded(v){if(S.loaded.has(v))return;const f=LOADERS[v];if(!f)return;S.loaded.add(v);f();}
 document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{S.view=t.dataset.v;S.mode=null;S.sel=null;S.q="";S.chips.clear();ensureLoaded(S.view);render();});
 async function loadAgents(){S.data=await GET("/api/agents");render();if(S.view==="agents"){if(S.mode==="create")renderCreate();else if(S.sel)renderAgentDetail();}}
@@ -135,11 +137,27 @@ function renderHubBanner(){if(!HUB||!S.hub)return;let el=$("hubBanner");if(!el){
 async function loadLive(){S.live=await GET("/api/live");renderStats();if(S.view==="live")renderLive();}
 function renderStats(){const a=S.data?.agents||[],l=S.live?.agents||[];const n=k=>a.filter(x=>x.category===k).length;const w=l.filter(x=>x.status==="working").length,d=l.filter(x=>x.status==="done").length;
  $("stats").innerHTML=`<span class="stat"><b>${w}</b> ${T("working")}</span>`+(d?`<span class="stat warn"><b>${d}</b> ${T("done")}</span>`:"")+`<span class="stat ok"><b>${n("valid")}</b> ${T("ok")}</span>`+(n("warnings")?`<span class="stat warn"><b>${n("warnings")}</b> ${T("warnings")}</span>`:"")+(n("invalid")?`<span class="stat bad"><b>${n("invalid")}</b> ${T("invalid")}</span>`:"");}
-function render(){document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("on",t.dataset.v===S.view));renderStats();({agents:renderAgents,skills:renderSkills,projects:renderProjects,harness:renderHarness,docs:renderDocs,live:renderLive,activity:renderActivity})[S.view]();}
+function render(){document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("on",t.dataset.v===S.view));renderStats();({health:renderHealth,agents:renderAgents,skills:renderSkills,projects:renderProjects,harness:renderHarness,docs:renderDocs,live:renderLive,activity:renderActivity})[S.view]();}
 async function commitBox(id, path){const r=await GET("/api/in-repo?path="+encodeURIComponent(path));const el=$(id);if(!el)return;el.innerHTML=r.in_repo?`<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--dim)"><input type="checkbox" id="${id}-cb"> ${T("commitToo")}</label>`:`<span class="muted">${T("notRepo2")}</span>`;}
 async function maybeCommit(id, path, message){const cb=$(id+"-cb");if(!cb||!cb.checked)return;const r=await POST("/api/commit",{path,message});toast(r.ok?`${T("committed")} · ${r.message}`:T("commitFail",{m:r.message}));}
 function chipFocus(){return S.focus?`<button class="chip on" id="chipFocus">${esc(T("focusChip",{p:S.focus}))}</button>`:"";}function bindFocus(){const c=$("chipFocus");if(c)c.onclick=()=>{S.focus=null;render();};}
 function mchip(x){return x.machine?` <span class="tl">${esc(x.machine)}</span>`:"";}
+// ---------- HEALTH ----------
+async function loadHealth(){S.health=await GET("/api/health");if(S.view==="health")renderHealth();}
+function healthSevClass(sev){return sev==="crit"?"bad":sev==="warn"?"warn":"info";}
+function healthSevPill(sev){return sev==="crit"?"invalid":sev==="warn"?"warnings":"document";}
+function healthSevLabel(sev){return sev==="crit"?T("sevCrit"):sev==="warn"?T("sevWarn"):T("sevInfo");}
+function renderHealth(){if(!S.health){$("filters").innerHTML="";$("rows").innerHTML=`<div class="empty">${T("loading")}</div>`;$("detail").innerHTML="";return;}
+ const H=S.health,ord={crit:0,warn:1,info:2};const fs=(H.findings||[]).slice().sort((p,r)=>(ord[p.sev]??9)-(ord[r.sev]??9));
+ const n={crit:0,warn:0,info:0};fs.forEach(f=>{if(f.sev in n)n[f.sev]++;});
+ $("filters").innerHTML=`<span class="stat bad"><b>${n.crit}</b> ${T("sevCrit")}</span><span class="stat warn"><b>${n.warn}</b> ${T("sevWarn")}</span><span class="stat"><b>${n.info}</b> ${T("sevInfo")}</span><span class="muted">${T("ranAt",{t:esc(H.ran_at||"—")})}</span><button class="btn primary" id="bRecheck" style="margin-left:auto" ${S.healthChecking?"disabled":""}>${S.healthChecking?T("checking"):T("recheck")}</button>`;
+ $("bRecheck").onclick=async()=>{S.healthChecking=true;renderHealth();await loadHealth();S.healthChecking=false;renderHealth();};
+ let body=H.error?`<div class="box bad">${esc(H.error)}</div>`:"";
+ body+=fs.length?fs.map((f,i)=>`<div class="box ${healthSevClass(f.sev)}" style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center"><b>${esc(f.title)}</b><span class="pill p-${healthSevPill(f.sev)}">${healthSevLabel(f.sev)}</span></div>`+(f.detail?`<pre class="doc" style="margin-top:6px">${esc(f.detail)}</pre>`:"")+(f.fix?`<div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><code id="hfix${i}">${esc(f.fix)}</code><button class="btn" data-copy="${i}">${T("copy")}</button></div>`:"")+`</div>`).join(""):(H.error?"":`<div class="empty">${T("healthOk")}</div>`);
+ $("rows").innerHTML=body;$("detail").innerHTML="";
+ document.querySelectorAll("[data-copy]").forEach(b=>b.onclick=async()=>{const i=b.dataset.copy,el=$("hfix"+i),txt=fs[+i].fix;
+  try{await navigator.clipboard.writeText(txt);toast(T("copied"));}
+  catch(e){const rg=document.createRange();rg.selectNodeContents(el);const s=window.getSelection();s.removeAllRanges();s.addRange(rg);}});}
 // ---------- AGENTS ----------
 function renderAgents(){if(!S.data){$("rows").innerHTML=`<div class="empty">${T("loading")}</div>`;return;}const a=S.data.agents;
  const chips=[["global",T("global")],["project",T("project")],["problems",T("problems")],["unused",T("unused")],["docs",T("documents")]].concat(S.data.codex_present?[["codex","codex"]]:[]);
