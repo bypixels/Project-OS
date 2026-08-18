@@ -2,7 +2,7 @@
 control plane before acting: is anyone working in project X? does this agent meet the contract?
 who references Y? Nothing here writes. Newline-delimited JSON-RPC 2.0, stdlib only.
 """
-import os, sys, json
+import os, sys, json, time
 from . import scan, check as CHECK, live as LIVE, drift as DR, projects as PROJ, harness as HAR, usage
 from .roster import Roster
 
@@ -36,12 +36,18 @@ class Server:
         self.cfg = cfg
         self.data = scan.ensure(cfg)
         self.live = LIVE.get(cfg)
-        self._roster = None
+        self._roster = None; self._t = 0
 
     def roster(self):
-        if self._roster is None:
+        """Same 30s TTL as server.py App.roster(): the stdio server lives for a whole session,
+        so a Roster snapshot cached forever in __init__ would never see a rescan."""
+        if self._roster is None or time.time() - self._t > 30:
+            d = scan.load(self.cfg)
+            if d is not None:
+                self.data = d
             self._roster = Roster(self.cfg, self.data)
             self._rows, self._items = self._roster.load(refresh_usage=False)
+            self._t = time.time()
         return self._roster, self._rows, self._items
 
     # ---- tools ----

@@ -239,7 +239,10 @@ def _scan_history_dir(history_dir, roots, history):
             else:
                 offset = 0                     # new file, or size < offset: rotated/truncated -> reparse from scratch
                 base_agents, base_skills = {}, {}
-            agents_delta, skills_delta, new_offset = _scan_file(fp, offset, roots)
+            try:
+                agents_delta, skills_delta, new_offset = _scan_file(fp, offset, roots)
+            except Exception:
+                continue   # deleted/rotated/unreadable between stat() and scan: degrade to "unknown" for this file only
             history[fp] = {
                 "offset": new_offset, "size": st.st_size, "mtime": st.st_mtime,
                 "agents": _grow_counts(base_agents, agents_delta),

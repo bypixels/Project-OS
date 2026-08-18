@@ -50,6 +50,32 @@ class TestMcpInProcess(unittest.TestCase):
         # and the server has no handler that could write: every t_* method name is a read
         self.assertFalse([m for m in dir(MCP.Server) if m.startswith("t_") and any(k in m for k in ("archive", "delete", "write", "create", "save", "commit"))])
 
+class TestMcpRosterFreshness(unittest.TestCase):
+    """The stdio MCP server lives for a whole Claude Code session (unlike server.py's
+    per-request HTTP handler), so a Roster snapshot cached forever in __init__ would answer
+    cabina_agent/cabina_agents/etc with stale data for the entire session. Mirrors server.py's
+    App.roster() 30s TTL."""
+    def setUp(self):
+        self.env = Env(); scan.save(self.env.cfg, scan.run(self.env.cfg)); self.srv = MCP.Server(self.env.cfg)
+    def tearDown(self):
+        self.env.cleanup()
+
+    def call(self, _tool, **args):
+        r = self.srv.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": _tool, "arguments": args}})
+        self.assertFalse(r["result"].get("isError"), r); return json.loads(r["result"]["content"][0]["text"])
+
+    def test_agents_tool_picks_up_new_agent_after_rescan(self):
+        from _env import AGENT
+        names1 = {a["name"] for a in self.call("cabina_agents", project="alpha")["agents"]}
+        self.assertNotIn("newagent", names1)
+        agents_dir = os.path.join(self.env.alpha, ".claude", "agents")
+        open(os.path.join(agents_dir, "newagent.md"), "w").write(AGENT.format(n="newagent"))
+        scan.save(self.env.cfg, scan.run(self.env.cfg))   # cache now reflects the new agent
+        self.srv._t = 0                                    # force the TTL to be expired
+        names2 = {a["name"] for a in self.call("cabina_agents", project="alpha")["agents"]}
+        self.assertIn("newagent", names2)
+
+
 class TestMcpSubprocess(unittest.TestCase):
     def test_stdio_roundtrip(self):
         env = Env(); scan.save(env.cfg, scan.run(env.cfg))

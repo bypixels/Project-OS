@@ -177,6 +177,23 @@ class TestUsageHistoryRegistry(unittest.TestCase):
             self.assertEqual(items["reviewer"]["n_total"], 42)     # 40 + 2, no 2, no 40
             self.assertNotIn("n_window", items["reviewer"])        # save() ya no lo escribe
 
+    def test_scan_history_dir_skips_unreadable_file_without_aborting(self):
+        # un archivo que desaparece/rota entre el os.stat() y el _scan_file() (o que se vuelve
+        # ilegible) no debe tumbar refresh() entero: usage.py degrada a "unknown" SOLO para ese
+        # archivo (docstring del modulo), el resto se procesa igual.
+        p, history_dir, roots = self._paths()
+        failing = self.env.usage_history_file
+        orig = U._scan_file
+        def flaky(path, offset, roots_):
+            if path == failing:
+                raise OSError("boom")
+            return orig(path, offset, roots_)
+        with mock.patch.object(U, "_scan_file", side_effect=flaky):
+            items, _ = U.refresh(p, history_dir, "agents", roots)
+        self.assertIn("nested-from-subagent", items)   # del otro archivo, procesado con normalidad
+        history = U._load_history(os.path.join(self.env.state, "usage-history.json"))
+        self.assertNotIn(failing, history)              # entrada del archivo fallido: ausente/sin tocar
+
     def test_scan_file_skips_regex_on_lines_without_the_needle(self):
         # D-F1: _scan_file no debe correr _CWD.search (y por tanto _project_of) sobre lineas
         # que ni siquiera contienen "subagent_type" o el patron de Skill — un pre-filtro de
