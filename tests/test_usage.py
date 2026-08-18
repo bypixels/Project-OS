@@ -107,5 +107,17 @@ class TestUsageHistoryRegistry(unittest.TestCase):
         items, _ = U.refresh(p, history_dir, "agents", roots)
         self.assertEqual(items["reviewer"]["n_total"], 1)     # no se suma lo viejo + lo nuevo
 
+    def test_agents_then_skills_refresh_does_not_lose_the_skill_invocation(self):
+        # el escenario exacto del bug: dos llamadas con distinto kind sobre el mismo archivo,
+        # que contiene AMBOS needles en líneas nuevas.
+        p, history_dir, roots = self._paths()
+        skills_path = os.path.join(self.env.state, "usage-skills.json")
+        self.env.append_usage_line(
+            '{"timestamp":"2026-08-05T00:00:00Z","cwd":"%s","x":{"name":"Skill","input":{"skill":"deploy"}}}' % self.env.alpha)
+        U.refresh(p, history_dir, "agents", roots)                          # dispara la unica pasada
+        skill_items, _ = U.refresh(skills_path, history_dir, "skills", roots)  # llega DESPUES, mismo archivo
+        self.assertGreaterEqual(skill_items["deploy"]["n_total"], 1)        # antes de la enmienda: 0 (perdido)
+        self.assertIn("deploy", U.load(skills_path))                        # y quedo PERSISTIDO en disco
+
 if __name__ == "__main__":
     unittest.main()

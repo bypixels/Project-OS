@@ -270,26 +270,43 @@ def _aggregate(history, kind):
     return out
 
 
-def refresh(path, history_dir, kind="agents", roots=None):
-    """load -> scan changed files incrementally (via <state_dir>/usage-history.json) ->
-    aggregate -> merge -> save. Returns (items, meta).
+def _save_sibling_output(state_dir, kind, items, meta):
+    """Save the usage-agents.json/usage-skills.json result for `kind` ("agents"|"skills")."""
+    p = os.path.join(state_dir, f"usage-{kind}.json")
+    save(p, items, meta)
 
-    NOTE (Tarea 42 scope): this call only writes `path` (the ONE output file for `kind`) —
-    `_scan_history_dir` always records BOTH agents/skills baselines per file regardless of
-    which kind triggered the call, but the sibling kind's own usage-*.json is only refreshed
-    when IT is explicitly requested. Tarea 43 changes this to write both on every call."""
-    state_dir = os.path.dirname(path)
+
+def _refresh_both(state_dir, history_dir, roots):
+    """One pass over `history_dir`'s new bytes feeds BOTH usage-agents.json AND
+    usage-skills.json — never just the `kind` that happened to call refresh() first. Fixes the
+    bug where two independent refresh() calls (one per kind) on the SAME freshly-scanned file
+    used to leave whichever kind's own output file un-persisted until IT was explicitly
+    refreshed again — even though `_scan_history_dir` already had the data. Returns
+    {"agents": (items, meta), "skills": (items, meta)}."""
     hist_path = os.path.join(state_dir, "usage-history.json")
     history = _load_history(hist_path)
     _scan_history_dir(history_dir, roots or {}, history)
     _save_history(hist_path, history)
-    reg = load(path)
-    fresh = _aggregate(history, kind)
-    window = min((v["last"] for v in fresh.values() if v.get("last")), default=None)
-    items = merge(reg, fresh)
-    meta = {"updated": date.today().isoformat(), "history_window_from": window}
-    save(path, items, meta)
-    return items, meta
+    out = {}
+    for kind in ("agents", "skills"):
+        p = os.path.join(state_dir, f"usage-{kind}.json")
+        reg = load(p)
+        fresh = _aggregate(history, kind)
+        window = min((v["last"] for v in fresh.values() if v.get("last")), default=None)
+        items = merge(reg, fresh)
+        meta = {"updated": date.today().isoformat(), "history_window_from": window}
+        _save_sibling_output(state_dir, kind, items, meta)
+        out[kind] = (items, meta)
+    return out
+
+
+def refresh(path, history_dir, kind="agents", roots=None):
+    """load -> scan changed files incrementally (via <state_dir>/usage-history.json) ->
+    aggregate -> merge -> save. A single call refreshes BOTH usage-agents.json and
+    usage-skills.json under the hood (see _refresh_both); `kind` only picks which of the two
+    results this call returns. Returns (items, meta)."""
+    state_dir = os.path.dirname(path)
+    return _refresh_both(state_dir, history_dir, roots)[kind]
 
 
 def for_agent(items, name, project=None):

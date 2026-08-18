@@ -59,6 +59,26 @@ class TestBreaks(unittest.TestCase):
         out2 = U._accumulate({"reviewer": {"n_total": 7}}, {"reviewer": {"n": 7}})       # guard presente
         self.assertEqual(out2["reviewer"]["n_total"], 7)                                 # sin cambio: ya estaba contado
 
+    def test_usage_dual_output_single_pass_guard(self):
+        # si refresh() solo actualizara la salida de SU kind (el bug original), el otro kind
+        # perdería las invocaciones que aparecieron en la misma pasada.
+        env = Env()
+        try:
+            p = os.path.join(env.state, "usage-agents.json")
+            skills_path = os.path.join(env.state, "usage-skills.json")
+            history_dir = os.path.join(env.claude, "projects")
+            roots = {"alpha": env.alpha}
+            env.append_usage_line(
+                '{"timestamp":"2026-08-05T00:00:00Z","cwd":"%s","x":{"name":"Skill","input":{"skill":"deploy"}}}' % env.alpha)
+            with mock.patch.object(U, "_save_sibling_output", lambda *a, **k: None):  # guard disabled: solo guarda el kind pedido
+                U.refresh(p, history_dir, "agents", roots)
+                skill_items = U.load(skills_path)
+                self.assertNotIn("deploy", skill_items)                    # se perdio -> canary red
+            U.refresh(p, history_dir, "agents", roots)                     # guard presente
+            self.assertIn("deploy", U.load(skills_path))                   # no se perdio
+        finally:
+            env.cleanup()
+
     def test_sessions_no_text_leak_guard(self):
         leak = {"session_id": "s1", "prompt_text": "the secret prompt string XYZ123"}
         self.assertNotIn("prompt_text", SESS._redact_unknown_fields(leak))                     # guard present
