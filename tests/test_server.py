@@ -88,6 +88,10 @@ class TestServer(unittest.TestCase):
         files = subprocess.run(["git", "-C", a, "show", "--name-only", "--format=", "HEAD"], capture_output=True, text=True).stdout.split()
         self.assertEqual(files, ["CLAUDE.md"])          # AGENTS.md, .claude/... untouched by the commit
         code, r = self.post("/api/commit", {"path": "/tmp/nowhere.md", "message": "x"}); self.assertFalse(r["ok"])
+    def test_hub_mode_hides_live_docs_and_write_buttons(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        self.assertIn('["agents","skills","projects","harness","activity"]', html)   # hub-mode VIEWS, sin live/docs
+        self.assertIn('HUB?"":', html)                                               # al menos un control de escritura condicionado
     def test_unknown_routes(self):
         with self.assertRaises(urllib.error.HTTPError): self.get("/api/nope")
         code, _ = self.post("/api/nope", {}); self.assertEqual(code, 404)

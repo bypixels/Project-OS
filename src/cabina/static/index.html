@@ -116,7 +116,7 @@ const S={view:"agents",data:null,live:null,skills:null,projs:null,har:null,docs:
 const $=id=>document.getElementById(id);const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 async function GET(u){return (await fetch(u)).json();}async function POST(u,b){return (await fetch(u,{method:"POST",headers:{"Content-Type":"application/json","X-Cabina-Token":TOKEN},body:JSON.stringify(b)})).json();}
 let tt;function toast(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(tt);tt=setTimeout(()=>t.classList.remove("show"),2600);}
-const VIEWS=["agents","live","skills","projects","harness","docs","activity"];
+const VIEWS=HUB?["agents","skills","projects","harness","activity"]:["agents","live","skills","projects","harness","docs","activity"];
 $("tabs").innerHTML=VIEWS.map(v=>`<button class="tab" data-v="${v}">${esc(T("tabs")[v])}</button>`).join("");
 document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{S.view=t.dataset.v;S.mode=null;S.sel=null;S.q="";S.chips.clear();render();});
 async function loadAgents(){S.data=await GET("/api/agents");render();if(S.view==="agents"){if(S.mode==="create")renderCreate();else if(S.sel)renderAgentDetail();}}
@@ -135,9 +135,9 @@ function chipFocus(){return S.focus?`<button class="chip on" id="chipFocus">${es
 // ---------- AGENTS ----------
 function renderAgents(){if(!S.data){$("rows").innerHTML=`<div class="empty">${T("loading")}</div>`;return;}const a=S.data.agents;
  const chips=[["global",T("global")],["project",T("project")],["problems",T("problems")],["unused",T("unused")],["docs",T("documents")]].concat(S.data.codex_present?[["codex","codex"]]:[]);
- $("filters").innerHTML=`<input id="q" placeholder="${T("search")}" value="${esc(S.q)}">`+chips.map(([k,l])=>`<button class="chip ${S.chips.has(k)?"on":""}" data-c="${k}">${l}</button>`).join("")+chipFocus()+`<button class="btn primary" id="btnCreate" style="margin-left:auto">${T("create")}</button>`;
+ $("filters").innerHTML=`<input id="q" placeholder="${T("search")}" value="${esc(S.q)}">`+chips.map(([k,l])=>`<button class="chip ${S.chips.has(k)?"on":""}" data-c="${k}">${l}</button>`).join("")+chipFocus()+(HUB?"":`<button class="btn primary" id="btnCreate" style="margin-left:auto">${T("create")}</button>`);
  bindFocus();$("q").oninput=e=>{S.q=e.target.value;renderAgents();};document.querySelectorAll(".chip[data-c]").forEach(c=>c.onclick=()=>{const k=c.dataset.c;S.chips.has(k)?S.chips.delete(k):S.chips.add(k);renderAgents();});
- $("btnCreate").onclick=()=>{S.mode="create";S.sel=null;renderAgents();renderCreate();};
+ if(!HUB)$("btnCreate").onclick=()=>{S.mode="create";S.sel=null;renderAgents();renderCreate();};
  const q=S.q.toLowerCase();let sel=a.filter(x=>{if(S.focus&&x.project!==S.focus)return false;if(q&&!(x.name+" "+x.project+" "+x.description).toLowerCase().includes(q))return false;
   if(S.chips.has("global")&&x.project!=="global")return false;if(S.chips.has("project")&&x.project==="global")return false;if(S.chips.has("problems")&&!["invalid","warnings"].includes(x.category))return false;
   if(S.chips.has("unused")&&(x.uses>0||!x.is_agent||x.tool==="codex"))return false;if(S.chips.has("docs")&&x.category!=="document")return false;if(!S.chips.has("docs")&&x.category==="document")return false;if(S.chips.has("codex")&&x.tool!=="codex")return false;return true;});
@@ -221,8 +221,8 @@ function renderSessionDetail(){const x=(S.activity?.sessions||[]).find(y=>y.sour
 // Note: x.title is ALWAYS interpolated through esc() — Fase 2 (hub) depends on this staying true (R10, XSS).
 // ---------- PROJECTS ----------
 function renderProjects(){if(!S.projs){$("rows").innerHTML=`<div class="empty">${T("loading")}</div>`;$("filters").innerHTML="";return;}const a=S.projs.projects;
- $("filters").innerHTML=`<span class="muted">${T("projHint")}</span>`+chipFocus()+`<button class="btn" id="bRescan" style="margin-left:auto" title="${T("rescanT")}">${T("rescan")}</button>`;bindFocus();
- $("bRescan").onclick=async()=>{toast((await POST("/api/rescan",{})).message);setTimeout(()=>{loadAgents();loadSkills();loadProjs();loadHar();loadDocs();},45000);};
+ $("filters").innerHTML=`<span class="muted">${T("projHint")}</span>`+chipFocus()+(HUB?"":`<button class="btn" id="bRescan" style="margin-left:auto" title="${T("rescanT")}">${T("rescan")}</button>`);bindFocus();
+ if(!HUB)$("bRescan").onclick=async()=>{toast((await POST("/api/rescan",{})).message);setTimeout(()=>{loadAgents();loadSkills();loadProjs();loadHar();loadDocs();},45000);};
  $("rows").innerHTML=a.map(x=>{const wt=x.worktrees?` · ${x.worktrees}wt ${(x.worktrees_mb/1024).toFixed(1)}G`:"";const dot=x.worktrees_mb>5000?"invalid":(x.dirty>20||(x.memory_days!==null&&x.memory_days>30))?"warnings":"valid";
   return `<button class="row ${S.sel===x.name?"sel":""} ${S.focus===x.name?"focus":""}" data-k="${esc(x.name)}"><span class="dot d-${dot}"></span><span class="n">${esc(x.name)} <span class="muted">${esc(x.branch||"—")}</span></span><span class="w">${x.agents}ag · ${x.skills}sk${x.dirty?` · ${T("uncommitted",{n:x.dirty})}`:""}${wt}</span></button>`;}).join("");
  document.querySelectorAll(".row").forEach(r=>r.onclick=()=>{S.sel=r.dataset.k;renderProjects();renderProjDetail();});
