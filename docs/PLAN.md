@@ -2526,14 +2526,14 @@ de salida en la misma llamada — la línea base compartida siempre refleja lo y
 ### Tarea 40: Fixtures — transcripciones sintéticas para probar offset, truncado y alcance de subagentes
 **Archivos:** Modificar `tests/_env.py`
 
-- [ ] Paso 1: `tests/_env.py` no tiene hoy ningún helper para "hacer crecer" o "truncar" un archivo
+- [x] Paso 1: `tests/_env.py` no tiene hoy ningún helper para "hacer crecer" o "truncar" un archivo
       de historial de USO (el que existe, `touch_session`, solo cambia `mtime`, no contenido) — un
       test que llame a un método `env.grow_usage_history(...)` inexistente falla con
       `AttributeError`.
-- [ ] Paso 2: confirmar el `AttributeError` con
+- [x] Paso 2: confirmar el `AttributeError` con
       `python3 -m unittest discover -s tests -p "test_usage.py" -v` (test nuevo de la Tarea 41
       referenciándolo).
-- [ ] Paso 3: agregar a `Env`: (a) `append_usage_line(text)` — escribe una línea `.jsonl` más al
+- [x] Paso 3: agregar a `Env`: (a) `append_usage_line(text)` — escribe una línea `.jsonl` más al
       archivo de historial ya existente (`-x/s.jsonl`), simulando una sesión que sigue creciendo
       entre dos corridas de `refresh()`; (b) `truncate_usage_history(new_content)` — reemplaza el
       contenido completo del mismo archivo por algo más chico, simulando rotación/reescritura; (c)
@@ -2543,9 +2543,9 @@ de salida en la misma llamada — la línea base compartida siempre refleja lo y
       (d) exponer el atributo `self.usage_history_file` (el path del `.jsonl` principal, `-x/s.jsonl`)
       para que otras tareas (la 44, la 47) lo referencien directo en vez de reconstruir la ruta a
       mano — mismo criterio que `self.session_file` ya usa el resto de `Env`.
-- [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_usage.py" -v` → verde una vez escrita
+- [x] Paso 4: `python3 -m unittest discover -s tests -p "test_usage.py" -v` → verde una vez escrita
       la Tarea 41 (esta tarea sola no tiene aserciones propias, solo prepara el terreno).
-- [ ] Paso 5: `git add tests/_env.py && git commit -m "test: _env.py — fixtures de usage incremental (crecimiento, truncado, invocación anidada en subagents/)"`
+- [x] Paso 5: `git add tests/_env.py && git commit -m "test: _env.py — fixtures de usage incremental (crecimiento, truncado, invocación anidada en subagents/)"`
 
 ### Tarea 41: `usage._read_new_lines` + `_scan_file`: extracción de agentes y skills en una sola pasada por archivo
 **Archivos:** Modificar `src/cabina/usage.py`, `tests/test_usage.py`
@@ -2557,7 +2557,7 @@ reales"), duplicar acá es la decisión correcta, no un descuido. `_scan_file` e
 posible la línea base COMPARTIDA entre `agents` y `skills` (ver la enmienda arriba): siempre extrae
 ambos needles de las mismas líneas nuevas, nunca solo uno.
 
-- [ ] Paso 1: test que falla:
+- [x] Paso 1: test que falla:
   ```python
   def test_scan_file_extracts_both_needles_in_one_pass(self):
       with tempfile.TemporaryDirectory() as d:
@@ -2570,17 +2570,17 @@ ambos needles de las mismas líneas nuevas, nunca solo uno.
           self.assertEqual(skills["deploy"]["n"], 1)
           self.assertGreater(new_offset, 0)
   ```
-- [ ] Paso 2: `python3 -m unittest discover -s tests -p "test_usage.py" -v` →
+- [x] Paso 2: `python3 -m unittest discover -s tests -p "test_usage.py" -v` →
       `AttributeError: module 'cabina.usage' has no attribute '_scan_file'`.
-- [ ] Paso 3: en `usage.py`, agregar `_read_new_lines` (copia literal de la de `sessions.py`) y
+- [x] Paso 3: en `usage.py`, agregar `_read_new_lines` (copia literal de la de `sessions.py`) y
       `_scan_file(path, offset, roots)`: lee las líneas nuevas, corre `_AGENT` Y `_SKILL` sobre
       CADA línea en la misma pasada (misma lógica que `extract()` hoy, sin el needle-prefiltro de
       `grep` porque ya no hace falta), devuelve `(agents_delta, skills_delta, new_offset)` con la
       MISMA forma de entrada que `extract()` devuelve hoy (`{name: {"n", "last", "by_project"}}`) —
       pero acá representa solo lo leído en ESTA pasada, no un total. Nunca se llama a `_scan_file`
       pidiendo solo un needle: siempre devuelve los dos.
-- [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_usage.py" -v` → `OK`.
-- [ ] Paso 5: `git commit -am "feat: usage.py — _read_new_lines + _scan_file, extraccion de agentes y skills en una sola pasada"`
+- [x] Paso 4: `python3 -m unittest discover -s tests -p "test_usage.py" -v` → `OK`.
+- [x] Paso 5: `git commit -am "feat: usage.py — _read_new_lines + _scan_file, extraccion de agentes y skills en una sola pasada"`
 
 ### Tarea 42: Registro por archivo (`usage-history.json`) y `merge()` pasa de máximo a suma de deltas
 **Archivos:** Modificar `src/cabina/usage.py`, `tests/test_usage.py`, `tests/test_breaks.py`
@@ -2603,7 +2603,7 @@ quiere también limpiar el acumulado histórico) fuerza un recuento completo des
 es justamente el tipo de heurística frágil que este proyecto evita (ver "Guards" en CLAUDE.md: mide
 y avisa, no repara solo).
 
-- [ ] Paso 1: tests que fallan:
+- [x] Paso 1: tests que fallan:
   ```python
   def test_accumulates_across_two_incremental_refreshes(self):
       # dos refresh() sucesivos con una línea nueva en medio deben SUMAR, no promediar ni pisar
@@ -2629,18 +2629,18 @@ y avisa, no repara solo).
       out2 = U._accumulate({"reviewer": {"n_total": 7}}, {"reviewer": {"n": 7}})       # guard presente
       self.assertEqual(out2["reviewer"]["n_total"], 7)                                 # sin cambio: ya estaba contado
   ```
-- [ ] Paso 2: `AttributeError: module 'cabina.usage' has no attribute '_accumulate'` /
+- [x] Paso 2: `AttributeError: module 'cabina.usage' has no attribute '_accumulate'` /
       `'_file_delta'`.
-- [ ] Paso 3: agregar `_file_delta(new_counts, old_counts)` (resta por clave, nunca negativo hacia
+- [x] Paso 3: agregar `_file_delta(new_counts, old_counts)` (resta por clave, nunca negativo hacia
       fechas) y `_accumulate(registry_items, delta)` (aplica el delta al acumulador global,
       preservando el `max()` SOLO para `last`, y suma para `n_total`/`by_project`); reescribir
       `merge()` para usarlos por dentro sin romper su firma pública. Nombres FIJOS para leer/escribir
       `usage-history.json` (los usan las Tareas 43/44 tal cual, sin inventar variantes):
       `_load_history(path)` (tolera archivo ausente/corrupto, devuelve `{}`) y
       `_save_history(path, registry)` (mismo patrón `tmp` + `os.replace` que `save()`).
-- [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_usage.py" -v` y
+- [x] Paso 4: `python3 -m unittest discover -s tests -p "test_usage.py" -v` y
       `-p "test_breaks.py"` → ambos verdes.
-- [ ] Paso 5: `git commit -am "feat: usage.py — registro por archivo con diff, merge() acumula deltas en vez de tomar el maximo (evita doble conteo en truncado)"`
+- [x] Paso 5: `git commit -am "feat: usage.py — registro por archivo con diff, merge() acumula deltas en vez de tomar el maximo (evita doble conteo en truncado)"`
 
 ### Tarea 43: `refresh()` unificado — una sola pasada alimenta `usage-agents.json` Y `usage-skills.json`; elimina `_lines()` (grep + fallback)
 **Archivos:** Modificar `src/cabina/usage.py`, `tests/test_usage.py`, `tests/test_breaks.py`
@@ -2660,7 +2660,7 @@ resultados devolver. Así, si `roster.py` llama con `kind="agents"` y momentos d
 llama con `kind="skills"` sobre el mismo archivo recién leído, la segunda llamada ve delta cero
 **porque el trabajo ya se hizo en la primera** — no porque se haya perdido.
 
-- [ ] Paso 1: tests que fallan:
+- [x] Paso 1: tests que fallan:
   ```python
   def test_agents_then_skills_refresh_does_not_lose_the_skill_invocation(self):
       # el escenario exacto del bug: dos llamadas con distinto kind sobre el mismo archivo,
@@ -2687,17 +2687,17 @@ llama con `kind="skills"` sobre el mismo archivo recién leído, la segunda llam
       U.refresh(AGENTS_PATH, HIST, "agents", ROOTS)                  # guard presente
       self.assertIn("deploy", U.load(SKILLS_PATH))                   # no se perdio
   ```
-- [ ] Paso 2: `AttributeError: module 'cabina.usage' has no attribute '_refresh_both'` (o el
+- [x] Paso 2: `AttributeError: module 'cabina.usage' has no attribute '_refresh_both'` (o el
       escenario de pérdida se reproduce con el código viejo de dos `refresh()` independientes).
-- [ ] Paso 3: implementar `_refresh_both` como se describe arriba; `refresh()` público queda como
+- [x] Paso 3: implementar `_refresh_both` como se describe arriba; `refresh()` público queda como
       envoltorio de una línea. Nombre FIJO para el guardado del resultado que NO fue el `kind`
       pedido (lo usa el break-test de esta tarea tal cual): `_save_sibling_output(state_dir, kind,
       items, meta)` — guarda `usage-agents.json`/`usage-skills.json` según corresponda; `_refresh_both`
       llama a `_save_sibling_output` para AMBOS resultados, no solo el del `kind` que disparó la
       llamada. Borrar `_lines()` y los imports `subprocess`/`shutil` que ya no se usan.
-- [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_usage.py" -v` y
+- [x] Paso 4: `python3 -m unittest discover -s tests -p "test_usage.py" -v` y
       `-p "test_breaks.py"` → ambos `OK`.
-- [ ] Paso 5: `git commit -am "fix: usage.py — refresh() unificado, una pasada alimenta agents y skills a la vez (evita perder invocaciones por desync entre kinds); elimina grep y el fallback Windows"`
+- [x] Paso 5: `git commit -am "fix: usage.py — refresh() unificado, una pasada alimenta agents y skills a la vez (evita perder invocaciones por desync entre kinds); elimina grep y el fallback Windows"`
 
 ### Tarea 44: `threading.Lock` a nivel de módulo — serializar `refresh()` completo
 **Archivos:** Modificar `src/cabina/usage.py`, `tests/test_usage.py`
@@ -2713,7 +2713,7 @@ escribir registro), no solo el `save()` final — el `save()` con `tmp+os.replac
 sigue siendo atómico a nivel de archivo, pero eso no evita la carrera de lectura-modificación-escritura
 si dos hilos calculan su delta contra el mismo estado leído antes de que ninguno escriba.
 
-- [ ] Paso 1: test que falla — dos hilos llaman `refresh()` CADA UNO sobre un archivo DISTINTO con
+- [x] Paso 1: test que falla — dos hilos llaman `refresh()` CADA UNO sobre un archivo DISTINTO con
       un delta DISTINTO (el `.jsonl` principal de la fixture y el `subagents/sub.jsonl` que la
       Tarea 40 agrega, cada uno con una invocación de un agente distinto) — no el mismo archivo con
       el mismo delta: si ambos hilos leyeran y sumaran lo mismo, una pérdida real (uno pisa al otro)
@@ -2740,15 +2740,15 @@ si dos hilos calculan su delta contra el mismo estado leído antes de que ningun
       self.assertEqual(items["reviewer"]["n_total"], 1)              # delta del archivo principal
       self.assertEqual(items["nested-from-subagent"]["n_total"], 1)  # delta de subagents/sub.jsonl — sin lock, uno de los dos se pierde
   ```
-- [ ] Paso 2: corrido varias veces sin el lock, el test es intermitente/falla (carrera real,
+- [x] Paso 2: corrido varias veces sin el lock, el test es intermitente/falla (carrera real,
       dependiente del scheduler) — documentar que por eso el Paso 1 fuerza la intercalación con el
       mock en vez de confiar en la suerte del scheduler del sistema.
-- [ ] Paso 3: agregar `_LOCK = threading.Lock()` a nivel de módulo en `usage.py`; `_refresh_both`
+- [x] Paso 3: agregar `_LOCK = threading.Lock()` a nivel de módulo en `usage.py`; `_refresh_both`
       completo (o el `refresh()` público, según quede más simple de envolver tras la Tarea 43) corre
       dentro de `with _LOCK:`.
-- [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_usage.py" -v` → `OK`, corrido 10 veces
+- [x] Paso 4: `python3 -m unittest discover -s tests -p "test_usage.py" -v` → `OK`, corrido 10 veces
       seguidas sin intermitencia (`for i in {1..10}; do python3 -m unittest ...; done`).
-- [ ] Paso 5: `git commit -am "fix: usage.py — lock de modulo serializa refresh(), evita perder deltas por lectura-modificacion-escritura concurrente"`
+- [x] Paso 5: `git commit -am "fix: usage.py — lock de modulo serializa refresh(), evita perder deltas por lectura-modificacion-escritura concurrente"`
 
 ### Tarea 45: Compatibilidad — cargar un `usage-agents.json`/`usage-skills.json` viejo (formato max-based, con `n_window`) sin perder nada
 **Archivos:** Modificar `src/cabina/usage.py`, `tests/test_usage.py`
@@ -2763,21 +2763,21 @@ cambia — solo la aritmética interna con la que se actualiza. Un archivo escri
 correcto: el primer `refresh()` con el código nuevo debe SUMAR sobre ese `n_total` existente, nunca
 resetearlo a cero ni recontar desde el inicio de la historia.
 
-- [ ] Paso 1: tests que fallan: (a) sembrar `usage-agents.json` a mano con `{"reviewer": {"n_total":
+- [x] Paso 1: tests que fallan: (a) sembrar `usage-agents.json` a mano con `{"reviewer": {"n_total":
       40, "last": "2026-07-01", "by_project": {"alpha": 40}, "n_window": 3}}` (formato viejo, sin
       ninguna entrada en `usage-history.json`), correr `refresh()` con un historial que tiene 2 usos
       nuevos, y confirmar `n_total == 42` (no `2`, no `40`); (b) confirmar que el `save()` posterior
       ya NO escribe `"n_window"` en el archivo resultante.
-- [ ] Paso 2: (a) falla porque hoy `refresh()` recontaría desde cero y el `max()` viejo lo dejaría en
+- [x] Paso 2: (a) falla porque hoy `refresh()` recontaría desde cero y el `max()` viejo lo dejaría en
       el mayor de los dos, no en la suma; (b) falla porque `save()` todavía escribe `n_window`.
-- [ ] Paso 3: (a) sin cambios de código nuevos — este sub-test valida que las Tareas 42/43 ya lo
+- [x] Paso 3: (a) sin cambios de código nuevos — este sub-test valida que las Tareas 42/43 ya lo
       resuelven; (b) en `usage.py`, quitar `e["n_window"] = v.get("n", 0)` de `merge()` y el
       `e.setdefault("n_window", 0)` correspondiente; `load()` no necesita cambio (ya devuelve el dict
       tal cual, con o sin la clave vieja).
-- [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_usage.py" -v` → `OK` (si (a) falla,
+- [x] Paso 4: `python3 -m unittest discover -s tests -p "test_usage.py" -v` → `OK` (si (a) falla,
       revisar la Tarea 42: probablemente `_accumulate` está pisando en vez de sumar sobre el registro
       previo).
-- [ ] Paso 5: `git commit -am "feat: usage.py — elimina n_window del esquema de salida (0 consumidores); compatibilidad con archivos viejos que aun lo traigan"`
+- [x] Paso 5: `git commit -am "feat: usage.py — elimina n_window del esquema de salida (0 consumidores); compatibilidad con archivos viejos que aun lo traigan"`
 
 ### Tarea 46: Break-test — primer arranque sin `usage-history.json` procesa el historial completo una sola vez
 **Archivos:** Modificar `tests/test_breaks.py`
@@ -2788,18 +2788,18 @@ archivo sin entrada en `usage-history.json` se lee desde `offset=0` — es decir
 esto debería cumplirse "gratis" por construcción; el break-test existe para que quede demostrado,
 no asumido.
 
-- [ ] Paso 1: test que falla: con un `Env` fresco (sin ningún `usage-history.json` ni
+- [x] Paso 1: test que falla: con un `Env` fresco (sin ningún `usage-history.json` ni
       `usage-agents.json` previos), llamar `usage.refresh(...)` UNA vez y confirmar que el agente
       `reviewer` (invocado en la fixture del historial sintético) aparece con `n_total >= 1` — es
       decir, el primer refresh ya lo encontró, no hizo falta una segunda corrida.
-- [ ] Paso 2: correr contra el código de la Tarea 41 sin la 42/43 (registro roto a propósito con
+- [x] Paso 2: correr contra el código de la Tarea 41 sin la 42/43 (registro roto a propósito con
       `mock.patch.object(U, "_scan_file", lambda *a, **k: ({}, {}, 0))`) → el agente NO aparece,
       confirmando que el test detecta la falla si el "primer scan completo" se rompe.
-- [ ] Paso 3: sin código nuevo — el comportamiento correcto ya lo dan las Tareas 41-43; este paso
+- [x] Paso 3: sin código nuevo — el comportamiento correcto ya lo dan las Tareas 41-43; este paso
       es la prueba formal.
-- [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_breaks.py" -v` → `OK`, y con el mock
+- [x] Paso 4: `python3 -m unittest discover -s tests -p "test_breaks.py" -v` → `OK`, y con el mock
       del Paso 2 reinsertado manualmente se confirma el rojo (canary).
-- [ ] Paso 5: `git commit -am "test: test_breaks.py — primer arranque sin registro de usage lee el historial completo, agents --unused no da falsos positivos"`
+- [x] Paso 5: `git commit -am "test: test_breaks.py — primer arranque sin registro de usage lee el historial completo, agents --unused no da falsos positivos"`
 
 ### Tarea 47: Break-test — un archivo truncado/rotado no duplica conteos, y un archivo BORRADO no baja el total
 **Archivos:** Modificar `tests/test_breaks.py`
@@ -2813,7 +2813,7 @@ bajar el total global — su última contribución conocida se queda en el acumu
 (mismo espíritu que `sessions.py` con `ended`: la ausencia del archivo fuente no es una señal de
 "restar", solo de "no hay nada nuevo que leer de acá").
 
-- [ ] Paso 1: tests que fallan:
+- [x] Paso 1: tests que fallan:
   ```python
   def test_truncated_file_guard(self):
       # con env.truncate_usage_history(...) (Tarea 40), desactivar la resta por delta y
@@ -2829,40 +2829,76 @@ bajar el total global — su última contribución conocida se queda en el acumu
       after = U.load(AGENTS_PATH)["reviewer"]["n_total"]
       self.assertEqual(after, before)                # nunca baja por desaparicion del archivo
   ```
-- [ ] Paso 2: el primer test falla si se desactiva el guard (confirma que hoy funciona); el segundo
+- [x] Paso 2: el primer test falla si se desactiva el guard (confirma que hoy funciona); el segundo
       falla si `_refresh_both` (Tarea 43) tratara "archivo ya no listado por `os.walk`" como
       "restar su última contribución" en vez de simplemente no volver a visitarlo.
-- [ ] Paso 3: sin código nuevo para el primer test (usa `_file_delta` de la Tarea 42 tal cual); para
+- [x] Paso 3: sin código nuevo para el primer test (usa `_file_delta` de la Tarea 42 tal cual); para
       el segundo, confirmar que `_refresh_both` solo itera archivos que `os.walk` encuentra HOY —
       nunca recorre las claves de `usage-history.json` para "dar de baja" las que ya no aparecen en
       disco.
-- [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_breaks.py" -v` → `OK` con los guards
+- [x] Paso 4: `python3 -m unittest discover -s tests -p "test_breaks.py" -v` → `OK` con los guards
       activos; con los mocks de cada Paso 1 aplicados, ambos canarios dan rojo como se espera.
-- [ ] Paso 5: `git commit -am "test: test_breaks.py — archivo truncado no duplica conteos; archivo borrado por rotacion no los resta"`
+- [x] Paso 5: `git commit -am "test: test_breaks.py — archivo truncado no duplica conteos; archivo borrado por rotacion no los resta"`
 
 ### Tarea 48: Medición final antes/después (frío y estable) + nota en CLAUDE.md si el comportamiento observable cambia
 **Archivos:** ninguno de código; posible edición de `CLAUDE.md` (sección "Usage is best-effort...")
 
-- [ ] Paso 1: sobre el disco real de Danny (1.4 GB / 2 044 archivos), medir el ANTES: `git stash`
+- [x] Paso 1: sobre el disco real de Danny (1.4 GB / 2 044 archivos), medir el ANTES: `git stash`
       (o checkout a un commit previo a la Tarea 41) + `time PYTHONPATH=src python3 -m cabina agents
       --json > /dev/null`, tres corridas, promedio.
-- [ ] Paso 2: `git stash pop` (o vuelta al HEAD de esta fase). Medir DOS números, no solo uno: (a) el
+- [x] Paso 2: `git stash pop` (o vuelta al HEAD de esta fase). Medir DOS números, no solo uno: (a) el
       primer refresh EN FRÍO, sin `usage-history.json` (el "primer arranque lento" es esperado, no
       es un defecto — pero hay que dejar el número escrito, no asumirlo); (b) el ESTADO ESTABLE, tres
       corridas más después de poblado el registro — debería acercarse al orden de magnitud de
       `sessions.py` (~0.1 s).
-- [ ] Paso 3: si el número en frío del Paso 2(a) supera ~15 s en el disco real, la única acción de
+- [x] Paso 3: si el número en frío del Paso 2(a) supera ~15 s en el disco real, la única acción de
       esta tarea es confirmar que el aviso ya existente en `cli.py::_agents` ("scanning usage
       history…" en stderr) se sigue mostrando durante esa espera — eso se considera SUFICIENTE para
       esta fase; no se agrega ninguna otra optimización (barra de progreso, paralelismo, cache
       parcial) sin que el usuario lo pida.
-- [ ] Paso 4: si el número de `"invocations"`/`"here"` que muestra `cabina agents` para algún agente
+- [x] Paso 4: si el número de `"invocations"`/`"here"` que muestra `cabina agents` para algún agente
       real cambia respecto al ANTES (posible por el paso de `max()` a suma — ver Tarea 45), anotarlo
       explícitamente en el resultado de esta tarea, no en silencio.
-- [ ] Paso 5: si `CLAUDE.md` (sección "Usage is best-effort and attributed by cwd") sigue siendo
+- [x] Paso 5: si `CLAUDE.md` (sección "Usage is best-effort and attributed by cwd") sigue siendo
       precisa tras el cambio, no tocarla; si el mecanismo que describe (grep + fallback) ya no
       existe, actualizarla para reflejar el registro por offset, y `git commit -am "docs: CLAUDE.md
       — usage.py ahora incremental por offset, ya no relee history_dir completo"` (solo si se tocó).
+
+## Enmiendas aplicadas durante la ejecución (Fase 4)
+
+1. **Tarea 43, Paso 3 — RESUELTO en la ronda D-F2 (commit `e4c74bd`).** El intento inicial dejó
+   `_lines()`/`extract()`/`extract_agents()`/`extract_skills()`/`subprocess`/`shutil` sin borrar
+   porque `tests/test_platform.py::TestNoGrep.test_usage_extract_without_grep` dependía de ese
+   camino y ese archivo estaba fuera del scope original del lote. El coordinador autorizó
+   tocar `test_platform.py`; se verificó por grep que `extract_agents`/`extract_skills`/`_lines`
+   no tenían más consumidores que ese test + 4 tests de `test_usage.py`, se adaptaron esos 4
+   para usar `_scan_file` directamente (mismo comportamiento), y se eliminó
+   `test_usage_extract_without_grep` con justificación en el docstring de `TestNoGrep`: no queda
+   ninguna rama "con grep" vs "sin grep" que distinguir en `usage.py` (los otros dos tests de esa
+   clase, sobre `roster.py`/`scan.py`, son subsistemas distintos y no se tocaron). `_lines()` y
+   compañía, junto con los imports `subprocess`/`shutil`, quedaron eliminados de `usage.py`.
+2. **Tarea 45, Paso 3(a) — el plan asumía "sin cambios de código nuevos"; eso resultó falso.** El
+   texto decía que las Tareas 42/43 ya resolvían la migración desde un `usage-agents.json` viejo
+   (formato `max()`, con `n_window`) sin código adicional. Verificado empíricamente que NO es
+   así: comparar el agregado fresco de la primera corrida (sin ninguna entrada en
+   `usage-history.json`) contra el `n_total` heredado vía `_file_delta` resta el total viejo en
+   vez de sumarle lo nuevo — con 40 invocaciones históricas + 2 nuevas el resultado daba `2`, no
+   `42`. Se agregó `_add_onto_registry(registry, delta)`: cuando `usage-history.json` no tiene
+   NINGUNA entrada antes de la llamada (el estado_dir nunca corrió `refresh()` con el código
+   incremental), se suma el agregado fresco sobre el registro existente en lugar de
+   reconciliarlo por resta — no hay nada contra qué reconciliar todavía. Detalle en el commit
+   `664a311`.
+3. **Tarea 48 — el número en frío empeoró primero (11.3s → 51.1s), corregido en la ronda D-F1
+   (commit `9d47a00`).** Causa raíz confirmada (no solo sospechada): `_scan_file` corría
+   `_TS.search`/`_CWD.search`/`_project_of` (y las dos regex `_AGENT`/`_SKILL`) sobre TODAS las
+   líneas, tuvieran o no el needle — a diferencia del `grep -F`/fallback Python viejo, que
+   pre-filtraba por substring antes de tocar una regex. Fix (TDD, test rojo con
+   `mock.patch.object(U, "_project_of", wraps=U._project_of)` contando invocaciones — 20 líneas,
+   solo 2 con needle, `spy.call_count` daba 20 en vez de ≤2): un chequeo de substring en C
+   (`'"subagent_type"' not in line and '"name":"Skill"' not in line: continue`) al tope del loop,
+   antes de cualquier regex. Resultado: frío 51.06s → **4.65s** (mejor que el 11.34s original,
+   sin hacer falta `cProfile`). Ver la tabla actualizada más abajo en el reporte de cierre del
+   ejecutor. El estado ESTABLE se mantuvo en el objetivo (~0.08s).
 
 # Concerns (Fase 4)
 

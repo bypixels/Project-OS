@@ -10,7 +10,7 @@ def _can_symlink():
             os.symlink(d, os.path.join(d, "l")); return True
     except (OSError, NotImplementedError):
         return False
-from cabina import host, config as CFG, roster as R_, usage as U, scan as SC, skills as SK
+from cabina import host, config as CFG, roster as R_, scan as SC, skills as SK
 
 class TestPaths(unittest.TestCase):
     def test_windows_defaults(self):
@@ -69,12 +69,15 @@ class TestExampleTomlCoversDefaults(unittest.TestCase):
                           "the example's state_dir must be THIS platform's actual default, not a hardcoded Unix path")
 
 class TestNoGrep(unittest.TestCase):
-    """Windows has no grep/du: every caller must fall back to Python, never fail open."""
-    def test_usage_extract_without_grep(self):
-        with tempfile.TemporaryDirectory() as d:
-            open(os.path.join(d, "s.jsonl"), "w").write('{"timestamp":"2026-08-01T00:00:00Z","x":{"subagent_type":"a"}}\n')
-            with mock.patch.object(U.shutil, "which", lambda n: None):
-                self.assertEqual(U.extract_agents(d)["a"]["n"], 1)
+    """Windows has no grep/du: every caller must fall back to Python, never fail open.
+
+    D-F2: usage.py's grep/no-grep fallback (`_lines`/`extract`/`extract_agents`/
+    `extract_skills`) was removed entirely — the Tarea 43 offset-based `_scan_file` is now the
+    ONLY reader, plain `open()`, identical on every OS, no grep/shutil branch left to test.
+    `test_usage_extract_without_grep` (formerly here) is gone rather than adapted: there is no
+    "without grep" behavior left to distinguish for usage.py. roster.py's `references()` (grep
+    over agent/skill mentions) and scan.py's `du`-based `_dir_mb` are unrelated subsystems that
+    still branch on tool presence — the two tests below keep covering those."""
     def test_references_without_grep_still_finds(self):
         with tempfile.TemporaryDirectory() as t:
             ch = os.path.join(t, "claude"); os.makedirs(os.path.join(ch, "agents")); os.makedirs(os.path.join(ch, "commands"))

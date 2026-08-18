@@ -23,11 +23,19 @@ class Env:
         json.dump({"hooks": {"Stop": [{"hooks": [{"command": "$CLAUDE_PROJECT_DIR/.claude/hooks/ok.sh"}]}]}}, open(os.path.join(c, "settings.json"), "w"))
         open(os.path.join(c, "MEMORY.md"), "w").write("# mem\n"); open(os.path.join(a, "CLAUDE.md"), "w").write("# alpha\n")
         # history: two invocations of reviewer from alpha, one from elsewhere
-        open(os.path.join(self.claude, "projects", "-x", "s.jsonl"), "w").write(
+        self.usage_history_file = os.path.join(self.claude, "projects", "-x", "s.jsonl")
+        open(self.usage_history_file, "w").write(
             f'{{"timestamp":"2026-08-01T00:00:00Z","cwd":"{a}/apps","x":{{"subagent_type":"reviewer"}}}}\n'
             f'{{"timestamp":"2026-08-02T00:00:00Z","cwd":"{a}","x":{{"subagent_type":"reviewer"}}}}\n'
             f'{{"timestamp":"2026-08-03T00:00:00Z","cwd":"/elsewhere","x":{{"subagent_type":"reviewer"}}}}\n'
             f'{{"timestamp":"2026-08-03T00:00:00Z","cwd":"{a}","x":{{"name":"Skill","input":{{"skill":"deploy"}}}}}}\n')
+        # a nested invocation inside a subagent's own transcript — the recursive scan of
+        # usage.py's history_dir must still find it (it lives under projects/-x/<sid>/subagents/).
+        sub_x_dir = os.path.join(self.claude, "projects", "-x", "usage-sid", "subagents")
+        os.makedirs(sub_x_dir)
+        self.usage_subagent_file = os.path.join(sub_x_dir, "sub.jsonl")
+        open(self.usage_subagent_file, "w").write(
+            f'{{"timestamp":"2026-08-04T00:00:00Z","cwd":"{a}","x":{{"subagent_type":"nested-from-subagent"}}}}\n')
         # synthetic Codex home: one twin agent (same as claude reviewer), one copied skill
         self.codex = os.path.join(t, "codex"); os.makedirs(os.path.join(self.codex, "agents")); os.makedirs(os.path.join(self.codex, "skills", "gsk"))
         open(os.path.join(self.codex, "agents", "reviewer.toml"), "w").write('name = "reviewer"\ndescription = "Reviews things carefully"\ndeveloper_instructions = "Body."\n')
@@ -57,7 +65,7 @@ class Env:
         # "alpha" active by accident in an ordinary Env-based test. Tests that need "active"
         # call env.touch_session(fresh=True) explicitly (see the method below).
         old = time.time() - 3600
-        for p in (os.path.join(self.claude, "projects", "-x", "s.jsonl"), self.session_file,
+        for p in (self.usage_history_file, self.usage_subagent_file, self.session_file,
                   os.path.join(sdir, self.session_id, "subagents", "agent-1.jsonl")):
             os.utime(p, (old, old))
         self.cfg = CFG._merge(CFG.DEFAULTS, {"claude_home": self.claude, "codex_home": self.codex, "roots": [self.projects], "state_dir": self.state,
@@ -73,6 +81,18 @@ class Env:
         sub = os.path.join(os.path.dirname(self.session_file), self.session_id, "subagents", "agent-1.jsonl")
         for p in (self.session_file, sub):
             os.utime(p, (t, t))
+
+    def append_usage_line(self, text):
+        """Append one more line to the main usage-history transcript (`self.usage_history_file`),
+        simulating a session that keeps growing between two usage.refresh() calls."""
+        with open(self.usage_history_file, "a") as f:
+            f.write(text.rstrip("\n") + "\n")
+
+    def truncate_usage_history(self, new_content):
+        """Replace the full content of the main usage-history transcript with something
+        SHORTER, simulating a rotation/rewrite under the same source_path."""
+        with open(self.usage_history_file, "w") as f:
+            f.write(new_content)
 
     def refresh_sessions(self):
         """Conveniencia para tests que necesitan `activity` poblada antes de llamar a

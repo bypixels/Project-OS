@@ -50,6 +50,102 @@ class TestBreaks(unittest.TestCase):
     def test_usage_never_regresses(self):
         r = U.merge({"a": {"last": "2026-08-10", "n_total": 9}}, {"a": {"last": "2026-08-01", "n": 1}})
         self.assertEqual(r["a"]["last"], "2026-08-10")
+    def test_usage_history_diff_guard(self):
+        # si el registro por archivo se ignorara (se sumara el conteo bruto en vez del delta),
+        # una relectura completa del mismo archivo duplicaría el conteo
+        with mock.patch.object(U, "_file_delta", lambda new, old: new):   # guard disabled: delta = new, ignora old
+            out = U._accumulate({"reviewer": {"n_total": 7}}, {"reviewer": {"n": 7}})   # ya se había contado
+            self.assertEqual(out["reviewer"]["n_total"], 14)                             # duplicado -> canary red
+        out2 = U._accumulate({"reviewer": {"n_total": 7}}, {"reviewer": {"n": 7}})       # guard presente
+        self.assertEqual(out2["reviewer"]["n_total"], 7)                                 # sin cambio: ya estaba contado
+
+    def test_usage_dual_output_single_pass_guard(self):
+        # si refresh() solo actualizara la salida de SU kind (el bug original), el otro kind
+        # perdería las invocaciones que aparecieron en la misma pasada.
+        env = Env()
+        try:
+            p = os.path.join(env.state, "usage-agents.json")
+            skills_path = os.path.join(env.state, "usage-skills.json")
+            history_dir = os.path.join(env.claude, "projects")
+            roots = {"alpha": env.alpha}
+            env.append_usage_line(
+                '{"timestamp":"2026-08-05T00:00:00Z","cwd":"%s","x":{"name":"Skill","input":{"skill":"deploy"}}}' % env.alpha)
+            with mock.patch.object(U, "_save_sibling_output", lambda *a, **k: None):  # guard disabled: solo guarda el kind pedido
+                U.refresh(p, history_dir, "agents", roots)
+                skill_items = U.load(skills_path)
+                self.assertNotIn("deploy", skill_items)                    # se perdio -> canary red
+            U.refresh(p, history_dir, "agents", roots)                     # guard presente
+            self.assertIn("deploy", U.load(skills_path))                   # no se perdio
+        finally:
+            env.cleanup()
+
+    def test_usage_first_scan_finds_full_history_without_a_second_run_guard(self):
+        # constraint (g): agents --unused (check.py, que lee usage.load() del cache) no puede
+        # dar falsos positivos porque el registro nuevo este vacio. Con offsets, un archivo sin
+        # entrada en usage-history.json se lee desde offset=0 — completo — asi que esto deberia
+        # cumplirse "gratis" por construccion; este break-test lo deja demostrado, no asumido.
+        env = Env()
+        try:
+            p = os.path.join(env.state, "usage-agents.json")
+            history_dir = os.path.join(env.claude, "projects")
+            roots = {"alpha": env.alpha}
+            self.assertFalse(os.path.isfile(os.path.join(env.state, "usage-history.json")))
+            self.assertFalse(os.path.isfile(p))
+            with mock.patch.object(U, "_scan_file", lambda *a, **k: ({}, {}, 0)):   # guard disabled: "primer scan" roto
+                items_broken, _ = U.refresh(p, history_dir, "agents", roots)
+                self.assertNotIn("reviewer", items_broken)                          # no lo encontro -> canary red
+            os.remove(os.path.join(env.state, "usage-agents.json"))
+            os.remove(os.path.join(env.state, "usage-skills.json"))
+            os.remove(os.path.join(env.state, "usage-history.json"))
+            items, _ = U.refresh(p, history_dir, "agents", roots)                   # guard presente
+            self.assertGreaterEqual(items["reviewer"]["n_total"], 1)                # lo encontro en UNA sola corrida
+        finally:
+            env.cleanup()
+
+    def test_usage_truncated_file_guard(self):
+        # con un archivo que se encoge (rotacion/reescritura), desactivar la resta por delta y
+        # confirmar que el total DUPLICA lo esperado tras dos refresh — no solo se queda igual.
+        env = Env()
+        try:
+            p = os.path.join(env.state, "usage-agents.json")
+            history_dir = os.path.join(env.claude, "projects")
+            roots = {"alpha": env.alpha}
+            items1, _ = U.refresh(p, history_dir, "agents", roots)
+            before = items1["reviewer"]["n_total"]
+            env.truncate_usage_history(
+                '{"timestamp":"2026-08-01T00:00:00Z","cwd":"%s","x":{"subagent_type":"reviewer"}}\n' % env.alpha)
+            with mock.patch.object(U, "_file_delta", lambda new, old: new):   # guard disabled
+                items2, _ = U.refresh(p, history_dir, "agents", roots)
+                self.assertEqual(items2["reviewer"]["n_total"], before + 1)   # duplicado -> canary red
+            os.remove(os.path.join(env.state, "usage-history.json"))
+            os.remove(os.path.join(env.state, "usage-agents.json"))
+            os.remove(os.path.join(env.state, "usage-skills.json"))
+            env.truncate_usage_history(
+                '{"timestamp":"2026-08-01T00:00:00Z","cwd":"%s","x":{"subagent_type":"reviewer"}}\n' % env.alpha)
+            U.refresh(p, history_dir, "agents", roots)
+            items3, _ = U.refresh(p, history_dir, "agents", roots)            # guard presente, sin truncar de nuevo
+            self.assertEqual(items3["reviewer"]["n_total"], 1)                # no duplica
+        finally:
+            env.cleanup()
+
+    def test_usage_deleted_file_does_not_regress_the_total_guard(self):
+        # rotacion normal: el archivo fuente desaparece por completo del disco. Su ultima
+        # contribucion conocida se queda en el acumulador para siempre (mismo espiritu que
+        # sessions.py con `ended`) — nunca se resta por desaparicion.
+        env = Env()
+        try:
+            p = os.path.join(env.state, "usage-agents.json")
+            history_dir = os.path.join(env.claude, "projects")
+            roots = {"alpha": env.alpha}
+            U.refresh(p, history_dir, "agents", roots)
+            before = U.load(p)["reviewer"]["n_total"]
+            os.remove(env.usage_history_file)              # rotacion normal: el archivo ya no existe
+            U.refresh(p, history_dir, "agents", roots)
+            after = U.load(p)["reviewer"]["n_total"]
+            self.assertEqual(after, before)                 # nunca baja por desaparicion del archivo
+        finally:
+            env.cleanup()
+
     def test_sessions_no_text_leak_guard(self):
         leak = {"session_id": "s1", "prompt_text": "the secret prompt string XYZ123"}
         self.assertNotIn("prompt_text", SESS._redact_unknown_fields(leak))                     # guard present
