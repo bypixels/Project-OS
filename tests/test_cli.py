@@ -1,9 +1,10 @@
-import io, json, os, subprocess, sys, tempfile, unittest
+import argparse, io, json, os, subprocess, sys, tempfile, unittest
 from contextlib import redirect_stdout
 from unittest import mock
 import _helpers  # noqa
 from _env import Env
 from cabina import scan
+from cabina.i18n import t
 
 class TestActivityCommand(unittest.TestCase):
     def test_activity_json_lists_sessions(self):
@@ -128,10 +129,10 @@ class TestAgentsUsageScanHint(unittest.TestCase):
             env.cleanup()
 
     def test_prints_hint_on_a_tty(self):
-        self.assertIn("scanning usage history", self._run(tty=True))
+        self.assertIn(t("en", "agents.scanning_usage"), self._run(tty=True))
 
     def test_silent_when_not_a_tty(self):
-        self.assertNotIn("scanning usage history", self._run(tty=False))
+        self.assertNotIn(t("en", "agents.scanning_usage"), self._run(tty=False))
 
 
 class TestHooksCommand(unittest.TestCase):
@@ -171,6 +172,35 @@ class TestHooksCommand(unittest.TestCase):
             self.assertTrue(os.path.isfile(sp))
             written = json.load(open(sp))
             self.assertIn("PreToolUse", written["hooks"])
+
+
+class TestCliDocstringListsSubcommands(unittest.TestCase):
+    """E2: cli.py's module docstring used to hand-list 6 of the 15 registered subcommands.
+    Get the real list straight from argparse (spying on add_parser while main() builds the
+    parser, then bailing out before it actually runs anything) so this fails the moment a new
+    subcommand is added without documenting it."""
+
+    def _registered_subcommand_names(self):
+        from cabina import cli as CLI
+        names = []
+        orig_add_parser = argparse._SubParsersAction.add_parser
+
+        def spy(self, name, **kwargs):
+            names.append(name)
+            return orig_add_parser(self, name, **kwargs)
+
+        with mock.patch.object(argparse._SubParsersAction, "add_parser", spy), \
+             mock.patch.object(argparse.ArgumentParser, "parse_args", side_effect=SystemExit):
+            with self.assertRaises(SystemExit):
+                CLI.main([])
+        return names
+
+    def test_docstring_mentions_every_registered_subcommand(self):
+        from cabina import cli as CLI
+        names = self._registered_subcommand_names()
+        self.assertTrue(names, "spy did not observe any add_parser calls")
+        missing = [n for n in names if n not in CLI.__doc__]
+        self.assertEqual(missing, [], f"subcommands missing from cli.py's module docstring: {missing}")
 
 
 if __name__ == "__main__":
