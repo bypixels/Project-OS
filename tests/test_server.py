@@ -157,6 +157,11 @@ class TestServer(unittest.TestCase):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
         self.assertIn("(x.critical||[])", html)
         self.assertIn("(x.warnings||[])", html)
+    def test_agent_detail_hides_file_row_in_hub(self):
+        # F2: hub export rows carry no path, so renderAgentDetail's unconditional "File" meta row
+        # rendered blank in hub mode. Guard the row on !HUB && x.path.
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        self.assertIn("(!HUB&&x.path)", html)
     def test_project_detail_keyed_by_name_and_machine(self):
         # E2: renderProjDetail found a row with `find(y=>y.name===S.sel)` — in hub mode two
         # machines can both have a project called "alpha", so the detail always showed the
