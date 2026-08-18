@@ -2539,7 +2539,10 @@ de salida en la misma llamada — la línea base compartida siempre refleja lo y
       contenido completo del mismo archivo por algo más chico, simulando rotación/reescritura; (c)
       un archivo NUEVO bajo `<claude_home>/projects/-x/<sid>/subagents/sub.jsonl` con una línea que
       contiene `"subagent_type":"nested-from-subagent"` — preserva el caso "un subagente invoca
-      otro agente", que hoy el grep recursivo de `usage.py` sí cuenta y la Fase 4 no debe perder.
+      otro agente", que hoy el grep recursivo de `usage.py` sí cuenta y la Fase 4 no debe perder;
+      (d) exponer el atributo `self.usage_history_file` (el path del `.jsonl` principal, `-x/s.jsonl`)
+      para que otras tareas (la 44, la 47) lo referencien directo en vez de reconstruir la ruta a
+      mano — mismo criterio que `self.session_file` ya usa el resto de `Env`.
 - [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_usage.py" -v` → verde una vez escrita
       la Tarea 41 (esta tarea sola no tiene aserciones propias, solo prepara el terreno).
 - [ ] Paso 5: `git add tests/_env.py && git commit -m "test: _env.py — fixtures de usage incremental (crecimiento, truncado, invocación anidada en subagents/)"`
@@ -2631,7 +2634,10 @@ y avisa, no repara solo).
 - [ ] Paso 3: agregar `_file_delta(new_counts, old_counts)` (resta por clave, nunca negativo hacia
       fechas) y `_accumulate(registry_items, delta)` (aplica el delta al acumulador global,
       preservando el `max()` SOLO para `last`, y suma para `n_total`/`by_project`); reescribir
-      `merge()` para usarlos por dentro sin romper su firma pública.
+      `merge()` para usarlos por dentro sin romper su firma pública. Nombres FIJOS para leer/escribir
+      `usage-history.json` (los usan las Tareas 43/44 tal cual, sin inventar variantes):
+      `_load_history(path)` (tolera archivo ausente/corrupto, devuelve `{}`) y
+      `_save_history(path, registry)` (mismo patrón `tmp` + `os.replace` que `save()`).
 - [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_usage.py" -v` y
       `-p "test_breaks.py"` → ambos verdes.
 - [ ] Paso 5: `git commit -am "feat: usage.py — registro por archivo con diff, merge() acumula deltas en vez de tomar el maximo (evita doble conteo en truncado)"`
@@ -2684,8 +2690,11 @@ llama con `kind="skills"` sobre el mismo archivo recién leído, la segunda llam
 - [ ] Paso 2: `AttributeError: module 'cabina.usage' has no attribute '_refresh_both'` (o el
       escenario de pérdida se reproduce con el código viejo de dos `refresh()` independientes).
 - [ ] Paso 3: implementar `_refresh_both` como se describe arriba; `refresh()` público queda como
-      envoltorio de una línea. Borrar `_lines()` y los imports `subprocess`/`shutil` que ya no se
-      usan.
+      envoltorio de una línea. Nombre FIJO para el guardado del resultado que NO fue el `kind`
+      pedido (lo usa el break-test de esta tarea tal cual): `_save_sibling_output(state_dir, kind,
+      items, meta)` — guarda `usage-agents.json`/`usage-skills.json` según corresponda; `_refresh_both`
+      llama a `_save_sibling_output` para AMBOS resultados, no solo el del `kind` que disparó la
+      llamada. Borrar `_lines()` y los imports `subprocess`/`shutil` que ya no se usan.
 - [ ] Paso 4: `python3 -m unittest discover -s tests -p "test_usage.py" -v` y
       `-p "test_breaks.py"` → ambos `OK`.
 - [ ] Paso 5: `git commit -am "fix: usage.py — refresh() unificado, una pasada alimenta agents y skills a la vez (evita perder invocaciones por desync entre kinds); elimina grep y el fallback Windows"`
@@ -2704,10 +2713,15 @@ escribir registro), no solo el `save()` final — el `save()` con `tmp+os.replac
 sigue siendo atómico a nivel de archivo, pero eso no evita la carrera de lectura-modificación-escritura
 si dos hilos calculan su delta contra el mismo estado leído antes de que ninguno escriba.
 
-- [ ] Paso 1: test que falla — dos hilos llaman `refresh()` sobre el mismo `Env` con una línea nueva
-      cada uno intercalada (inyectar una pausa corta entre "leer registro" y "guardar registro" con
-      `mock.patch.object` para forzar la intercalación real, igual que un test de carrera clásico), y
-      confirmar que el total final `n_total` es la SUMA de ambos deltas, no solo uno de los dos.
+- [ ] Paso 1: test que falla — dos hilos llaman `refresh()` CADA UNO sobre un archivo DISTINTO con
+      un delta DISTINTO (el `.jsonl` principal de la fixture y el `subagents/sub.jsonl` que la
+      Tarea 40 agrega, cada uno con una invocación de un agente distinto) — no el mismo archivo con
+      el mismo delta: si ambos hilos leyeran y sumaran lo mismo, una pérdida real (uno pisa al otro)
+      daría el mismo resultado que "sin pérdida" por coincidencia, y el test nunca se pondría rojo
+      sin el lock. Con archivos y deltas distintos, perder uno de los dos hace que el total NO
+      cuadre, así que el test sí distingue "con lock" de "sin lock". Se fuerza la intercalación con
+      un `mock.patch.object` que inserta una pausa entre "leer registro" y "guardar registro", igual
+      que un test de carrera clásico.
   ```python
   def test_concurrent_refresh_does_not_lose_a_delta(self):
       env = Env()
@@ -2715,13 +2729,16 @@ si dos hilos calculan su delta contra el mismo estado leído antes de que ningun
       def slow_save(*a, **k):
           time.sleep(0.05)          # ventana para que el otro hilo lea el registro viejo
           return orig_save(*a, **k)
-      env.append_usage_line('...subagent_type":"reviewer"...')   # hilo A cuenta esta
-      env.append_usage_line('...subagent_type":"reviewer"...')   # hilo B cuenta esta (archivo distinto)
+      env.append_usage_line('...subagent_type":"reviewer"...')   # hilo A: va al .jsonl principal (-x/s.jsonl)
+      # hilo B cuenta la invocacion de "nested-from-subagent" que la fixture de la Tarea 40 ya deja
+      # en subagents/sub.jsonl — es un archivo DISTINTO, no hace falta agregarle nada mas.
       with mock.patch.object(U, "_save_history", side_effect=slow_save):
           t1 = threading.Thread(target=U.refresh, args=(AGENTS_PATH, HIST, "agents", ROOTS))
           t2 = threading.Thread(target=U.refresh, args=(AGENTS_PATH, HIST, "agents", ROOTS))
           t1.start(); t2.start(); t1.join(); t2.join()
-      self.assertEqual(U.load(AGENTS_PATH)["reviewer"]["n_total"], 2)   # sin lock: a veces da 1
+      items = U.load(AGENTS_PATH)
+      self.assertEqual(items["reviewer"]["n_total"], 1)              # delta del archivo principal
+      self.assertEqual(items["nested-from-subagent"]["n_total"], 1)  # delta de subagents/sub.jsonl — sin lock, uno de los dos se pierde
   ```
 - [ ] Paso 2: corrido varias veces sin el lock, el test es intermitente/falla (carrera real,
       dependiente del scheduler) — documentar que por eso el Paso 1 fuerza la intercalación con el
