@@ -380,7 +380,7 @@ circle in one of five colors, decoded by the legend under the list.
   marker on its left edge — the same marker a selected row carries, so "active" reads identically
   in both places.
 - **Danger:** rust text on the default shell; only the fill on hover turns rust-soft. A destructive
-  action is never a solid red button, because cabina never performs the destructive act — it hands
+  action is never a solid red button, because project-os never performs the destructive act — it hands
   over the command.
 - **Disabled:** 45% opacity, default cursor, hover suppressed.
 - **Focus:** 2px accent outline at 2px offset, shared by every focusable element.
@@ -460,7 +460,7 @@ under `prefers-reduced-motion`.
 - **Do** keep exactly one primary button per pane or dialog; every other action is a default
   button. The build holds to this across all eleven of its primary buttons.
 - **Do** monospace measured values and generated commands, and leave explanation in the sans face.
-- **Do** show a generated command in an evidence block for the user to read and run. cabina never
+- **Do** show a generated command in an evidence block for the user to read and run. project-os never
   runs it.
 - **Do** let long values ellipsize, and break paths after a separator.
 

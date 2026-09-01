@@ -137,7 +137,7 @@ def read_file(path, rel):
     Threat model: this confinement stops a malformed request (a bad `rel`) from reading outside
     the skill directory. It is not a defense against an attacker who already has concurrent
     local write access to the disk (TOCTOU, hardlinks) -- anyone who can write to the filesystem
-    can already read it without cabina."""
+    can already read it without project-os."""
     if not isinstance(rel, str) or not rel or os.path.isabs(rel) or "\x00" in rel:
         return {"ok": False, "message": "invalid path"}
     try:

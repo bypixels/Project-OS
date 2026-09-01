@@ -1,4 +1,4 @@
-"""`cabina mcp` — a READ-ONLY MCP server over stdio, so Claude Code and Codex can ask the
+"""`project-os mcp` — a READ-ONLY MCP server over stdio, so Claude Code and Codex can ask the
 control plane before acting: is anyone working in project X? does this agent meet the contract?
 who references Y? Nothing here writes. Newline-delimited JSON-RPC 2.0, stdlib only.
 """
@@ -12,21 +12,21 @@ PROTOCOL = "2024-11-05"
 def tools_spec():
     S = lambda **p: {"type": "object", "properties": p, "additionalProperties": False}
     return [
-        {"name": "cabina_health", "description": "Health of the Claude Code / Codex environment: findings by severity (critical/warning/info) with titles and fixes. Read-only.",
+        {"name": "project_os_health", "description": "Health of the Claude Code / Codex environment: findings by severity (critical/warning/info) with titles and fixes. Read-only.",
          "inputSchema": S(quick={"type": "boolean", "description": "skip slow detectors (default true)"})},
-        {"name": "cabina_working", "description": "Projects that have an AI agent WORKING RIGHT NOW (from the live provider). Ask before editing shared files (MEMORY.md, CLAUDE.md) in a project.",
+        {"name": "project_os_working", "description": "Projects that have an AI agent WORKING RIGHT NOW (from the live provider). Ask before editing shared files (MEMORY.md, CLAUDE.md) in a project.",
          "inputSchema": S()},
-        {"name": "cabina_agent", "description": "Contract state and real usage of one agent by name (all projects/tools where it exists).",
+        {"name": "project_os_agent", "description": "Contract state and real usage of one agent by name (all projects/tools where it exists).",
          "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"], "additionalProperties": False}},
-        {"name": "cabina_agents", "description": "List agents. Optional filters: project, tool (claude|codex), category (valid|warnings|invalid|document).",
+        {"name": "project_os_agents", "description": "List agents. Optional filters: project, tool (claude|codex), category (valid|warnings|invalid|document).",
          "inputSchema": S(project={"type": "string"}, tool={"type": "string"}, category={"type": "string"})},
-        {"name": "cabina_references", "description": "Files that reference an agent or skill by name (before archiving or renaming it).",
+        {"name": "project_os_references", "description": "Files that reference an agent or skill by name (before archiving or renaming it).",
          "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"], "additionalProperties": False}},
-        {"name": "cabina_project", "description": "Status of one project: branch, uncommitted changes, assets, harness level, dead hooks, MEMORY.md age, worktrees.",
+        {"name": "project_os_project", "description": "Status of one project: branch, uncommitted changes, assets, harness level, dead hooks, MEMORY.md age, worktrees.",
          "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"], "additionalProperties": False}},
-        {"name": "cabina_drift", "description": "Drift between Claude Code and Codex: twin agents that diverged, CLAUDE.md vs AGENTS.md per project, copied skills.",
+        {"name": "project_os_drift", "description": "Drift between Claude Code and Codex: twin agents that diverged, CLAUDE.md vs AGENTS.md per project, copied skills.",
          "inputSchema": S()},
-        {"name": "cabina_activity", "description": "Session activity from Claude Code transcripts, aggregated for ONE project — no titles, no paths, no cwd (R11 of the design contract). Read-only; reads the cached registry (a `cabina activity` run or a UI visit may be needed first to populate it).",
+        {"name": "project_os_activity", "description": "Session activity from Claude Code transcripts, aggregated for ONE project — no titles, no paths, no cwd (R11 of the design contract). Read-only; reads the cached registry (a `project-os activity` run or a UI visit may be needed first to populate it).",
          "inputSchema": {"type": "object", "properties": {"project": {"type": "string"}, "days": {"type": "integer", "description": "lookback window in days (default 30)"}}, "required": ["project"], "additionalProperties": False}},
     ]
 
@@ -114,8 +114,8 @@ class Server:
         m, i, params = msg.get("method"), msg.get("id"), msg.get("params") or {}
         if m == "initialize":
             return self._ok(i, {"protocolVersion": PROTOCOL, "capabilities": {"tools": {}},
-                                "serverInfo": {"name": "cabina", "version": __import__("cabina").__version__},
-                                "instructions": "cabina is READ-ONLY. Ask cabina_working before editing MEMORY.md/CLAUDE.md in a project; ask cabina_agent before creating an agent with an existing name; ask cabina_references before archiving anything."})
+                                "serverInfo": {"name": "project-os", "version": __import__("project_os").__version__},
+                                "instructions": "project-os is READ-ONLY. Ask project_os_working before editing MEMORY.md/CLAUDE.md in a project; ask project_os_agent before creating an agent with an existing name; ask project_os_references before archiving anything."})
         if m == "notifications/initialized" or m is None and i is None:
             return None
         if m == "ping":
@@ -124,9 +124,9 @@ class Server:
             return self._ok(i, {"tools": tools_spec()})
         if m == "tools/call":
             name = params.get("name", ""); args = params.get("arguments") or {}
-            fn = {"cabina_health": self.t_health, "cabina_working": self.t_working, "cabina_agent": self.t_agent,
-                  "cabina_agents": self.t_agents, "cabina_references": self.t_references, "cabina_project": self.t_project,
-                  "cabina_drift": self.t_drift, "cabina_activity": self.t_activity}.get(name)
+            fn = {"project_os_health": self.t_health, "project_os_working": self.t_working, "project_os_agent": self.t_agent,
+                  "project_os_agents": self.t_agents, "project_os_references": self.t_references, "project_os_project": self.t_project,
+                  "project_os_drift": self.t_drift, "project_os_activity": self.t_activity}.get(name)
             if not fn:
                 return self._ok(i, {"content": [{"type": "text", "text": f"unknown tool {name}"}], "isError": True})
             try:
@@ -161,9 +161,9 @@ def serve(cfg, inp=None, out=None):
             out.write(json.dumps(resp, ensure_ascii=False) + "\n"); out.flush()
 
 
-def install_snippets(cmd="cabina"):
+def install_snippets(cmd="project-os"):
     return {
-        "claude_code": f"claude mcp add cabina -s user -- {cmd} mcp",
-        "codex_toml": f'[mcp_servers.cabina]\ncommand = "{cmd}"\nargs = ["mcp"]\n',
-        "generic_json": {"mcpServers": {"cabina": {"command": cmd, "args": ["mcp"]}}},
+        "claude_code": f"claude mcp add project-os -s user -- {cmd} mcp",
+        "codex_toml": f'[mcp_servers.project-os]\ncommand = "{cmd}"\nargs = ["mcp"]\n',
+        "generic_json": {"mcpServers": {"project-os": {"command": cmd, "args": ["mcp"]}}},
     }

@@ -2,7 +2,7 @@ import json, os, unittest
 from unittest import mock
 import _helpers  # noqa
 from _env import Env
-from cabina import snapshot as SNAP, sessions as SESS, scan
+from project_os import snapshot as SNAP, sessions as SESS, scan
 
 class TestExportActivity(unittest.TestCase):
     def setUp(self):
@@ -59,7 +59,7 @@ class TestExportActivity(unittest.TestCase):
 
 class TestExportActivityRefreshesRegistry(unittest.TestCase):
     # Review finding C: export_activity only ever READ the session registry (sessions.load) —
-    # on a machine that never ran `cabina activity`, the registry is empty and export --activity
+    # on a machine that never ran `project-os activity`, the registry is empty and export --activity
     # silently ships an empty payload. export_activity is a CLI call, not a request-thread hot
     # path, so it must refresh itself first.
     def test_export_activity_refreshes_without_a_prior_manual_refresh(self):

@@ -1,4 +1,4 @@
-"""Opt-in commit of ONE path that cabina just changed on the user's request.
+"""Opt-in commit of ONE path that project-os just changed on the user's request.
 Never `git add -A`; never automatic; refuses if the repo is mid-merge/rebase; commits only
 that pathspec even if other files are staged."""
 import os, subprocess

@@ -1,6 +1,6 @@
-"""`cabina check --repo PATH` — validate ONE repository on its own, for CI.
+"""`project-os check --repo PATH` — validate ONE repository on its own, for CI.
 Needs no user home, no cache, no history: only the repo. The contract can be tuned per repo in
-`.cabina.toml` at the repo root; without it, defaults apply. Exit 1 on invalid agents (or on
+`.project-os.toml` at the repo root; without it, defaults apply. Exit 1 on invalid agents (or on
 warnings too when `[check] strict = true`)."""
 import os, tomllib
 from .contract import Contract
@@ -8,7 +8,7 @@ from . import drift
 
 
 def load_repo_config(root):
-    p = os.path.join(root, ".cabina.toml")
+    p = os.path.join(root, ".project-os.toml")
     if not os.path.isfile(p):
         return {}
     with open(p, "rb") as f:
@@ -36,8 +36,8 @@ def check_repo(root):
 
 def render(r):
     if r.get("error"):
-        return f"cabina check --repo {r['root']}\n  error: {r['error']}\n  result: FAIL (usage error)"
-    out = [f"cabina check --repo {r['root']}", f"  agents: {r['agents_total']} · invalid: {len(r['invalid'])} · warnings: {len(r['warnings'])} · documents: {len(r['documents'])} · AGENTS.md: {r['agents_md']}"]
+        return f"project-os check --repo {r['root']}\n  error: {r['error']}\n  result: FAIL (usage error)"
+    out = [f"project-os check --repo {r['root']}", f"  agents: {r['agents_total']} · invalid: {len(r['invalid'])} · warnings: {len(r['warnings'])} · documents: {len(r['documents'])} · AGENTS.md: {r['agents_md']}"]
     for x in r["invalid"]:
         out.append(f"  INVALID  {x['name']}: " + "; ".join(x["reasons"]))
     for x in r["warnings"]:
@@ -48,7 +48,7 @@ def render(r):
     return "\n".join(out)
 
 
-EXAMPLE_TOML = '''# .cabina.toml — contract for THIS repository (used by `cabina check --repo .`, e.g. in CI)
+EXAMPLE_TOML = '''# .project-os.toml — contract for THIS repository (used by `project-os check --repo .`, e.g. in CI)
 [contract]
 models = ["sonnet", "opus", "haiku"]
 critical = ["name", "description"]
@@ -58,8 +58,8 @@ warn = ["model", "tools"]
 strict = false        # true: warnings also fail the check
 '''
 
-CI_YAML = '''# .github/workflows/cabina.yml
-name: cabina
+CI_YAML = '''# .github/workflows/project-os.yml
+name: project-os
 on: [pull_request]
 jobs:
   contract:
@@ -68,6 +68,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: pip install cabina
-      - run: cabina check --repo .
+      - run: pip install project-os
+      - run: project-os check --repo .
 '''

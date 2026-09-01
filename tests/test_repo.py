@@ -1,21 +1,21 @@
 import os, json, subprocess, tempfile, unittest
 import _helpers  # noqa
-from cabina import repo as RP, snapshot as SN, gitops as GO
+from project_os import repo as RP, snapshot as SN, gitops as GO
 
 AGENT = "---\nname: {n}\ndescription: Reviews things carefully\nmodel: {m}\ntools: Read\n---\nBody.\n"
 
-def mkrepo(d, agents, cabina_toml=None, agents_md=None):
+def mkrepo(d, agents, project_os_toml=None, agents_md=None):
     c = os.path.join(d, ".claude", "agents"); os.makedirs(c)
     for n, m in agents: open(os.path.join(c, f"{n}.md"), "w").write(AGENT.format(n=n, m=m))
     open(os.path.join(d, "CLAUDE.md"), "w").write("# rules\n")
     if agents_md is not None: open(os.path.join(d, "AGENTS.md"), "w").write(agents_md)
-    if cabina_toml is not None: open(os.path.join(d, ".cabina.toml"), "w").write(cabina_toml)
+    if project_os_toml is not None: open(os.path.join(d, ".project-os.toml"), "w").write(project_os_toml)
     return d
 
 class TestRepoCheck(unittest.TestCase):
     def test_repo_check_uses_repo_contract(self):
         with tempfile.TemporaryDirectory() as d:
-            mkrepo(d, [("a", "sonnet"), ("b", "fable")], cabina_toml='[contract]\nmodels = ["sonnet", "opus", "haiku", "fable"]\n')
+            mkrepo(d, [("a", "sonnet"), ("b", "fable")], project_os_toml='[contract]\nmodels = ["sonnet", "opus", "haiku", "fable"]\n')
             r = RP.check_repo(d)
             self.assertEqual(r["invalid"], []); self.assertEqual(r["warnings"], [])
             self.assertEqual(r["exit"], 0)
@@ -31,7 +31,7 @@ class TestRepoCheck(unittest.TestCase):
             r = RP.check_repo(d); self.assertEqual([x["name"] for x in r["invalid"]], ["bad"]); self.assertEqual(r["exit"], 1)
     def test_repo_check_strict_fails_on_warnings(self):
         with tempfile.TemporaryDirectory() as d:
-            mkrepo(d, [("b", "fable")], cabina_toml='[check]\nstrict = true\n')
+            mkrepo(d, [("b", "fable")], project_os_toml='[check]\nstrict = true\n')
             self.assertEqual(RP.check_repo(d)["exit"], 1)
     def test_repo_check_reports_agents_md_state(self):
         with tempfile.TemporaryDirectory() as d:
@@ -76,7 +76,7 @@ class TestGitOps(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             self._repo(d)
             open(os.path.join(d, "a.md"), "w").write("a"); open(os.path.join(d, "other.md"), "w").write("o")
-            ok, msg = GO.commit_path(os.path.join(d, "a.md"), "cabina: test", author=("t", "t@t"))
+            ok, msg = GO.commit_path(os.path.join(d, "a.md"), "project-os: test", author=("t", "t@t"))
             self.assertTrue(ok, msg)
             files = subprocess.run(["git", "-C", d, "show", "--name-only", "--format=", "HEAD"], capture_output=True, text=True).stdout.split()
             self.assertEqual(files, ["a.md"])                                  # other.md NOT committed
@@ -86,7 +86,7 @@ class TestGitOps(unittest.TestCase):
             self._repo(d); p = os.path.join(d, "gone.md"); open(p, "w").write("x")
             subprocess.run(["git", "-C", d, "add", "gone.md"], check=True); subprocess.run(["git", "-C", d, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "add"], check=True)
             os.remove(p)
-            ok, msg = GO.commit_path(p, "cabina: archived", author=("t", "t@t")); self.assertTrue(ok, msg)
+            ok, msg = GO.commit_path(p, "project-os: archived", author=("t", "t@t")); self.assertTrue(ok, msg)
             self.assertNotIn("gone.md", subprocess.run(["git", "-C", d, "ls-files"], capture_output=True, text=True).stdout)
     def test_refuses_outside_repo_and_mid_merge(self):
         with tempfile.TemporaryDirectory() as d:

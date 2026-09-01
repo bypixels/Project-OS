@@ -4,7 +4,7 @@ import copy, http.client, json, os, re, tempfile, threading, time, unittest
 from datetime import datetime, timedelta
 from unittest import mock
 import _helpers  # noqa
-from cabina import contract as C, docs as D, guard as G, harness as H, healthlog as HL, server as SRV, sessions as SESS, skills as SK, usage as U, worktrees as WT
+from project_os import contract as C, docs as D, guard as G, harness as H, healthlog as HL, server as SRV, sessions as SESS, skills as SK, usage as U, worktrees as WT
 from _env import Env
 
 class TestBreaks(unittest.TestCase):
@@ -299,7 +299,7 @@ class TestBreaks(unittest.TestCase):
             env.cleanup()
 
     def test_export_activity_never_leaks_local_only_guard(self):
-        from cabina import snapshot as SNAP
+        from project_os import snapshot as SNAP
         import json as _json
         env = Env()
         try:
@@ -320,7 +320,7 @@ class TestBreaks(unittest.TestCase):
             env.cleanup()
 
     def test_hub_no_write_path_guard(self):
-        from cabina import hub as HUB, config as CFG
+        from project_os import hub as HUB, config as CFG
         self.assertFalse(hasattr(HUB.HubApp, "POSTS"))
         for m in ("api_archive", "api_create", "api_archive_skill", "api_save_doc", "api_commit", "api_open", "api_focus", "api_rescan"):
             self.assertFalse(hasattr(HUB.HubApp, m))
@@ -351,7 +351,7 @@ class TestBreaks(unittest.TestCase):
                 self.assertEqual(run_posts(), [200] * 8)                              # guard removed -> canary red
 
     def test_hub_path_confinement_guard(self):
-        from cabina import hub as HUB
+        from project_os import hub as HUB
         with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as outside:
             secret = os.path.join(outside, "secret.json")
             open(secret, "w").write('{"machine": "evil", "agents": [{"name": "leaked"}], "skills": [], "harness": [], "projects": []}')
@@ -367,7 +367,7 @@ class TestBreaks(unittest.TestCase):
     def test_hub_size_cap_guard(self):
         # Orchestrator amendment: the size cap in load_dir must be an isolated helper
         # (_over_cap) so this break-test can disable it without touching os.path.getsize itself.
-        from cabina import hub as HUB
+        from project_os import hub as HUB
         import json as _json
         with tempfile.TemporaryDirectory() as d:
             open(os.path.join(d, "big.json"), "w").write(_json.dumps(
@@ -382,7 +382,7 @@ class TestBreaks(unittest.TestCase):
         # D1: a directory named `*.json` is also non-regular, but (unlike a FIFO) safe to probe
         # here — os.path.getsize/open on it never block, so this canary can disable the guard
         # without risking a hang, unlike the FIFO case covered in test_hub.py.
-        from cabina import hub as HUB
+        from project_os import hub as HUB
         with tempfile.TemporaryDirectory() as d:
             os.mkdir(os.path.join(d, "dir.json"))
             out = HUB.load_dir(d, 5)
@@ -393,16 +393,17 @@ class TestBreaks(unittest.TestCase):
 
     def test_guard_hooks_dead_cmd_guard(self):
         # S2-a: hooks_write must refuse to wire a `cmd` that does not resolve on PATH — the
-        # exact "dead hook" problem cabina flags elsewhere for hand-written hooks. Disable the
+        # exact "dead hook" problem project-os flags elsewhere for hand-written hooks. Disable the
         # resolution check in memory and show the canary ("hooks_write with a nonexistent cmd
         # must refuse") turns green (wrongly installs) before restoring the guard.
         with tempfile.TemporaryDirectory() as d:
             settings = os.path.join(d, "settings.json")
             with mock.patch.object(G, "_cmd_resolves", return_value=(True, None)):    # guard disabled
-                ok, _ = G.hooks_write(settings, "cabina-missing-xyz")
+                ok, _ = G.hooks_write(settings, "project-os")
             self.assertTrue(ok)                                    # would wire a dead hook -> canary red
             self.assertTrue(os.path.isfile(settings))
-            ok2, msg2 = G.hooks_write(settings, "cabina-missing-xyz")      # guard present
+            with mock.patch.object(G, "_cmd_resolves", return_value=(False, None)):
+                ok2, msg2 = G.hooks_write(settings, "project-os")      # guard present
             self.assertFalse(ok2)                                  # refused: no PATH resolution, no force
             self.assertIn("not on PATH", msg2)
 
@@ -411,7 +412,7 @@ class TestBreaks(unittest.TestCase):
         # (_read_export). If that per-file try/except around it were ever deleted, a single
         # broken export would make load_dir itself raise instead of marking one entry
         # "unreadable" — this asserts the guard's actual mechanism, not just its outcome.
-        from cabina import hub as HUB
+        from project_os import hub as HUB
         import json as _json
         with tempfile.TemporaryDirectory() as d:
             open(os.path.join(d, "bad.json"), "w").write("{not valid json")
@@ -501,7 +502,7 @@ class TestBreaks(unittest.TestCase):
                 conn = http.client.HTTPConnection("127.0.0.1", port)
                 try:
                     headers = {"Host": f"127.0.0.1:{port}", "Origin": origin,
-                               "Content-Type": "application/json", "X-Cabina-Token": app.token}
+                               "Content-Type": "application/json", "X-ProjectOS-Token": app.token}
                     conn.request("POST", "/api/open", body=json.dumps({"path": env.alpha + "/CLAUDE.md"}).encode(), headers=headers)
                     r = conn.getresponse(); code = r.status; r.read()
                     return code
@@ -523,7 +524,7 @@ class TestBreaks(unittest.TestCase):
             env.cleanup()
 
     def test_hub_host_origin_guard(self):
-        from cabina import hub as HUB, config as CFG
+        from project_os import hub as HUB, config as CFG
         import http.client, threading
         from http.server import ThreadingHTTPServer
         with tempfile.TemporaryDirectory() as d:
@@ -546,13 +547,13 @@ class TestBreaks(unittest.TestCase):
             finally:
                 srv.shutdown(); srv.server_close()
 
-    def test_hooks_install_cabina_only_allowlist_guard(self):
-        # U2: hooks_write must refuse anything that is not cabina itself, even with force=True.
-        # Disable _cmd_is_cabina in memory and show a `bash -c '...'` payload would be accepted
+    def test_hooks_install_project_os_only_allowlist_guard(self):
+        # U2: hooks_write must refuse anything that is not project-os itself, even with force=True.
+        # Disable _cmd_is_project_os in memory and show a `bash -c '...'` payload would be accepted
         # (and written to settings.json) before restoring the guard.
         with tempfile.TemporaryDirectory() as d:
             settings = os.path.join(d, "settings.json")
-            with mock.patch.object(G, "_cmd_is_cabina", return_value=(True, "")):        # guard disabled
+            with mock.patch.object(G, "_cmd_is_project_os", return_value=(True, "")):        # guard disabled
                 ok, _ = G.hooks_write(settings, "bash -c 'echo pwned'", force=True)
             self.assertTrue(ok)                                            # would wire an arbitrary command -> canary red
             self.assertTrue(os.path.isfile(settings))
@@ -561,6 +562,22 @@ class TestBreaks(unittest.TestCase):
             ok2, msg2 = G.hooks_write(settings, "bash -c 'echo pwned'", force=True)     # guard present
             self.assertFalse(ok2)
             self.assertFalse(os.path.isfile(settings))
+        # Impostor-basename regression: the guard must match the basename EXACTLY, not with
+        # startswith -- otherwise "project-os-evil" masquerades as project-os. Show the real
+        # guard refuses it, and that a startswith-shaped stand-in (the check's old, buggy form)
+        # would wrongly accept it.
+        def _old_startswith_check(cmd):
+            base = os.path.basename(cmd.split()[0]).lower()
+            return (base.startswith("project-os"), "")
+        with tempfile.TemporaryDirectory() as d:
+            settings = os.path.join(d, "settings.json")
+            ok3, _ = G.hooks_write(settings, "project-os-evil", force=True)             # guard present
+            self.assertFalse(ok3)
+            self.assertFalse(os.path.isfile(settings))
+            with mock.patch.object(G, "_cmd_is_project_os", side_effect=_old_startswith_check):  # guard reverted to the old shape
+                ok4, _ = G.hooks_write(settings, "project-os-evil", force=True)
+            self.assertTrue(ok4)                                             # canary red: impostor accepted
+            self.assertTrue(os.path.isfile(settings))
 
     def test_healthlog_dedup_guard(self):
         # If _should_append ever always returned True, two identical-and-recent `check` runs
@@ -611,7 +628,7 @@ class TestBreaks(unittest.TestCase):
             env2.cleanup()
 
     def test_open_path_confinement_guard(self):
-        # U3: POST /api/open must refuse any path outside cabina's own roots.
+        # U3: POST /api/open must refuse any path outside project-os's own roots.
         env = Env()
         try:
             app = SRV.App(env.cfg)
@@ -626,7 +643,7 @@ class TestBreaks(unittest.TestCase):
             env.cleanup()
 
     def test_terminal_target_confinement_guard(self):
-        # W3: POST /api/open-terminal must refuse any path outside cabina's own roots (same
+        # W3: POST /api/open-terminal must refuse any path outside project-os's own roots (same
         # confinement as /api/open, plus a directory check).
         env = Env()
         try:

@@ -1,4 +1,4 @@
-"""Configuration: ~/.config/cabina/config.toml (or $CABINA_CONFIG). Everything has a default."""
+"""Configuration: ~/.config/project-os/config.toml (or $PROJECT_OS_CONFIG). Everything has a default."""
 import os, sys, tomllib, copy
 from . import host
 
@@ -20,7 +20,7 @@ DEFAULTS = {
         "known_fields": ["overrides", "maxTurns", "color", "version"],
     },
     "scan": {
-        "measure_worktrees": False,                     # `du` over worktrees: ~2 s each; enable with `cabina scan --worktrees`
+        "measure_worktrees": False,                     # `du` over worktrees: ~2 s each; enable with `project-os scan --worktrees`
         "check_mcp": False,                             # `claude mcp list` (~10 s, needs the CLI)
         "skip_dirs": ["node_modules", ".git", ".next", "dist", "build", ".venv", "__pycache__", "worktrees", "_archive"],
     },
@@ -43,7 +43,7 @@ def _merge(base, over):
 
 
 def config_path():
-    return os.environ.get("CABINA_CONFIG") or os.path.join(_D["config"], "config.toml")
+    return os.environ.get("PROJECT_OS_CONFIG") or os.path.join(_D["config"], "config.toml")
 
 
 def load(path=None):
@@ -65,14 +65,14 @@ def example_toml():
     state_dir = DEFAULTS["state_dir"]
     if state_dir.startswith(HOME):
         state_dir = "~" + state_dir[len(HOME):]   # portable across users of the same platform
-    return rf'''# cabina configuration — every key is optional; these are the defaults.
-# Locations: macOS/Linux  ~/.config/cabina/config.toml   state ~/.local/share/cabina
-#            Windows      %APPDATA%\cabina\config.toml   state %LOCALAPPDATA%\cabina
+    return rf'''# project-os configuration — every key is optional; these are the defaults.
+# Locations: macOS/Linux  ~/.config/project-os/config.toml   state ~/.local/share/project-os
+#            Windows      %APPDATA%\project-os\config.toml   state %LOCALAPPDATA%\project-os
 language = "en"                 # "en" | "es"
 claude_home = "~/.claude"       # same on every OS
 codex_home = "~/.codex"
 roots = ["~/Documents", "~/Desktop"]
-state_dir = '{state_dir}'   # your platform's default (macOS/Linux: ~/.local/share/cabina · Windows: %LOCALAPPDATA%\cabina)
+state_dir = '{state_dir}'   # your platform's default (macOS/Linux: ~/.local/share/project-os · Windows: %LOCALAPPDATA%\project-os)
 
 [server]
 host = "127.0.0.1"
@@ -98,7 +98,7 @@ active_seconds = 600            # window after the last transcript line counted 
 retention_days = 365            # how long session activity is kept before it ages out
 
 [hub]
-max_file_mb = 5                 # cap on each machine's export file cabina hub will load
+max_file_mb = 5                 # cap on each machine's export file project-os hub will load
 
 [docs]
 backup_retention_days = 30
@@ -107,5 +107,5 @@ max_per_dir = 60                 # cap on documents listed per folder in the Doc
 [check]
 worktree_stale_days = 14
 memory_stale_days = 30
-history_days = 180               # how long cabina check's health.jsonl trend is kept
+history_days = 180               # how long project-os check's health.jsonl trend is kept
 '''

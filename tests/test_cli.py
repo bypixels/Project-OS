@@ -3,8 +3,8 @@ from contextlib import redirect_stdout
 from unittest import mock
 import _helpers  # noqa
 from _env import Env
-from cabina import scan
-from cabina.i18n import t
+from project_os import scan
+from project_os.i18n import t
 
 class TestActivityCommand(unittest.TestCase):
     def test_activity_json_lists_sessions(self):
@@ -13,7 +13,7 @@ class TestActivityCommand(unittest.TestCase):
             f.write(f"claude_home = '{env.claude}'\ncodex_home = '{env.codex}'\nroots = ['{env.projects}']\nstate_dir = '{env.state}'\n[live]\nprovider = \"none\"\n[scan]\nmeasure_worktrees = false\ncheck_mcp = false\n")
             cfgp = f.name
         src = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
-        r = subprocess.run([sys.executable, "-m", "cabina", "--config", cfgp, "activity", "--json"],
+        r = subprocess.run([sys.executable, "-m", "project_os", "--config", cfgp, "activity", "--json"],
                             capture_output=True, text=True, env={**os.environ, "PYTHONPATH": src}, timeout=60)
         self.assertEqual(r.returncode, 0, r.stderr)
         items = json.loads(r.stdout)
@@ -28,7 +28,7 @@ class TestExportActivity(unittest.TestCase):
             cfgp = f.name
         outdir = tempfile.mkdtemp(); outp = os.path.join(outdir, "export.json")
         src = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
-        r = subprocess.run([sys.executable, "-m", "cabina", "--config", cfgp, "export", "--activity", "--detail", "--project", "alpha", "-o", outp],
+        r = subprocess.run([sys.executable, "-m", "project_os", "--config", cfgp, "export", "--activity", "--detail", "--project", "alpha", "-o", outp],
                             capture_output=True, text=True, env={**os.environ, "PYTHONPATH": src}, timeout=60)
         self.assertEqual(r.returncode, 0, r.stderr)
         data = json.load(open(outp))
@@ -39,12 +39,12 @@ class TestExportActivity(unittest.TestCase):
 
 class TestHubCommand(unittest.TestCase):
     def test_hub_command_calls_serve_hub_with_dir_and_port(self):
-        from cabina import cli as CLI
+        from project_os import cli as CLI
         called = {}
         def fake(dir_, cfg, port=None, open_browser=True):
             called.update(dir=dir_, port=port, open_browser=open_browser)
         with tempfile.TemporaryDirectory() as d:
-            with mock.patch("cabina.hub.serve_hub", fake):
+            with mock.patch("project_os.hub.serve_hub", fake):
                 CLI.main(["hub", d, "--port", "9999", "--no-open"])
         self.assertEqual(called["dir"], d); self.assertEqual(called["port"], 9999); self.assertFalse(called["open_browser"])
 
@@ -53,7 +53,7 @@ class TestCompareCommand(unittest.TestCase):
     JSONDecodeError traceback instead of the clean `error: ...` + exit 2 pattern used elsewhere
     in main() (see the `export --activity` ValueError branch just above it)."""
     def test_compare_missing_file_prints_clean_error(self):
-        from cabina import cli as CLI
+        from project_os import cli as CLI
         with tempfile.TemporaryDirectory() as d:
             a = os.path.join(d, "a.json"); b = os.path.join(d, "missing.json")
             json.dump({"agents": [], "skills": [], "projects": []}, open(a, "w"))
@@ -65,7 +65,7 @@ class TestCompareCommand(unittest.TestCase):
             self.assertIn(b, buf.getvalue())
 
     def test_compare_invalid_json_prints_clean_error(self):
-        from cabina import cli as CLI
+        from project_os import cli as CLI
         with tempfile.TemporaryDirectory() as d:
             a = os.path.join(d, "a.json"); b = os.path.join(d, "bad.json")
             json.dump({"agents": [], "skills": [], "projects": []}, open(a, "w"))
@@ -86,7 +86,7 @@ class TestAgentsRosterDetailColumn(unittest.TestCase):
     boundary and appends a placeholder ("…") instead."""
     def test_long_detail_is_shortened_on_a_word_boundary(self):
         import argparse
-        from cabina import cli as CLI
+        from project_os import cli as CLI
         env = Env()
         try:
             scan.save(env.cfg, scan.run(env.cfg))
@@ -109,13 +109,13 @@ class _FakeStderr(io.StringIO):
 
 
 class TestAgentsUsageScanHint(unittest.TestCase):
-    """H2 (CLI part): `cabina agents` refreshes usage history (a grep over every transcript
+    """H2 (CLI part): `project-os agents` refreshes usage history (a grep over every transcript
     under ~/.claude/projects) with zero feedback, which can take ~10s and looks hung. When
     stderr is a tty, print a one-line heads-up before R.load() kicks that off; stay silent
     when stderr is redirected/piped (scripts, tests, CI)."""
     def _run(self, tty):
         import argparse
-        from cabina import cli as CLI
+        from project_os import cli as CLI
         env = Env()
         try:
             scan.save(env.cfg, scan.run(env.cfg))
@@ -137,12 +137,12 @@ class TestAgentsUsageScanHint(unittest.TestCase):
 
 class TestHooksCommand(unittest.TestCase):
     """H1: `--cmd` on the hooks subparser used to share argparse's own `dest="cmd"` with the
-    top-level subcommand selector, so `a.cmd` got overwritten and `cabina hooks` fell through
+    top-level subcommand selector, so `a.cmd` got overwritten and `project-os hooks` fell through
     to the final `server.serve(...)` branch instead of running the hooks branch at all."""
     def test_hooks_prints_snippet_and_never_starts_the_server(self):
-        from cabina import cli as CLI
+        from project_os import cli as CLI
         buf = io.StringIO()
-        with mock.patch("cabina.server.serve") as srv:
+        with mock.patch("project_os.server.serve") as srv:
             with redirect_stdout(buf):
                 rc = CLI.main(["hooks"])
         self.assertEqual(rc, 0)
@@ -151,20 +151,25 @@ class TestHooksCommand(unittest.TestCase):
         self.assertIn("SessionStart", buf.getvalue())
 
     def test_hooks_cmd_flag_is_reflected_in_the_snippet(self):
-        from cabina import cli as CLI
+        from project_os import cli as CLI
         buf = io.StringIO()
-        with mock.patch("cabina.server.serve") as srv:
+        with mock.patch("project_os.server.serve") as srv:
             with redirect_stdout(buf):
                 CLI.main(["hooks", "--cmd", "mycab"])
         srv.assert_not_called()
         self.assertIn("mycab guard", buf.getvalue())
 
     def test_hooks_write_writes_the_settings_file(self):
-        from cabina import cli as CLI
+        # hooks_write refuses to wire a `cmd` that does not resolve on PATH -- mock resolution
+        # so this test never depends on whether "project-os" happens to be installed on the
+        # machine running the suite (it wasn't on any CI runner under the tool's previous
+        # name either; it only ever passed locally by coincidence of a pre-existing install).
+        from project_os import cli as CLI
         with tempfile.TemporaryDirectory() as d:
             sp = os.path.join(d, "settings.json")
             buf = io.StringIO()
-            with mock.patch("cabina.server.serve") as srv:
+            with mock.patch("project_os.server.serve") as srv, \
+                 mock.patch("project_os.guard.shutil.which", return_value="/usr/local/bin/project-os"):
                 with redirect_stdout(buf):
                     rc = CLI.main(["hooks", "--write", "--settings", sp])
             srv.assert_not_called()
@@ -181,7 +186,7 @@ class TestCliDocstringListsSubcommands(unittest.TestCase):
     subcommand is added without documenting it."""
 
     def _registered_subcommand_names(self):
-        from cabina import cli as CLI
+        from project_os import cli as CLI
         names = []
         orig_add_parser = argparse._SubParsersAction.add_parser
 
@@ -196,7 +201,7 @@ class TestCliDocstringListsSubcommands(unittest.TestCase):
         return names
 
     def test_docstring_mentions_every_registered_subcommand(self):
-        from cabina import cli as CLI
+        from project_os import cli as CLI
         names = self._registered_subcommand_names()
         self.assertTrue(names, "spy did not observe any add_parser calls")
         missing = [n for n in names if n not in CLI.__doc__]
@@ -204,14 +209,14 @@ class TestCliDocstringListsSubcommands(unittest.TestCase):
 
 
 class TestWorktreesCommand(unittest.TestCase):
-    """W2: `cabina worktrees` is a report — it only ever prints a summary + a cleanup script for
+    """W2: `project-os worktrees` is a report — it only ever prints a summary + a cleanup script for
     the user to run themselves (never executes anything). The alpha fixture in tests/_env.py is
     not a real git repo, so scan sees no worktrees at all: this exercises the "nothing to clean
     up" path end to end without needing a real git worktree setup (that belongs to
     test_worktrees.py, which drives the generator directly against synthetic scan data)."""
 
     def test_worktrees_command_prints_summary_and_script(self):
-        from cabina import cli as CLI
+        from project_os import cli as CLI
         env = Env()
         try:
             scan.save(env.cfg, scan.run(env.cfg))
@@ -226,7 +231,7 @@ class TestWorktreesCommand(unittest.TestCase):
             env.cleanup()
 
     def test_worktrees_command_json(self):
-        from cabina import cli as CLI
+        from project_os import cli as CLI
         env = Env()
         try:
             scan.save(env.cfg, scan.run(env.cfg))

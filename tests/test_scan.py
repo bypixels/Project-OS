@@ -2,7 +2,7 @@
 and prunable worktrees (directory removed) must degrade cleanly instead of raising."""
 import os, shutil, subprocess, tempfile, unittest
 import _helpers  # noqa
-from cabina import scan
+from project_os import scan
 
 
 def _git(d, *a):
@@ -95,7 +95,7 @@ class TestProjectsCarriesWorktreeFields(unittest.TestCase):
         }]}
 
     def test_unmeasured_sizes_carry_none_flag(self):
-        from cabina import projects
+        from project_os import projects
         wt = [{"path": "/wt/a", "name": "a", "mb": None, "mtime": "2026-08-01", "dirty": 0,
                "branch": "feature", "prunable": False}]
         rows = projects.load(self._data(wt, measured=False))
@@ -106,7 +106,7 @@ class TestProjectsCarriesWorktreeFields(unittest.TestCase):
         self.assertFalse(detail["prunable"])
 
     def test_measured_sizes_and_prunable_row_carry_through(self):
-        from cabina import projects
+        from project_os import projects
         wt = [{"path": "/wt/a", "name": "a", "mb": 512, "mtime": "2026-08-01", "dirty": 0,
                "branch": "feature", "prunable": False},
               {"path": "/wt/gone", "name": "gone", "mb": None, "mtime": "?", "dirty": None,

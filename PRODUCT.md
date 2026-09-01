@@ -11,14 +11,14 @@ web
 Primary today: a single operator (the repo owner) inspecting their own Claude Code / Codex
 environment on their machine. Confirmed direction: the product is intended for publication
 (open source / third parties), so the UI must explain itself to a first-time visitor with no
-context. Secondary: read-only viewers of a shared `cabina hub` snapshot.
+context. Secondary: read-only viewers of a shared `project-os hub` snapshot.
 
 ## Product Purpose
 
-cabina inspects an agent environment — agents, skills, hooks, docs, sessions, usage, drift
+project-os inspects an agent environment — agents, skills, hooks, docs, sessions, usage, drift
 between Claude and Codex — so the operator can see what is installed, what is broken, what is
 actually used, and what can safely be archived. Success: the operator trusts what the screen
-says enough to act on it (archive, fix a hook, repair drift) using commands cabina generates
+says enough to act on it (archive, fix a hook, repair drift) using commands project-os generates
 but never runs.
 
 ## Positioning
@@ -34,11 +34,11 @@ Typical session (confirmed): long cleanup sessions — ordering the environment,
 before trusting/archiving them, comparing twins, reviewing usage. All four workflows matter and
 are confirmed as primary jobs: health check (anything red?), exploring the agent/skill catalog,
 monitoring activity/sessions, and managing docs (CLAUDE.md / MEMORY.md with version history).
-Local server on 127.0.0.1; `cabina hub` serves a reduced read-only subset of tabs to others.
+Local server on 127.0.0.1; `project-os hub` serves a reduced read-only subset of tabs to others.
 
 ## Capabilities and Constraints
 
-- One static file: `src/cabina/static/index.html` served with `__TOKEN__`/`__LANG__`
+- One static file: `src/project_os/static/index.html` served with `__TOKEN__`/`__LANG__`
   substitution. No build step, no external dependencies, no CDNs — must work fully offline.
 - Zero-dependency Python stdlib server; every write goes through a guard; the UI's only write
   paths are the existing POST routes.
@@ -69,7 +69,7 @@ benchmarks or marketing claims exist; future surfaces must not invent them. Scre
 
 1. Honest measurement first: unknown reads as unknown; nothing is ever auto-repaired.
 2. The screen must justify trust — a claim without its evidence (count, path, diff) is not shown.
-3. Commands are generated for the user to read and run, never executed by cabina.
+3. Commands are generated for the user to read and run, never executed by project-os.
 4. Optimize for the long cleanup session: density, scanability and reading comfort over spectacle.
 5. Self-explanatory to a stranger: the intended audience is eventually the public.
 

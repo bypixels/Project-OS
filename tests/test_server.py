@@ -1,7 +1,7 @@
 import copy, json, os, threading, time, unittest, urllib.request
 import _helpers  # noqa
 from _env import Env
-from cabina import server, scan
+from project_os import server, scan
 from http.server import ThreadingHTTPServer
 
 class TestServer(unittest.TestCase):
@@ -25,7 +25,7 @@ class TestServer(unittest.TestCase):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}{path}") as r: return json.loads(r.read())
     def post(self, path, body, token=None):
         req = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", data=json.dumps(body).encode(), method="POST",
-                                     headers={"Content-Type": "application/json", "X-Cabina-Token": token if token is not None else self.app.token})
+                                     headers={"Content-Type": "application/json", "X-ProjectOS-Token": token if token is not None else self.app.token})
         try:
             with urllib.request.urlopen(req) as r: return r.status, json.loads(r.read())
         except urllib.error.HTTPError as e: return e.code, json.loads(e.read())
@@ -71,13 +71,13 @@ class TestServer(unittest.TestCase):
         # every request, unlike api_agents' cached, TTL'd roster(). Mirror that pattern for
         # skills: two consecutive GETs must refresh usage only once; archiving a skill must
         # invalidate the cache so the next GET refreshes again.
-        from cabina import usage
+        from project_os import usage
         from unittest import mock
         tdir = os.path.join(self.env.alpha, ".claude", "skills", "throwaway")
         os.makedirs(tdir, exist_ok=True)
         open(os.path.join(tdir, "SKILL.md"), "w").write("---\nname: throwaway\ndescription: t\n---\n")
         self.app._skills = None                      # force a real recompute inside the patched block below
-        with mock.patch("cabina.server.usage.refresh", wraps=usage.refresh) as m:
+        with mock.patch("project_os.server.usage.refresh", wraps=usage.refresh) as m:
             s1 = self.get("/api/skills")
             self.assertTrue(any(x["name"] == "throwaway" for x in s1["skills"]))
             self.get("/api/skills")
@@ -123,7 +123,7 @@ class TestServer(unittest.TestCase):
             return {"projects": [], "global": {"agents": [], "skills": [], "commands": [], "rules": []},
                     "sessions": [], "codex": {"present": False, "home": "", "agents": [], "skills": []},
                     "mcp": {"checked": False, "servers": []}, "generated": "x", "claude_home": self.env.cfg["claude_home"]}
-        with mock.patch("cabina.server.scan.run", side_effect=fake_run), mock.patch("cabina.server.scan.save"):
+        with mock.patch("project_os.server.scan.run", side_effect=fake_run), mock.patch("project_os.server.scan.save"):
             r = self.app.api_rescan({"mcp": True, "worktrees": True})
             self.assertTrue(r["ok"], r)
             for _ in range(150):
@@ -147,7 +147,7 @@ class TestServer(unittest.TestCase):
         ev = threading.Event()
         def slow_run(cfg):
             ev.wait(2); return scan.load(self.env.cfg)
-        with mock.patch("cabina.server.scan.run", side_effect=slow_run), mock.patch("cabina.server.scan.save"):
+        with mock.patch("project_os.server.scan.run", side_effect=slow_run), mock.patch("project_os.server.scan.save"):
             r1 = self.app.api_rescan({})
             self.assertTrue(r1["ok"], r1)
             r2 = self.app.api_rescan({})
@@ -171,7 +171,7 @@ class TestServer(unittest.TestCase):
             "commands": [], "rules": [], "git": None, "claude_md": None, "agents_md": None,
             "agents_md_link": None,
         }]
-        with mock.patch("cabina.server.scan.run", return_value=marker), mock.patch("cabina.server.scan.save"):
+        with mock.patch("project_os.server.scan.run", return_value=marker), mock.patch("project_os.server.scan.save"):
             r = self.app.api_rescan({})
             self.assertTrue(r["ok"], r)
             for _ in range(150):
@@ -195,7 +195,7 @@ class TestServer(unittest.TestCase):
         d0 = self.get("/api/scan-status")
         for k in ("scanning", "started", "finished", "error", "scanned_at"): self.assertIn(k, d0)
         def boom(cfg): raise RuntimeError("kaboom")
-        with mock.patch("cabina.server.scan.run", side_effect=boom):
+        with mock.patch("project_os.server.scan.run", side_effect=boom):
             r = self.app.api_rescan({})
             self.assertTrue(r["ok"], r)
             for _ in range(150):
@@ -223,7 +223,7 @@ class TestServer(unittest.TestCase):
             headers = dict(r.getheaders()); body = json.loads(r.read())
         self.assertIn("Content-Disposition", headers)
         self.assertIn("attachment", headers["Content-Disposition"])
-        for k in ("cabina", "machine", "agents", "skills", "projects"): self.assertIn(k, body)
+        for k in ("project_os", "machine", "agents", "skills", "projects"): self.assertIn(k, body)
         self.assertNotIn("activity", body)
     def test_export_endpoint_with_activity(self):
         # snapshot.export_activity() refreshes the sessions registry itself — no need to call
@@ -296,7 +296,7 @@ class TestServer(unittest.TestCase):
             row = self.app._find_skill({"tool": ["claude"], "project": ["alpha"], "name": ["dup"]})
         self.assertIsNone(row)
     def test_activity_endpoint_serves_cache(self):
-        from cabina import sessions as SESS
+        from project_os import sessions as SESS
         SESS.refresh(self.env.cfg)                      # populate the cache once, synchronously, for the test
         d = self.get("/api/activity?days=30")
         self.assertTrue(any(s["project"] == "alpha" for s in d["sessions"]))
@@ -306,7 +306,7 @@ class TestServer(unittest.TestCase):
     def test_activity_endpoint_filters_by_days(self):
         # H3(i): api_activity received `days` but returned EVERY cached session regardless
         # (measured: identical payload size for days=7 and days=365). Filter by `started`.
-        from cabina import sessions as SESS
+        from project_os import sessions as SESS
         from datetime import datetime, timedelta, timezone
         old_ts = (datetime.now(timezone.utc) - timedelta(days=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
         sdir = os.path.join(self.env.claude, "projects", "-work-alpha")
@@ -343,21 +343,21 @@ class TestServer(unittest.TestCase):
         code, body = self._raw("GET", "/", headers={"Host": f"127.0.0.1:{self.port}"})
         self.assertEqual(code, 200)
     def test_post_with_bad_host_header_rejected(self):
-        headers = {"Host": "evil.example", "Content-Type": "application/json", "X-Cabina-Token": self.app.token}
+        headers = {"Host": "evil.example", "Content-Type": "application/json", "X-ProjectOS-Token": self.app.token}
         code, body = self._raw("POST", "/api/open", headers=headers, body=json.dumps({"path": "/tmp"}).encode())
         self.assertEqual(code, 421)
         self.assertFalse(json.loads(body)["ok"])
     def test_post_with_bad_origin_rejected_even_with_valid_token(self):
         headers = {"Host": f"127.0.0.1:{self.port}", "Origin": "http://evil.example",
-                   "Content-Type": "application/json", "X-Cabina-Token": self.app.token}
+                   "Content-Type": "application/json", "X-ProjectOS-Token": self.app.token}
         code, body = self._raw("POST", "/api/open", headers=headers, body=json.dumps({"path": "/tmp"}).encode())
         self.assertEqual(code, 403)
         self.assertFalse(json.loads(body)["ok"])
     def test_post_with_loopback_origin_allowed(self):
         from unittest import mock
-        with mock.patch("cabina.server.host.open_path", return_value=(True, "opened")):
+        with mock.patch("project_os.server.host.open_path", return_value=(True, "opened")):
             headers = {"Host": f"127.0.0.1:{self.port}", "Origin": f"http://127.0.0.1:{self.port}",
-                       "Content-Type": "application/json", "X-Cabina-Token": self.app.token}
+                       "Content-Type": "application/json", "X-ProjectOS-Token": self.app.token}
             code, body = self._raw("POST", "/api/open", headers=headers,
                                     body=json.dumps({"path": self.env.alpha}).encode())
         self.assertEqual(code, 200)
@@ -369,7 +369,7 @@ class TestServer(unittest.TestCase):
         import copy, http.client, threading
         from http.server import ThreadingHTTPServer
         from unittest import mock
-        from cabina import server as SRV
+        from project_os import server as SRV
         cfg2 = copy.deepcopy(self.env.cfg)
         cfg2["server"]["host"] = "10.0.0.5"
         app2 = SRV.App(cfg2)
@@ -377,16 +377,16 @@ class TestServer(unittest.TestCase):
         port2 = srv2.server_address[1]
         threading.Thread(target=srv2.serve_forever, daemon=True).start()
         try:
-            with mock.patch("cabina.server.host.open_path", return_value=(True, "opened")):
+            with mock.patch("project_os.server.host.open_path", return_value=(True, "opened")):
                 conn = http.client.HTTPConnection("127.0.0.1", port2)
                 headers = {"Host": f"127.0.0.1:{port2}", "Origin": "http://10.0.0.5:1234",
-                           "Content-Type": "application/json", "X-Cabina-Token": app2.token}
+                           "Content-Type": "application/json", "X-ProjectOS-Token": app2.token}
                 conn.request("POST", "/api/open", body=json.dumps({"path": app2.cfg["claude_home"]}).encode(), headers=headers)
                 r = conn.getresponse(); code = r.status; body = json.loads(r.read()); conn.close()
             self.assertEqual(code, 403, body)          # non-loopback Origin: refused
             conn = http.client.HTTPConnection("127.0.0.1", port2)
             headers2 = {"Host": f"127.0.0.1:{port2}", "Origin": "http://evil.example",
-                        "Content-Type": "application/json", "X-Cabina-Token": app2.token}
+                        "Content-Type": "application/json", "X-ProjectOS-Token": app2.token}
             conn.request("POST", "/api/open", body=json.dumps({"path": "/tmp"}).encode(), headers=headers2)
             r2 = conn.getresponse(); code2 = r2.status; r2.read(); conn.close()
             self.assertEqual(code2, 403)               # still refuses a genuinely foreign origin
@@ -410,14 +410,14 @@ class TestServer(unittest.TestCase):
     # ---------- /api/open path confinement ----------
     def test_open_outside_roots_refused_and_never_calls_host_open_path(self):
         from unittest import mock
-        with mock.patch("cabina.server.host.open_path") as m:
+        with mock.patch("project_os.server.host.open_path") as m:
             code, r = self.post("/api/open", {"path": "/tmp"})
         self.assertFalse(r["ok"], r)
         self.assertIn("outside", r["message"])
         m.assert_not_called()
     def test_open_inside_project_root_allowed(self):
         from unittest import mock
-        with mock.patch("cabina.server.host.open_path", return_value=(True, "opened")) as m:
+        with mock.patch("project_os.server.host.open_path", return_value=(True, "opened")) as m:
             code, r = self.post("/api/open", {"path": os.path.join(self.env.alpha, "CLAUDE.md")})
         self.assertTrue(r["ok"], r)
         m.assert_called_once()
@@ -480,25 +480,25 @@ class TestServer(unittest.TestCase):
     # ---------- W3: /api/open-terminal ----------
     def test_open_terminal_outside_roots_refused_and_never_calls_host(self):
         from unittest import mock
-        with mock.patch("cabina.server.host.open_terminal") as m:
+        with mock.patch("project_os.server.host.open_terminal") as m:
             code, r = self.post("/api/open-terminal", {"path": "/tmp"})
         self.assertFalse(r["ok"], r)
         m.assert_not_called()
     def test_open_terminal_refuses_a_file(self):
         from unittest import mock
-        with mock.patch("cabina.server.host.open_terminal") as m:
+        with mock.patch("project_os.server.host.open_terminal") as m:
             code, r = self.post("/api/open-terminal", {"path": os.path.join(self.env.alpha, "CLAUDE.md")})
         self.assertFalse(r["ok"], r)
         m.assert_not_called()
     def test_open_terminal_inside_project_root_allowed(self):
         from unittest import mock
-        with mock.patch("cabina.server.host.open_terminal", return_value=(True, "opened")) as m:
+        with mock.patch("project_os.server.host.open_terminal", return_value=(True, "opened")) as m:
             code, r = self.post("/api/open-terminal", {"path": self.env.alpha})
         self.assertTrue(r["ok"], r)
         m.assert_called_once()
     def test_open_terminal_requires_token(self):
         from unittest import mock
-        with mock.patch("cabina.server.host.open_terminal") as launcher:
+        with mock.patch("project_os.server.host.open_terminal") as launcher:
             code, _ = self.post("/api/open-terminal", {"path": self.env.alpha}, token="wrong")
         self.assertEqual(code, 403)
         launcher.assert_not_called()
@@ -515,7 +515,7 @@ class TestServer(unittest.TestCase):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
         self.assertIn("esc(r.script)", html)
     def test_server_module_never_shells_out_directly(self):
-        # W3: cabina never runs `git worktree remove`/prune itself -- the script is only ever
+        # W3: project-os never runs `git worktree remove`/prune itself -- the script is only ever
         # text for the user to review and paste. Guard the ENTIRE server.py module, not just the
         # new endpoint, so a future change here regresses loudly.
         server_path = os.path.join(os.path.dirname(server.__file__), "server.py")
@@ -666,7 +666,7 @@ class TestServer(unittest.TestCase):
         # W3-style guard, mirrored for docs: a path containing a shell metacharacter must never
         # be handed to the user as a pasteable command.
         from unittest import mock
-        with mock.patch("cabina.server.WT._is_unsafe", return_value=True):
+        with mock.patch("project_os.server.WT._is_unsafe", return_value=True):
             d = self.get("/api/doc?project=alpha&rel=CLAUDE.md"); self.assertTrue(d["ok"])
             code, r = self.post("/api/save-doc", {"project": "alpha", "rel": "CLAUDE.md",
                                                    "content": d["content"] + "\nunsafe-test\n", "hash": d["hash"]})
@@ -685,7 +685,7 @@ class TestServer(unittest.TestCase):
         r = self.get("/api/in-repo?path=" + os.path.join(a, "CLAUDE.md")); self.assertTrue(r["in_repo"])
         d = self.get("/api/doc?project=alpha&rel=CLAUDE.md")
         self.post("/api/save-doc", {"project": "alpha", "rel": "CLAUDE.md", "content": "# alpha 3\n", "hash": d["hash"]})
-        code, r = self.post("/api/commit", {"path": os.path.join(a, "CLAUDE.md"), "message": "cabina: edit CLAUDE.md"})
+        code, r = self.post("/api/commit", {"path": os.path.join(a, "CLAUDE.md"), "message": "project-os: edit CLAUDE.md"})
         self.assertTrue(r["ok"], r)
         files = subprocess.run(["git", "-C", a, "show", "--name-only", "--format=", "HEAD"], capture_output=True, text=True).stdout.split()
         self.assertEqual(files, ["CLAUDE.md"])          # AGENTS.md, .claude/... untouched by the commit
@@ -792,9 +792,9 @@ class TestServer(unittest.TestCase):
         end = html.index("// ---------- ACTIVITY ----------")
         body = html[start:end]
         # renderArchive interpolates x.name/x.project into a git commit MESSAGE string
-        # (`cabina: archive ${x.name} (${x.project})`), never into innerHTML — not an escaping
+        # (`project-os: archive ${x.name} (${x.project})`), never into innerHTML — not an escaping
         # concern. Whitelisted by exact substring so any other change to this block is still caught.
-        git_message = "`cabina: archive ${x.name} (${x.project})`"
+        git_message = "`project-os: archive ${x.name} (${x.project})`"
         self.assertIn(git_message, body, "git message literal moved; update whitelist")
         body = body.replace(git_message, "")
         pattern = re.compile(r"\$\{([^{}]*\bx\.(?:title|project|machine|branch|desc|description|name)\b[^{}]*)\}")
@@ -895,13 +895,13 @@ class TestServer(unittest.TestCase):
         # The tab must never render blank: if check.run() throws, the endpoint still answers
         # 200 with an empty findings list and the error message, never a 500.
         from unittest import mock
-        with mock.patch("cabina.server.CHECK.run", side_effect=RuntimeError("boom")):
+        with mock.patch("project_os.server.CHECK.run", side_effect=RuntimeError("boom")):
             d = self.get("/api/health")
         self.assertEqual(d["findings"], [])
         self.assertIn("boom", d["error"])
     # ---------- Fase 3: /api/health-history ----------
     def test_health_history_endpoint(self):
-        from cabina import healthlog as HL
+        from project_os import healthlog as HL
         from datetime import datetime, timedelta
         now = datetime.now().astimezone()
         older = now - timedelta(days=3)
@@ -945,7 +945,7 @@ class TestServer(unittest.TestCase):
         def fake_run(cfg, quick=False):
             calls["quick"] = quick
             return []
-        with mock.patch("cabina.server.CHECK.run", side_effect=fake_run):
+        with mock.patch("project_os.server.CHECK.run", side_effect=fake_run):
             self.get("/api/tiles")
         self.assertIn("quick", calls)
         self.assertFalse(calls["quick"])
@@ -954,7 +954,7 @@ class TestServer(unittest.TestCase):
         # including ones with no `projects` key (global findings, e.g. broken symlinks/MCP/stale
         # scan) -- never the SUM of per-tile attributed counts, which double-counts a finding
         # attributed to more than one project and drops global findings entirely.
-        from cabina import server as SRV
+        from project_os import server as SRV
         findings = [
             {"sev": "crit"},                          # global: no `projects` key at all
             {"sev": "warn", "projects": ["a", "b"]},   # attributed to two projects
@@ -963,7 +963,7 @@ class TestServer(unittest.TestCase):
         ]
         self.assertEqual(SRV._health_totals(findings), {"crit": 1, "warn": 1, "info": 1})
     def test_project_tiles_order(self):
-        from cabina import server as SRV
+        from project_os import server as SRV
         tiles = [
             {"project": "z", "last_session": "2026-08-10T00:00:00", "active": False},
             {"project": "a", "last_session": None, "active": True},
@@ -1052,7 +1052,7 @@ class TestServer(unittest.TestCase):
 
     def test_hooks_status_endpoint_accepts_cmd_query(self):
         from unittest import mock
-        with mock.patch("cabina.guard.shutil.which", return_value=None):
+        with mock.patch("project_os.guard.shutil.which", return_value=None):
             d = self.get("/api/hooks?cmd=definitely-not-a-real-cmd-xyz")
         self.assertFalse(d["cmd_resolves"])
         self.assertIsNone(d["cmd_path"])
@@ -1061,42 +1061,42 @@ class TestServer(unittest.TestCase):
         from unittest import mock
         settings = os.path.join(self.env.claude, "settings.json")
         self.assertFalse(os.path.isfile(settings))
-        with mock.patch("cabina.guard.shutil.which", return_value=None):
-            code, r = self.post("/api/hooks-install", {"cmd": "cabina-missing-xyz"})
+        with mock.patch("project_os.guard.shutil.which", return_value=None):
+            code, r = self.post("/api/hooks-install", {"cmd": "project-os"})
         self.assertFalse(r["ok"], r)
         self.assertIn("not on PATH", r["message"])
         self.assertFalse(os.path.isfile(settings))
         self.assertFalse(any(f.startswith("settings.json.bak-") for f in os.listdir(self.env.claude)))
 
-    def test_hooks_install_rejects_non_cabina_command_even_with_force(self):
-        # U2: hooks may only ever run cabina -- a `bash -c '...'` payload must be refused
+    def test_hooks_install_rejects_non_project_os_command_even_with_force(self):
+        # U2: hooks may only ever run project-os -- a `bash -c '...'` payload must be refused
         # regardless of force=True (force only bypasses the "not on PATH" check).
         settings = os.path.join(self.env.claude, "settings.json")
         if os.path.isfile(settings):
             os.remove(settings)
         code, r = self.post("/api/hooks-install", {"cmd": "bash -c 'echo pwned'", "force": True})
         self.assertFalse(r["ok"], r)
-        self.assertIn("cabina", r["message"])
+        self.assertIn("project-os", r["message"])
         self.assertFalse(os.path.isfile(settings))
 
     def test_hooks_install_ok_and_idempotent(self):
         from unittest import mock
         settings = os.path.join(self.env.claude, "settings.json")
         try:
-            with mock.patch("cabina.guard.shutil.which", return_value="/usr/local/bin/cabina"):
-                code, r = self.post("/api/hooks-install", {"cmd": "cabina"})
+            with mock.patch("project_os.guard.shutil.which", return_value="/usr/local/bin/project-os"):
+                code, r = self.post("/api/hooks-install", {"cmd": "project-os"})
             self.assertTrue(r["ok"], r)
             self.assertTrue(os.path.isfile(settings))
             d = json.load(open(settings))
-            self.assertTrue(any("cabina guard" in h["command"] for grp in d["hooks"]["PreToolUse"] for h in grp["hooks"]))
-            self.assertTrue(any("cabina brief" in h["command"] for grp in d["hooks"]["SessionStart"] for h in grp["hooks"]))
+            self.assertTrue(any("project-os guard" in h["command"] for grp in d["hooks"]["PreToolUse"] for h in grp["hooks"]))
+            self.assertTrue(any("project-os brief" in h["command"] for grp in d["hooks"]["SessionStart"] for h in grp["hooks"]))
             self.assertTrue(r["status"]["guard_installed"]); self.assertTrue(r["status"]["brief_installed"])
-            with mock.patch("cabina.guard.shutil.which", return_value="/usr/local/bin/cabina"):
-                code2, r2 = self.post("/api/hooks-install", {"cmd": "cabina"})
+            with mock.patch("project_os.guard.shutil.which", return_value="/usr/local/bin/project-os"):
+                code2, r2 = self.post("/api/hooks-install", {"cmd": "project-os"})
             self.assertTrue(r2["ok"], r2)
             self.assertTrue(any(f.startswith("settings.json.bak-") for f in os.listdir(self.env.claude)))   # 2nd write backs up the 1st
             d2 = json.load(open(settings))
-            self.assertEqual(sum(1 for grp in d2["hooks"]["PreToolUse"] for h in grp["hooks"] if "cabina guard" in h["command"]), 1)
+            self.assertEqual(sum(1 for grp in d2["hooks"]["PreToolUse"] for h in grp["hooks"] if "project-os guard" in h["command"]), 1)
         finally:
             if os.path.isfile(settings):
                 os.remove(settings)
@@ -1105,10 +1105,10 @@ class TestServer(unittest.TestCase):
                     os.remove(os.path.join(self.env.claude, f))
 
     def test_hooks_install_requires_token(self):
-        code, _ = self.post("/api/hooks-install", {"cmd": "cabina"}, token="wrong")
+        code, _ = self.post("/api/hooks-install", {"cmd": "project-os"}, token="wrong")
         self.assertEqual(code, 403)
 
-    # ---------- S2-c: Harness tab, Cabina hooks panel ----------
+    # ---------- S2-c: Harness tab, Project-OS hooks panel ----------
     def test_hooks_block_fields_always_escaped(self):
         import re
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()

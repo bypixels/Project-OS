@@ -9,6 +9,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Full rebrand: cabina → Project-OS.** The CLI command is now `project-os`, the Python module
+  `project_os`, the pip package `project-os`. Everything named after the old brand moved with it:
+  `$PROJECT_OS_CONFIG` (config override), `~/.config/project-os` + `~/.local/share/project-os`
+  (state), `.project-os.toml` (repo contract for `check --repo`), the `X-ProjectOS-Token` header,
+  the MCP server and its tool names (`project_os_*`), the hook commands `project-os brief` /
+  `project-os guard`, suggested commands in both UI languages, CI, and docs. The hook guard now
+  only accepts the exact `project-os` basename (or `python -m project_os`) — the old
+  starts-with match also accepted impostor names. Historical entries in this file keep the old
+  name; they describe the tool as it was called then.
 - **Full UI redesign** ("Project-OS"): the web UI's visible name is now Project-OS (the CLI
   binary and every command remain `cabina`). The nine flat tabs became a grouped sidebar
   (Status / Catalog / Projects / System; horizontal strip with the same groups under 840px),

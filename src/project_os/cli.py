@@ -1,22 +1,22 @@
-"""cabina — one entrypoint, subcommands.
+"""project-os — one entrypoint, subcommands.
 
-  cabina                  open the UI (default; same as `cabina ui`)
-  cabina ui               open the web UI                              [--port] [--no-open]
-  cabina check            health check; exit 1 on critical findings     [--quick] [--json] [--notify] [--repo PATH]
-  cabina agents           agent roster / archive / references           [list|archive|refs] [--invalid] [--unused] [--project P] [--tool claude|codex] [--json] [--force]
-  cabina scan             rebuild the environment cache                 [--mcp] [--worktrees]
-  cabina fleet            terminal TUI (live provider + roster)
-  cabina export           export this environment as JSON               [-o PATH] [--activity] [--detail] [--titles] [--project P]
-  cabina compare A B      compare two exports (two machines, or then vs now)
-  cabina init             print an example .cabina.toml (or the CI workflow)   [--ci]
-  cabina mcp              run the read-only MCP server over stdio       [--install]
-  cabina guard            hook: PreToolUse on Edit|Write — validate agent files (reads stdin JSON)
-  cabina brief            hook: SessionStart — print a short health/context brief   [--cwd PATH]
-  cabina hooks            print (or write) the settings.json entries for guard+brief   [--write] [--settings PATH] [--cmd NAME]
-  cabina config           print the effective config / write an example   [--example]
-  cabina activity         session activity read from Claude Code transcripts   [--project P] [--days N] [--json]
-  cabina hub DIR          serve the UI, read-only, over N `cabina export --activity` files   [--port] [--no-open]
-  cabina worktrees        worktree cleanup report: a script to review and run yourself   [--project P] [--json]
+  project-os                  open the UI (default; same as `project-os ui`)
+  project-os ui               open the web UI                              [--port] [--no-open]
+  project-os check            health check; exit 1 on critical findings     [--quick] [--json] [--notify] [--repo PATH]
+  project-os agents           agent roster / archive / references           [list|archive|refs] [--invalid] [--unused] [--project P] [--tool claude|codex] [--json] [--force]
+  project-os scan             rebuild the environment cache                 [--mcp] [--worktrees]
+  project-os fleet            terminal TUI (live provider + roster)
+  project-os export           export this environment as JSON               [-o PATH] [--activity] [--detail] [--titles] [--project P]
+  project-os compare A B      compare two exports (two machines, or then vs now)
+  project-os init             print an example .project-os.toml (or the CI workflow)   [--ci]
+  project-os mcp              run the read-only MCP server over stdio       [--install]
+  project-os guard            hook: PreToolUse on Edit|Write — validate agent files (reads stdin JSON)
+  project-os brief            hook: SessionStart — print a short health/context brief   [--cwd PATH]
+  project-os hooks            print (or write) the settings.json entries for guard+brief   [--write] [--settings PATH] [--cmd NAME]
+  project-os config           print the effective config / write an example   [--example]
+  project-os activity         session activity read from Claude Code transcripts   [--project P] [--days N] [--json]
+  project-os hub DIR          serve the UI, read-only, over N `project-os export --activity` files   [--port] [--no-open]
+  project-os worktrees        worktree cleanup report: a script to review and run yourself [--project P] [--json]
 """
 import argparse, json, os, sys, textwrap
 from . import __version__, config as CFG
@@ -24,9 +24,9 @@ from .i18n import t
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="cabina", description="Control plane for a Claude Code environment. Measures, warns, blocks — never acts on its own.")
-    ap.add_argument("--version", action="version", version=f"cabina {__version__}")
-    ap.add_argument("--config", help="path to config.toml (default: ~/.config/cabina/config.toml or $CABINA_CONFIG)")
+    ap = argparse.ArgumentParser(prog="project-os", description="Control plane for a Claude Code environment. Measures, warns, blocks — never acts on its own.")
+    ap.add_argument("--version", action="version", version=f"project-os {__version__}")
+    ap.add_argument("--config", help="path to config.toml (default: ~/.config/project-os/config.toml or $PROJECT_OS_CONFIG)")
     sub = ap.add_subparsers(dest="cmd")
 
     ui = sub.add_parser("ui", help="open the web UI (default)")
@@ -35,7 +35,7 @@ def main(argv=None):
     ck = sub.add_parser("check", help="health check (exit 1 on critical)")
     ck.add_argument("--quick", action="store_true", help="skip slow detectors (usage history)")
     ck.add_argument("--json", action="store_true"); ck.add_argument("--notify", action="store_true", help="desktop notification if anything to see")
-    ck.add_argument("--repo", metavar="PATH", help="check ONE repository on its own (CI mode): .claude/agents against .cabina.toml; no home, no cache")
+    ck.add_argument("--repo", metavar="PATH", help="check ONE repository on its own (CI mode): .claude/agents against .project-os.toml; no home, no cache")
 
     ag = sub.add_parser("agents", help="agent roster")
     ag.add_argument("action", nargs="?", choices=["list", "archive", "refs"], default="list")
@@ -54,22 +54,22 @@ def main(argv=None):
     ex.add_argument("--titles", action="store_true", help="with --activity --detail: add session titles")
     ex.add_argument("--project", action="append", help="with --activity: restrict to this project (repeatable)")
     cp = sub.add_parser("compare", help="compare two exports (two machines, or then vs now)"); cp.add_argument("a"); cp.add_argument("b")
-    ini = sub.add_parser("init", help="print an example .cabina.toml (--ci: the GitHub Actions workflow)"); ini.add_argument("--ci", action="store_true")
+    ini = sub.add_parser("init", help="print an example .project-os.toml (--ci: the GitHub Actions workflow)"); ini.add_argument("--ci", action="store_true")
     mc = sub.add_parser("mcp", help="run the read-only MCP server over stdio (register with --install)"); mc.add_argument("--install", action="store_true", help="print how to register it in Claude Code and Codex")
     sub.add_parser("guard", help="hook: PreToolUse on Edit|Write — validate agent files (reads stdin JSON)")
     br = sub.add_parser("brief", help="hook: SessionStart — print a short health/context brief"); br.add_argument("--cwd")
     hk = sub.add_parser("hooks", help="print the settings.json entries for guard+brief; --write merges them")
     hk.add_argument("--write", action="store_true"); hk.add_argument("--settings", help="path to settings.json (default: ~/.claude/settings.json)")
-    hk.add_argument("--cmd", dest="hook_cmd", default="cabina", help="command name to wire (default: cabina)")
+    hk.add_argument("--cmd", dest="hook_cmd", default="project-os", help="command name to wire (default: project-os)")
     cf = sub.add_parser("config", help="show effective config"); cf.add_argument("--example", action="store_true", help="print an example config.toml")
 
     ac = sub.add_parser("activity", help="session activity read from Claude Code transcripts")
     ac.add_argument("--project"); ac.add_argument("--days", type=int, default=30); ac.add_argument("--json", action="store_true")
 
-    hb = sub.add_parser("hub", help="serve the UI, read-only, over N `cabina export --activity` files in DIR")
+    hb = sub.add_parser("hub", help="serve the UI, read-only, over N `project-os export --activity` files in DIR")
     hb.add_argument("dir"); hb.add_argument("--port", type=int); hb.add_argument("--no-open", action="store_true")
 
-    wt = sub.add_parser("worktrees", help="worktree cleanup report: prints a script to review and run yourself (cabina never runs it)")
+    wt = sub.add_parser("worktrees", help="worktree cleanup report: prints a script to review and run yourself (project-os never runs it)")
     wt.add_argument("--project", help="restrict to this project"); wt.add_argument("--json", action="store_true")
 
     a = ap.parse_args(argv)
@@ -151,7 +151,7 @@ def main(argv=None):
         sp = a.settings or os.path.join(cfg["claude_home"], "settings.json")
         if a.write:
             ok, msg = guard.hooks_write(sp, a.hook_cmd); print(msg); return 0 if ok else 1
-        print(json.dumps(guard.hooks_snippet(a.hook_cmd), indent=2)); print(f"\n# to apply:  cabina hooks --write   (merges into {sp}, keeps a backup)"); return 0
+        print(json.dumps(guard.hooks_snippet(a.hook_cmd), indent=2)); print(f"\n# to apply:  project-os hooks --write   (merges into {sp}, keeps a backup)"); return 0
     if a.cmd == "activity":
         from . import sessions
         items = sessions.refresh(cfg, days=a.days)
@@ -182,11 +182,11 @@ def _agents(cfg, a):
     from . import usage
     R = Roster(cfg)
     if a.action == "refs":
-        if not a.name: print("usage: cabina agents refs NAME"); return 2
+        if not a.name: print("usage: project-os agents refs NAME"); return 2
         for r in R.references(a.name): print(r)
         return 0
     if a.action == "archive":
-        if not a.name or not a.project: print("usage: cabina agents archive NAME --project P [--force]"); return 2
+        if not a.name or not a.project: print("usage: project-os agents archive NAME --project P [--force]"); return 2
         ok, msg, refs = R.archive(a.name, a.project, a.force, tool=a.tool or "claude")
         print(msg)
         for r in refs[:12]: print("   ", r)
@@ -233,7 +233,7 @@ def _worktrees(cfg, a):
         rs = worktrees.rows(cfg, data, a.project)
         print(json.dumps({"summary": s, "script": text, "rows": rs}, ensure_ascii=False, indent=1))
         return 0
-    mb = f"{s['mb']} MB" + ("" if s["mb_measured"] else "+ (some sizes unmeasured — run `cabina scan --worktrees`)")
+    mb = f"{s['mb']} MB" + ("" if s["mb_measured"] else "+ (some sizes unmeasured — run `project-os scan --worktrees`)")
     print(f"{s['total']} worktrees · {s['clean']} clean · {s['dirty']} dirty · {s['unknown']} unknown status · {s['prunable']} prunable · {mb}\n")
     print(text)
     return 0

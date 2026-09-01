@@ -1,4 +1,4 @@
-"""`cabina export` / `cabina compare` — one environment as a portable JSON, and the diff between two
+"""`project-os export` / `project-os compare` — one environment as a portable JSON, and the diff between two
 (two machines, or the same machine over time). Read-only."""
 import json, os, platform, socket
 from datetime import datetime
@@ -98,7 +98,7 @@ def export(cfg, activity=None):
     # projects_detail: per-project fields from projects.load(), whitelisted to _PROJECT_DETAIL_FIELDS —
     # "path" (local-only, like cwd/source_path above) never leaves this machine.
     pd = [{k: p[k] for k in _PROJECT_DETAIL_FIELDS} for p in PROJ.load(data)]
-    out = {"cabina": 1, "machine": socket.gethostname(), "os": platform.system(), "when": datetime.now().isoformat(timespec="minutes"),
+    out = {"project_os": 1, "machine": socket.gethostname(), "os": platform.system(), "when": datetime.now().isoformat(timespec="minutes"),
            "agents": agents, "skills": sk, "harness": hs, "projects": sorted(p["name"] for p in data.get("projects", [])),
            "projects_detail": pd}
     if activity is not None:
@@ -121,7 +121,7 @@ def compare(a, b):
         "projects": {"only_a": sorted(pa - pb), "only_b": sorted(pb - pa)},
     }
     # P4: activity deltas only when BOTH exports carry aggregated activity — a missing side
-    # (a machine that ran `cabina export` without --activity) means "say nothing", never a
+    # (a machine that ran `project-os export` without --activity) means "say nothing", never a
     # false delta from assumed zeros.
     aa, ab = (a.get("activity") or {}).get("aggregated"), (b.get("activity") or {}).get("aggregated")
     if aa and ab:
@@ -136,7 +136,7 @@ def compare(a, b):
 
 def render_compare(r, la=None, lb=None):
     la = la or r.get("a") or "A"; lb = lb or r.get("b") or "B"
-    out = [f"cabina compare  {la}  vs  {lb}"]
+    out = [f"project-os compare  {la}  vs  {lb}"]
     def sec(title, only_a, only_b):
         out.append(f"  {title}: {len(only_a)} only in {la} · {len(only_b)} only in {lb}")
         for x in only_a[:15]: out.append(f"     {la:<12} {x}")

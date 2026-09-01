@@ -1,5 +1,5 @@
 """Operational documents per project: list, read, save.
-The ONLY piece of cabina that edits project files. Guards:
+The ONLY piece of project-os that edits project files. Guards:
   1. allowlist: .md inside a known root only; never creates files.
   2. optimistic concurrency: save requires the hash you read; changed on disk => refused.
   3. blocked while an agent is working in that project (caller passes the list, from the live provider).
@@ -106,7 +106,7 @@ class Docs:
         if err:
             return {"ok": False, "message": err}
         if not os.path.isfile(p):
-            return {"ok": False, "message": "does not exist: cabina edits documents, it never creates them"}
+            return {"ok": False, "message": "does not exist: project-os edits documents, it never creates them"}
         if project in working:
             return {"ok": False, "message": f"an agent is working in {project} right now; editing could overwrite its work. Wait until it finishes."}
         try:

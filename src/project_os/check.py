@@ -1,4 +1,4 @@
-"""`cabina check` — health of the environment. Read-only. Exit 1 if anything critical.
+"""`project-os check` — health of the environment. Read-only. Exit 1 if anything critical.
 Every detector encodes a failure that once went unnoticed for weeks."""
 import os, re, json, sys, time
 from datetime import datetime
@@ -215,6 +215,6 @@ def render(cfg, findings, color=True):
 def notify(cfg, findings):
     n_c = sum(1 for f in findings if f["sev"] == "crit"); n_w = sum(1 for f in findings if f["sev"] == "warn")
     if n_c:
-        host.notify("cabina: attention", f"{n_c} critical, {n_w} warnings. Run: cabina check", urgent=True)
+        host.notify("project-os: attention", f"{n_c} critical, {n_w} warnings. Run: project-os check", urgent=True)
     elif n_w:
-        host.notify("cabina", f"{n_w} warnings. Run: cabina check")
+        host.notify("project-os", f"{n_w} warnings. Run: project-os check")

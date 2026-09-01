@@ -1,7 +1,7 @@
 import unittest
 import _helpers  # noqa
 from _env import Env
-from cabina import worktrees
+from project_os import worktrees
 
 
 def _data(*projects):
@@ -95,7 +95,7 @@ class TestWorktreesScript(unittest.TestCase):
         data = self._fixture()
         text = worktrees.script(self.env.cfg, data)
         expected = (
-            "# cabina worktree cleanup — review before running; cabina never executes these itself.\n"
+            "# project-os worktree cleanup — review before running; project-os never executes these itself.\n"
             "# Branches are kept; only worktree directories are affected.\n"
             "\n"
             'git -C "/repo/alpha" worktree prune\n'
@@ -104,7 +104,7 @@ class TestWorktreesScript(unittest.TestCase):
             'git -C "/repo/beta" worktree remove "/repo/beta-wt/clean2"\n'
             "\n"
             "# skipped (uncommitted changes): /repo/alpha-wt/dirty1\n"
-            "# skipped (status unknown — run: cabina scan): /repo/alpha-wt/unknown1\n"
+            "# skipped (status unknown — run: project-os scan): /repo/alpha-wt/unknown1\n"
         )
         self.assertEqual(text, expected)
 

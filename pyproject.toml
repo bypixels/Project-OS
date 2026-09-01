@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ai-projects-monitor"
+name = "project-os"
 version = "0.1.0"
 description = "Control plane for a Claude Code environment: agents, skills, harness and docs under one contract, with health checks. Never acts on its own."
 readme = "README.md"
@@ -22,16 +22,16 @@ classifiers = [
 dependencies = []
 
 [project.scripts]
-cabina = "cabina.cli:main"
+project-os = "project_os.__main__:main"
 
 [project.urls]
-Homepage = "https://github.com/dsandimolina/cabina"
+Homepage = "https://github.com/dsandimolina/project-os"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-cabina = ["static/*.html"]
+project_os = ["static/*.html"]
 
 [tool.ruff]
 line-length = 140

@@ -2,7 +2,7 @@ import json, os, threading, time, unittest
 from unittest import mock
 import _helpers  # noqa
 from _env import Env
-from cabina import scan
+from project_os import scan
 
 class TestSessionsFixture(unittest.TestCase):
     def setUp(self):
@@ -17,7 +17,7 @@ class TestSessionsFixture(unittest.TestCase):
 
 
 import tempfile
-from cabina import sessions as S
+from project_os import sessions as S
 
 class TestReadNewLines(unittest.TestCase):
     def test_only_returns_bytes_after_offset(self):

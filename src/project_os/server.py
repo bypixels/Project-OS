@@ -1,4 +1,4 @@
-"""`cabina` (UI) — local HTTP server on 127.0.0.1 with a per-session CSRF token.
+"""`project-os` (UI) — local HTTP server on 127.0.0.1 with a per-session CSRF token.
 Reads through the modules; writes only via: create/archive agent, archive skill,
 save doc (guarded), open path, rescan cache, install hooks (guarded)."""
 import os, sys, json, copy, re, secrets, threading, webbrowser, time, difflib, ipaddress
@@ -270,7 +270,7 @@ class App:
         R, _, _ = self.roster()
         return {"references": R.references(q.get("name", [""])[0])}
     def api_health(self):
-        """S1: the same findings `cabina check` prints, for the Health tab. Never lets the
+        """S1: the same findings `project-os check` prints, for the Health tab. Never lets the
         tab render blank — any exception from check.run() becomes an empty findings list plus
         an `error` string, still 200."""
         try:
@@ -355,11 +355,11 @@ class App:
         """Only ever fed to shutil.which/shlex.split — never executed. Reject anything that
         isn't a short, single-line string; fall back to the default rather than guessing."""
         if not isinstance(cmd, str) or not cmd.strip() or len(cmd) > 200 or "\n" in cmd or "\r" in cmd:
-            return "cabina"
+            return "project-os"
         return cmd.strip()
 
     def api_hooks(self, q):
-        cmd = self._sane_cmd((q.get("cmd") or ["cabina"])[0])
+        cmd = self._sane_cmd((q.get("cmd") or ["project-os"])[0])
         return GUARD.hooks_status(self._hooks_settings_path(), cmd)
 
     # ---- POST ----
@@ -424,28 +424,28 @@ class App:
     def api_save_doc(self, b):
         return self.docs().save(b["project"], b["rel"], b["content"], b["hash"], working=self.working())
     def api_open(self, b):
-        """U3: confined to cabina's own roots -- project roots (incl. global -> claude_home),
+        """U3: confined to project-os's own roots -- project roots (incl. global -> claude_home),
         codex_home and state_dir -- so a POST here can never be used to open an arbitrary path
         on the machine (and, on Windows, os.startfile an arbitrary file)."""
         p = os.path.realpath(os.path.expanduser(b["path"]))
         roots = list(self.roots().values()) + [self.cfg["claude_home"], self.cfg["codex_home"], self.cfg["state_dir"]]
         if not _open_allowed(p, roots):
-            return {"ok": False, "message": "path outside cabina roots"}
+            return {"ok": False, "message": "path outside project-os roots"}
         ok, msg = host.open_path(p); return {"ok": ok, "message": msg}
     def api_open_terminal(self, b):
-        """W3: opens a terminal emulator AT a path -- confined to cabina's own roots (same list
+        """W3: opens a terminal emulator AT a path -- confined to project-os's own roots (same list
         as api_open) AND the target must be a directory. The terminal binary itself is picked by
         host.open_terminal from a fixed per-OS allowlist, never from this request's body."""
         p = os.path.realpath(os.path.expanduser(b["path"]))
         roots = list(self.roots().values()) + [self.cfg["claude_home"], self.cfg["codex_home"], self.cfg["state_dir"]]
         if not _terminal_target_ok(p, roots):
-            return {"ok": False, "message": "path outside cabina roots, or not a directory"}
+            return {"ok": False, "message": "path outside project-os roots, or not a directory"}
         ok, msg = host.open_terminal(p); return {"ok": ok, "message": msg}
     def api_focus(self, b):
         ok, msg = self.live.focus(b["pane"]); return {"ok": ok, "message": msg}
     def api_commit(self, b):
-        """Commit ONE path cabina just changed. Only on explicit request from the UI checkbox."""
-        path = os.path.expanduser(b["path"]); msg = (b.get("message") or "cabina: change")[:200]
+        """Commit ONE path project-os just changed. Only on explicit request from the UI checkbox."""
+        path = os.path.expanduser(b["path"]); msg = (b.get("message") or "project-os: change")[:200]
         ok, out = GO.commit_path(path, msg)
         return {"ok": ok, "message": out, "in_repo": GO.repo_root(path) is not None}
     def api_in_repo(self, q):
@@ -479,13 +479,13 @@ class App:
         return {"sessions": items, "days": days, "active_seconds": (self.cfg.get("live") or {}).get("active_seconds", 600)}
 
     def api_hooks_install(self, b):
-        cmd = self._sane_cmd(b.get("cmd") or "cabina")
+        cmd = self._sane_cmd(b.get("cmd") or "project-os")
         sp = self._hooks_settings_path()
         ok, msg = GUARD.hooks_write(sp, cmd, force=bool(b.get("force")))
         return {"ok": ok, "message": msg, "status": GUARD.hooks_status(sp, cmd)}
 
     def api_rescan(self, b):
-        """S3-A: `mcp`/`worktrees` in the body opt into the slow scan passes, same as `cabina scan
+        """S3-A: `mcp`/`worktrees` in the body opt into the slow scan passes, same as `project-os scan
         --mcp --worktrees`, but gated on a COPY of self.cfg — self.cfg is never mutated, so a
         one-off slow rescan does not silently turn the option on for every future rescan. The
         lock is acquired here, synchronously, on the request thread: a second POST while one is
@@ -534,7 +534,7 @@ class App:
                 "error": self._scan_error, "scanned_at": scanned_at}
 
     def api_export(self, q):
-        """S3-B: `cabina export [--activity [--detail]]` from the browser. `--titles` is
+        """S3-B: `project-os export [--activity [--detail]]` from the browser. `--titles` is
         deliberately NOT exposed here — session titles can echo prompt content, and this path is
         for handing the file to a teammate or another machine, unlike the CLI flag which is a
         conscious opt-in on your own box."""
@@ -546,7 +546,7 @@ class App:
     def api_compare(self, b):
         other = b.get("other")
         if not isinstance(other, dict) or "agents" not in other:
-            return {"ok": False, "message": "not a cabina export"}
+            return {"ok": False, "message": "not a project-os export"}
         # P4 (snapshot.compare): only pull local activity into A when B's export carries it too —
         # otherwise A vs B would compare a real activity aggregate against nothing, a false delta.
         activity = SNAP.export_activity(self.cfg) if isinstance(other.get("activity"), dict) else None
@@ -594,7 +594,7 @@ def make_handler(app):
                 except Exception as e:
                     return self._json({"ok": False, "message": str(e)}, 500)
                 machine = re.sub(r"[^A-Za-z0-9_.-]", "-", str(obj.get("machine") or "unknown"))
-                fname = f"cabina-{machine}-{datetime.now().strftime('%Y%m%d')}.json"
+                fname = f"project-os-{machine}-{datetime.now().strftime('%Y%m%d')}.json"
                 return self._json(obj, extra_headers={"Content-Disposition": f'attachment; filename="{fname}"'})
             fn = GETS.get(u.path)
             if not fn: return self._json({"error": "not found"}, 404)
@@ -606,7 +606,7 @@ def make_handler(app):
             origin = self.headers.get("Origin")
             if origin and not origin_allowed(origin, app.cfg["server"]["host"]):
                 return self._json({"ok": False, "message": "bad origin"}, 403)
-            if self.headers.get("X-Cabina-Token") != app.token:
+            if self.headers.get("X-ProjectOS-Token") != app.token:
                 return self._json({"ok": False, "message": "invalid token"}, 403)
             n = int(self.headers.get("Content-Length", 0))
             if n > MAX_POST_BODY:
@@ -631,11 +631,11 @@ def make_handler(app):
 def serve(cfg, port=None, open_browser=True):
     host_ = cfg["server"]["host"]; port = port or cfg["server"]["port"]
     if not _loopback_only(host_):
-        raise ValueError("cabina server is local-only: server.host must be localhost or a loopback IP")
+        raise ValueError("project-os server is local-only: server.host must be localhost or a loopback IP")
     app = App(cfg)
     srv = ThreadingHTTPServer((host_, port), make_handler(app))
     url = f"http://{host_}:{srv.server_address[1]}/"
-    print(f"cabina at {url}  (Ctrl-C to stop)")
+    print(f"project-os at {url}  (Ctrl-C to stop)")
     if open_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:

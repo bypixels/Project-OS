@@ -1,4 +1,4 @@
-"""Guards for src/cabina/i18n.py: no duplicate keys within a STRINGS dict literal,
+"""Guards for src/project_os/i18n.py: no duplicate keys within a STRINGS dict literal,
 and exact key parity between the "en" and "es" tables.
 
 Also guards the SEPARATE embedded I18N table in static/index.html (the web UI has
@@ -14,16 +14,16 @@ import unittest
 
 import _helpers  # noqa: F401  (adds src/ to sys.path)
 
-from cabina import i18n
+from project_os import i18n
 
 _I18N_SRC = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src", "cabina", "i18n.py"
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src", "project_os", "i18n.py"
 )
 
 _INDEX_HTML = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "src",
-    "cabina",
+    "project_os",
     "static",
     "index.html",
 )

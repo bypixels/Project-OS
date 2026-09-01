@@ -1,8 +1,8 @@
 import os, stat, tempfile, unittest
 from unittest import mock
 import _helpers  # noqa
-import cabina.docs as D
-from cabina.docs import Docs
+import project_os.docs as D
+from project_os.docs import Docs
 
 class TestDocs(unittest.TestCase):
     def setUp(self):

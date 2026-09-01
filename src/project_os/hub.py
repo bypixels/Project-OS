@@ -1,4 +1,4 @@
-"""cabina hub — lee N archivos de `cabina export --activity` de una carpeta compartida y sirve
+"""project-os hub — lee N archivos de `project-os export --activity` de una carpeta compartida y sirve
 la MISMA UI (static/index.html) sobre su mezcla. Read-only por diseño (R10): HubApp (definida
 aquí también) no tiene NINGUNA ruta de escritura.
 
@@ -355,7 +355,7 @@ def make_hub_handler(app):
         def do_POST(self):
             if not SRV.host_allowed(self.headers.get("Host"), "127.0.0.1"):
                 return self._json({"ok": False, "message": "bad host"}, 421)
-            return self._json({"ok": False, "message": "cabina hub is read-only: no write route exists"}, 405)
+            return self._json({"ok": False, "message": "project-os hub is read-only: no write route exists"}, 405)
     return H
 
 
@@ -364,7 +364,7 @@ def serve_hub(dir_, cfg, port=None, open_browser=True):
     port = port or cfg["server"]["port"]
     srv = ThreadingHTTPServer(("127.0.0.1", port), make_hub_handler(app))   # 127.0.0.1 fijo (R10) — nunca cfg["server"]["host"]
     url = f"http://127.0.0.1:{srv.server_address[1]}/"
-    print(f"cabina hub (read-only) at {url}  — {dir_}  (Ctrl-C to stop)")
+    print(f"project-os hub (read-only) at {url}  — {dir_}  (Ctrl-C to stop)")
     if open_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:

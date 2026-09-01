@@ -1,5 +1,5 @@
 """Worktree cleanup helper. Writes NOTHING: `script()` only returns text for the user to review
-and run themselves — cabina never shells out to `git worktree remove`/`prune` on its own. Reads
+and run themselves — project-os never shells out to `git worktree remove`/`prune` on its own. Reads
 the cached scan data (via `scan.ensure`), same as every other consumer; it never re-walks disk."""
 from . import scan
 
@@ -63,16 +63,16 @@ def script(cfg, data=None, project=None):
     PowerShell and cmd."""
     rs = rows(cfg, data, project)
     if not rs:
-        return "# cabina worktrees: nothing to clean up.\n"
+        return "# project-os worktrees: nothing to clean up.\n"
     lines = [
-        "# cabina worktree cleanup — review before running; cabina never executes these itself.",
+        "# project-os worktree cleanup — review before running; project-os never executes these itself.",
         "# Branches are kept; only worktree directories are affected.",
         "",
     ]
 
     # Bucket every row into exactly one group. Unsafe paths come first: an unsafe REPO path
     # takes down every one of its worktrees (no prune line either, per the invariant that
-    # cabina never hands the user a command it did not fully intend), and an unsafe worktree
+    # project-os never hands the user a command it did not fully intend), and an unsafe worktree
     # path is skipped regardless of its dirty/prunable state — we cannot safely reference it in
     # any command, so there is nothing else to check about it.
     unsafe, prunable_repos, removable, skipped_dirty, skipped_unknown = [], set(), [], [], []
@@ -101,7 +101,7 @@ def script(cfg, data=None, project=None):
     for r in skipped_dirty:
         lines.append(f'# skipped (uncommitted changes): {r["path"]}')
     for r in skipped_unknown:
-        lines.append(f'# skipped (status unknown — run: cabina scan): {r["path"]}')
+        lines.append(f'# skipped (status unknown — run: project-os scan): {r["path"]}')
     for r in unsafe:
         lines.append(f'# skipped (path needs manual handling — unusual characters): {r["path"]}')
 

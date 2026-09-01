@@ -1,6 +1,6 @@
 import os, json, tempfile, unittest
 import _helpers  # noqa
-from cabina import harness as H
+from project_os import harness as H
 
 def project(d, harness_md=True, memory=True, hooks=("a.sh", "b.sh"), wired=("a.sh", "b.sh"), rules=2, workflows=1):
     c = os.path.join(d, ".claude"); os.makedirs(os.path.join(c, "hooks"), exist_ok=True)

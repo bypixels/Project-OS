@@ -1,7 +1,7 @@
 import unittest
 import _helpers  # noqa
 from _env import Env
-from cabina import scan, check
+from project_os import scan, check
 
 
 class TestCheckWarnAgentsDetail(unittest.TestCase):

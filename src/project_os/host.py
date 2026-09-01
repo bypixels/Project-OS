@@ -6,13 +6,13 @@ HOME = os.path.expanduser("~")
 
 def default_dirs():
     """Platform-aware defaults. Tool homes are ~/.claude and ~/.codex on every OS
-    (that is where the tools put them); cabina's own dirs follow each platform's convention."""
+    (that is where the tools put them); project-os's own dirs follow each platform's convention."""
     if os.name == "nt":
-        cfg = os.path.join(os.environ.get("APPDATA") or os.path.join(HOME, "AppData", "Roaming"), "cabina")
-        st = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.join(HOME, "AppData", "Local"), "cabina")
+        cfg = os.path.join(os.environ.get("APPDATA") or os.path.join(HOME, "AppData", "Roaming"), "project-os")
+        st = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.join(HOME, "AppData", "Local"), "project-os")
     else:
-        cfg = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.join(HOME, ".config"), "cabina")
-        st = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.join(HOME, ".local", "share"), "cabina")
+        cfg = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.join(HOME, ".config"), "project-os")
+        st = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.join(HOME, ".local", "share"), "project-os")
     return {"config": cfg, "state": st,
             "claude_home": os.path.join(HOME, ".claude"), "codex_home": os.path.join(HOME, ".codex"),
             "roots": [os.path.join(HOME, "Documents"), os.path.join(HOME, "Desktop")]}
@@ -83,19 +83,19 @@ def open_terminal(path):
 def notify(title, body, urgent=False):
     """Best-effort desktop notification. Silent no-op if unsupported.
     Text is passed OUT-OF-BAND (environment variables), never interpolated into a script."""
-    env = {**os.environ, "CABINA_TITLE": str(title), "CABINA_BODY": str(body)}
+    env = {**os.environ, "PROJECT_OS_TITLE": str(title), "PROJECT_OS_BODY": str(body)}
     try:
         if sys.platform == "darwin":
-            script = 'display notification (system attribute "CABINA_BODY") with title (system attribute "CABINA_TITLE")'
+            script = 'display notification (system attribute "PROJECT_OS_BODY") with title (system attribute "PROJECT_OS_TITLE")'
             if urgent:
                 script += ' sound name "Basso"'
             subprocess.run(["osascript", "-e", script], capture_output=True, timeout=5, env=env)
         elif os.name == "nt":
             ps = ("[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null;"
                   "$t=[Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02);"
-                  "$t.GetElementsByTagName('text')[0].AppendChild($t.CreateTextNode($env:CABINA_TITLE)) > $null;"
-                  "$t.GetElementsByTagName('text')[1].AppendChild($t.CreateTextNode($env:CABINA_BODY)) > $null;"
-                  "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('cabina').Show([Windows.UI.Notifications.ToastNotification]::new($t))")
+                  "$t.GetElementsByTagName('text')[0].AppendChild($t.CreateTextNode($env:PROJECT_OS_TITLE)) > $null;"
+                  "$t.GetElementsByTagName('text')[1].AppendChild($t.CreateTextNode($env:PROJECT_OS_BODY)) > $null;"
+                  "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('project-os').Show([Windows.UI.Notifications.ToastNotification]::new($t))")
             subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, timeout=10, env=env)
         elif shutil.which("notify-send"):
             subprocess.run(["notify-send", "-u", "critical" if urgent else "normal", title, body],

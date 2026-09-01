@@ -1,7 +1,7 @@
 import os, time, unittest
 import _helpers  # noqa
 from _env import Env
-from cabina import live as LIVE, scan
+from project_os import live as LIVE, scan
 
 class TestTranscriptProvider(unittest.TestCase):
     def setUp(self):

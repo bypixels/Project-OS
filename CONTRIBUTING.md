@@ -1,4 +1,4 @@
-# Contributing to cabina
+# Contributing to project-os
 
 ## Running the test suite
 
@@ -20,7 +20,7 @@ local, opt-in linting only (`ruff check .`) — it never blocks a build.
 
 ## The core invariant: guards and break-tests
 
-Cabina's whole design rests on one rule, stated in `pyproject.toml`'s description and enforced by
+Project-OS's whole design rests on one rule, stated in `pyproject.toml`'s description and enforced by
 tests: **it measures, warns and blocks — it never repairs, deletes or edits on its own.** Every
 write goes through a "guard" (a kebab/filename rule, a hash/allowlist/backup check, dead-hook
 detection, a non-regressing usage merge) and every guard has a break-test in
@@ -35,14 +35,14 @@ red.
 
 ## Adding user-facing strings
 
-All CLI/UI text lives in `src/cabina/i18n.py`, keyed like `check.dead_hooks` /
+All CLI/UI text lives in `src/project_os/i18n.py`, keyed like `check.dead_hooks` /
 `check.dead_hooks.d`. When you add a message, add it to **both** `STRINGS["en"]` and
 `STRINGS["es"]` — never just one.
 
 ## Releasing
 
 ```sh
-git tag -a v0.1.0 -m "AI Projects Monitor v0.1.0 — agents, skills, harness, docs, health check, live, MCP"
+git tag -a v0.1.0 -m "Project-OS v0.1.0 — agents, skills, harness, docs, health check, live, MCP"
 git push origin v0.1.0
 ```
 

@@ -1,11 +1,11 @@
 """Hooks for Claude Code (and Codex): the doorman.
 
-  cabina guard   PreToolUse on Edit|Write — validates the resulting agent file against the
+  project-os guard   PreToolUse on Edit|Write — validates the resulting agent file against the
                  contract. Invalid => exit 2 + reason on stderr (Claude Code blocks and shows it).
                  Warnings => allowed, surfaced on stdout. Anything else => exit 0, silent.
                  A broken guard must NEVER lock the user out: any failure of our own is exit 0.
-  cabina brief   SessionStart — a few lines of context: health, who is working, this project's memory age.
-  cabina hooks   print (or --write) the settings.json entries.
+  project-os brief   SessionStart — a few lines of context: health, who is working, this project's memory age.
+  project-os hooks   print (or --write) the settings.json entries.
 """
 import os, sys, json, time, shutil, shlex, re
 from datetime import datetime
@@ -83,13 +83,13 @@ def run(cfg, stdin_text, out=sys.stdout, err=sys.stderr):
             and os.path.exists(os.path.join(gdir, name + ".md"))
         r = Contract(cfg, tool=tool).validate_text(text, name, shadows_global=shadows, fmt="toml" if ext == ".toml" else "md")
         if r.category in ("invalid", "error"):
-            err.write("BLOCKED by cabina: this agent would not meet the contract.\n")
+            err.write("BLOCKED by project-os: this agent would not meet the contract.\n")
             for c in r.critical: err.write(f"  - {c}\n")
             for w in r.warnings: err.write(f"  - (warning) {w}\n")
             err.write("Fix the frontmatter and write again. Contract: name (kebab-case = filename), description, model, tools.\n")
             return 2
         if r.warnings:
-            out.write("cabina: written, with contract warnings — " + "; ".join(r.warnings) + "\n")
+            out.write("project-os: written, with contract warnings — " + "; ".join(r.warnings) + "\n")
         return 0
     except Exception:
         return 0     # never lock the user out because of us
@@ -101,16 +101,16 @@ def brief(cfg, cwd=None):
     try:
         F = CHECK.run(cfg, quick=True)
         nc = sum(1 for f in F if f["sev"] == "crit"); nw = sum(1 for f in F if f["sev"] == "warn")
-        lines.append(f"[cabina] health: {nc} critical, {nw} warnings" + (" — run `cabina check`" if nc or nw else " — all clear"))
+        lines.append(f"[project-os] health: {nc} critical, {nw} warnings" + (" — run `project-os check`" if nc or nw else " — all clear"))
         for f in [x for x in F if x["sev"] == "crit"][:2]:
-            lines.append(f"[cabina]   ! {f['title']}")
+            lines.append(f"[project-os]   ! {f['title']}")
     except Exception:
-        lines.append("[cabina] health: unavailable")
+        lines.append("[project-os] health: unavailable")
     try:
         prov = LIVE.get(cfg); roots = scan.project_roots(cfg)
         w = LIVE.working_projects(prov, roots)
         if w:
-            lines.append(f"[cabina] agents working right now in: {', '.join(w)} — coordinate before touching shared files there")
+            lines.append(f"[project-os] agents working right now in: {', '.join(w)} — coordinate before touching shared files there")
     except Exception:
         pass
     try:
@@ -120,15 +120,15 @@ def brief(cfg, cwd=None):
             mem = os.path.join(roots[here], ".claude", "MEMORY.md")
             if os.path.isfile(mem):
                 days = int((time.time() - os.path.getmtime(mem)) / 86400)
-                lines.append(f"[cabina] {here}: MEMORY.md last touched {days} day(s) ago" + (" — likely stale" if days > cfg['check']['memory_stale_days'] else ""))
+                lines.append(f"[project-os] {here}: MEMORY.md last touched {days} day(s) ago" + (" — likely stale" if days > cfg['check']['memory_stale_days'] else ""))
             else:
-                lines.append(f"[cabina] {here}: no MEMORY.md")
+                lines.append(f"[project-os] {here}: no MEMORY.md")
             from . import sessions
             from .i18n import t as _t
             sess = [s for s in sessions.load(cfg) if s.get("project") == here]
             if sess:
                 last = sess[0]
-                lines.append("[cabina] " + _t(cfg["language"], "brief.last_session",
+                lines.append("[project-os] " + _t(cfg["language"], "brief.last_session",
                                                title=last.get("title") or "(untitled)", ago=_ago(last.get("ended") or last.get("started"))))
     except Exception:
         pass
@@ -151,7 +151,7 @@ def read_stdin_briefly(timeout=1.0):
         return ""
 
 
-def hooks_snippet(cmd="cabina"):
+def hooks_snippet(cmd="project-os"):
     return {"hooks": {
         "PreToolUse": [{"matcher": "Edit|Write|MultiEdit", "hooks": [{"type": "command", "command": f"{cmd} guard", "timeout": 10}]}],
         "SessionStart": [{"matcher": "startup|resume", "hooks": [{"type": "command", "command": f"{cmd} brief", "timeout": 15}]}],
@@ -162,20 +162,25 @@ _SHELL_META = re.compile(r"[;|&$`()<>{}\n\r]")
 _PY_BASENAME = re.compile(r"^python(\d(\.\d+)?)?(\.exe)?$", re.IGNORECASE)
 
 
-def _cmd_is_cabina(cmd):
-    """S2 hardening: hooks_write must only ever wire a command that runs cabina itself, never
-    an arbitrary shell command -- `force=True` bypasses the "not on PATH" check below but must
-    NEVER bypass this one. Allowed: (a) a command whose first token's basename starts with
-    'cabina' -- checked against the RESOLVED path when `_cmd_resolves` succeeds, or against the
-    raw token itself when it does not (so force still works for an as-yet-uninstalled cabina,
-    while a resolvable 'bash' is still never mistaken for cabina); (b) the literal 3-token form
-    `<python> -m cabina` where <python>'s basename matches pythonX(.Y)?. Any shell metacharacter
-    anywhere in the raw string is an automatic refusal, checked before any parsing. Returns
-    (bool, reason)."""
+def _cmd_is_project_os(cmd):
+    """S2 hardening: hooks_write must only ever wire a command that runs project-os itself,
+    never an arbitrary shell command -- `force=True` bypasses the "not on PATH" check below but
+    must NEVER bypass this one. Allowed: (a) a command whose first token's basename is EXACTLY
+    'project-os' (after stripping a trailing ".exe") -- checked against the RESOLVED path when
+    `_cmd_resolves` succeeds, or against the raw token itself when it does not (so force still
+    works for an as-yet-uninstalled project-os, while a resolvable 'bash' is still never mistaken
+    for project-os); a subcommand after it (`project-os guard`, `project-os brief`, ...) is fine,
+    it is only the basename itself that must match exactly -- an impostor like
+    'project-os-evil' must NOT slip through a startswith check; (b) the form
+    `<python> -m project_os [...]` where <python>'s basename matches pythonX(.Y)? and the module
+    token is exactly `project_os` (the module is `project_os`, the console script is
+    `project-os`) -- trailing subcommand tokens after the module are allowed. Any shell
+    metacharacter anywhere in the raw string is an automatic refusal, checked before any
+    parsing. Returns (bool, reason)."""
     if not isinstance(cmd, str) or not cmd.strip():
         return False, "refused: empty command"
     if _SHELL_META.search(cmd):
-        return False, f"refused: hooks may only run cabina (shell metacharacters not allowed in {cmd!r})"
+        return False, f"refused: hooks may only run project-os (shell metacharacters not allowed in {cmd!r})"
     try:
         toks = shlex.split(cmd)
     except Exception:
@@ -188,11 +193,11 @@ def _cmd_is_cabina(cmd):
     base = os.path.basename(name_source).lower()
     if base.endswith(".exe"):
         base = base[:-4]
-    if base.startswith("cabina"):
+    if base == "project-os":
         return True, ""
-    if len(toks) == 3 and toks[1] == "-m" and toks[2] == "cabina" and _PY_BASENAME.match(os.path.basename(first)):
+    if len(toks) >= 3 and toks[1] == "-m" and toks[2] == "project_os" and _PY_BASENAME.match(os.path.basename(first)):
         return True, ""
-    return False, f"refused: hooks may only run cabina (got {first!r})"
+    return False, f"refused: hooks may only run project-os (got {first!r})"
 
 
 def _cmd_resolves(cmd):
@@ -211,7 +216,7 @@ def _cmd_resolves(cmd):
     return (found is not None), found
 
 
-def hooks_status(settings_path, cmd="cabina"):
+def hooks_status(settings_path, cmd="project-os"):
     """Read-only: what's on disk at settings_path, and whether our two hooks are already
     wired there. Never writes."""
     exists = os.path.isfile(settings_path)
@@ -255,18 +260,18 @@ def _unique_backup_path(path):
         i += 1
 
 
-def hooks_write(settings_path, cmd="cabina", force=False):
+def hooks_write(settings_path, cmd="project-os", force=False):
     """Merge our two hooks into an existing settings.json (backup first). Idempotent.
-    Guards: (1) `cmd` must be cabina itself -- never bypassed by force (S2 hardening); (2)
+    Guards: (1) `cmd` must be project-os itself -- never bypassed by force (S2 hardening); (2)
     refuses to wire a `cmd` that does not resolve on PATH (the exact "dead hook" problem
-    cabina flags elsewhere) unless the caller passes force=True."""
-    is_cabina, reason = _cmd_is_cabina(cmd)
-    if not is_cabina:
+    project-os flags elsewhere) unless the caller passes force=True."""
+    is_project_os, reason = _cmd_is_project_os(cmd)
+    if not is_project_os:
         return False, reason
     resolves, _ = _cmd_resolves(cmd)
     if not resolves and not force:
         return False, (f"{cmd} is not on PATH: installing it would wire a dead hook (the exact thing "
-                        "cabina flags). Install cabina where Claude Code can find it, or pass the full path.")
+                        "project-os flags). Install project-os where Claude Code can find it, or pass the full path.")
     try:
         d = json.load(open(settings_path)) if os.path.isfile(settings_path) else {}
     except Exception as e:

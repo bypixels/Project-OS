@@ -1,7 +1,7 @@
 import json, os, tempfile, threading, time, unittest
 from unittest import mock
 import _helpers  # noqa
-from cabina import usage as U
+from project_os import usage as U
 from _env import Env
 
 def hist(d, *lines):

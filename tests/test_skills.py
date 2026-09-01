@@ -8,7 +8,7 @@ def _can_symlink():
             os.symlink(d, os.path.join(d, "l")); return True
     except (OSError, NotImplementedError):
         return False
-from cabina import skills as SK
+from project_os import skills as SK
 
 def mk(d, name, fm=True, link_to=None):
     p = os.path.join(d, name)

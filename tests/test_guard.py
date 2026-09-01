@@ -3,7 +3,7 @@ from datetime import datetime
 from unittest import mock
 import _helpers  # noqa
 from _env import Env
-from cabina import guard as G, scan
+from project_os import guard as G, scan
 
 VALID = "---\nname: {n}\ndescription: Reviews things carefully\nmodel: sonnet\ntools: Read\n---\nBody.\n"
 
@@ -72,12 +72,12 @@ class TestBrief(unittest.TestCase):
     def test_brief_is_short_and_mentions_findings(self):
         out = G.brief(self.env.cfg, cwd=self.env.alpha)
         self.assertLessEqual(out.count("\n"), 6)
-        self.assertIn("cabina", out.lower())
+        self.assertIn("project-os", out.lower())
         self.assertIn("MEMORY.md", out)          # this project's memory age
     def test_brief_outside_projects_still_works(self):
-        out = G.brief(self.env.cfg, cwd="/tmp"); self.assertIn("cabina", out.lower())
+        out = G.brief(self.env.cfg, cwd="/tmp"); self.assertIn("project-os", out.lower())
     def test_brief_mentions_last_session(self):
-        from cabina import sessions as SESS
+        from project_os import sessions as SESS
         SESS.refresh(self.env.cfg)
         out = G.brief(self.env.cfg, cwd=self.env.alpha)
         self.assertIn("Refactor the widget loader", out)
@@ -86,27 +86,27 @@ class TestHooksInstall(unittest.TestCase):
     def test_snippet_and_write_with_backup(self):
         with tempfile.TemporaryDirectory() as d:
             settings = os.path.join(d, "settings.json"); json.dump({"hooks": {"Stop": [{"hooks": [{"command": "x"}]}]}}, open(settings, "w"))
-            snip = G.hooks_snippet("cabina")
+            snip = G.hooks_snippet("project-os")
             self.assertIn("PreToolUse", snip["hooks"]); self.assertIn("SessionStart", snip["hooks"])
-            with mock.patch.object(G, "_cmd_resolves", return_value=(True, "/usr/local/bin/cabina")):
-                ok, msg = G.hooks_write(settings, "cabina")
+            with mock.patch.object(G, "_cmd_resolves", return_value=(True, "/usr/local/bin/project-os")):
+                ok, msg = G.hooks_write(settings, "project-os")
             self.assertTrue(ok); d2 = json.load(open(settings))
             self.assertIn("Stop", d2["hooks"])                    # existing hooks kept
-            self.assertTrue(any("cabina guard" in h["command"] for grp in d2["hooks"]["PreToolUse"] for h in grp["hooks"]))
+            self.assertTrue(any("project-os guard" in h["command"] for grp in d2["hooks"]["PreToolUse"] for h in grp["hooks"]))
             self.assertTrue(any(f.startswith("settings.json.bak-") for f in os.listdir(d)))
-            with mock.patch.object(G, "_cmd_resolves", return_value=(True, "/usr/local/bin/cabina")):
-                ok2, msg2 = G.hooks_write(settings, "cabina")        # idempotent
+            with mock.patch.object(G, "_cmd_resolves", return_value=(True, "/usr/local/bin/project-os")):
+                ok2, msg2 = G.hooks_write(settings, "project-os")        # idempotent
             self.assertTrue(ok2); d3 = json.load(open(settings))
-            self.assertEqual(sum(1 for grp in d3["hooks"]["PreToolUse"] for h in grp["hooks"] if "cabina guard" in h["command"]), 1)
+            self.assertEqual(sum(1 for grp in d3["hooks"]["PreToolUse"] for h in grp["hooks"] if "project-os guard" in h["command"]), 1)
 
     def test_write_refused_when_cmd_does_not_resolve_no_backup(self):
-        # "cabina-missing-xyz" passes the U2 cabina-only allowlist (basename starts with
-        # "cabina") but is not actually on PATH -- this exercises the OLDER dead-cmd guard
-        # specifically, not the new allowlist.
+        # "project-os" passes the U2 project-os-only allowlist (exact basename match) but is
+        # mocked as not actually on PATH -- this exercises the OLDER dead-cmd guard
+        # specifically, not the allowlist.
         with tempfile.TemporaryDirectory() as d:
             settings = os.path.join(d, "settings.json")
             with mock.patch.object(G, "_cmd_resolves", return_value=(False, None)):
-                ok, msg = G.hooks_write(settings, "cabina-missing-xyz")
+                ok, msg = G.hooks_write(settings, "project-os")
             self.assertFalse(ok)
             self.assertIn("not on PATH", msg)
             self.assertFalse(os.path.isfile(settings))
@@ -116,15 +116,15 @@ class TestHooksInstall(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             settings = os.path.join(d, "settings.json")
             with mock.patch.object(G, "_cmd_resolves", return_value=(False, None)):
-                ok, msg = G.hooks_write(settings, "cabina-missing-xyz", force=True)
+                ok, msg = G.hooks_write(settings, "project-os", force=True)
             self.assertTrue(ok)
             self.assertTrue(os.path.isfile(settings))
 
     def test_write_ok_when_cmd_resolves(self):
         with tempfile.TemporaryDirectory() as d:
             settings = os.path.join(d, "settings.json")
-            with mock.patch.object(shutil, "which", return_value="/usr/local/bin/cabina"):
-                ok, msg = G.hooks_write(settings, "cabina")
+            with mock.patch.object(shutil, "which", return_value="/usr/local/bin/project-os"):
+                ok, msg = G.hooks_write(settings, "project-os")
             self.assertTrue(ok)
             self.assertTrue(os.path.isfile(settings))
 
@@ -137,10 +137,10 @@ class TestHooksInstall(unittest.TestCase):
             settings = os.path.join(d, "settings.json")
             json.dump({"hooks": {"Stop": [{"hooks": [{"command": "pre-hooks"}]}]}}, open(settings, "w"))
             fixed = datetime(2026, 8, 18, 12, 0, 0, 123456)
-            with mock.patch.object(G, "datetime") as mdt, mock.patch.object(G, "_cmd_resolves", return_value=(True, "/usr/local/bin/cabina")):
+            with mock.patch.object(G, "datetime") as mdt, mock.patch.object(G, "_cmd_resolves", return_value=(True, "/usr/local/bin/project-os")):
                 mdt.now.return_value = fixed
-                ok1, _ = G.hooks_write(settings, "cabina")
-                ok2, _ = G.hooks_write(settings, "cabina")
+                ok1, _ = G.hooks_write(settings, "project-os")
+                ok2, _ = G.hooks_write(settings, "project-os")
             self.assertTrue(ok1); self.assertTrue(ok2)
             baks = sorted(f for f in os.listdir(d) if f.startswith("settings.json.bak-"))
             self.assertEqual(len(baks), 2)                 # two writes -> two distinct backups, never one clobbering the other
@@ -154,23 +154,23 @@ class TestHooksStatus(unittest.TestCase):
     def test_status_nonexistent_settings(self):
         with tempfile.TemporaryDirectory() as d:
             settings = os.path.join(d, "settings.json")
-            with mock.patch.object(shutil, "which", return_value="/usr/local/bin/cabina"):
-                s = G.hooks_status(settings, "cabina")
+            with mock.patch.object(shutil, "which", return_value="/usr/local/bin/project-os"):
+                s = G.hooks_status(settings, "project-os")
             self.assertEqual(s["settings_path"], settings)
             self.assertFalse(s["exists"])
             self.assertTrue(s["valid_json"])
             self.assertFalse(s["guard_installed"])
             self.assertFalse(s["brief_installed"])
             self.assertTrue(s["cmd_resolves"])
-            self.assertEqual(s["cmd_path"], "/usr/local/bin/cabina")
+            self.assertEqual(s["cmd_path"], "/usr/local/bin/project-os")
             self.assertIn("PreToolUse", s["snippet"]["hooks"])
 
     def test_status_valid_with_both_hooks_installed(self):
         with tempfile.TemporaryDirectory() as d:
             settings = os.path.join(d, "settings.json")
-            json.dump(G.hooks_snippet("cabina"), open(settings, "w"))
-            with mock.patch.object(shutil, "which", return_value="/usr/local/bin/cabina"):
-                s = G.hooks_status(settings, "cabina")
+            json.dump(G.hooks_snippet("project-os"), open(settings, "w"))
+            with mock.patch.object(shutil, "which", return_value="/usr/local/bin/project-os"):
+                s = G.hooks_status(settings, "project-os")
             self.assertTrue(s["exists"]); self.assertTrue(s["valid_json"])
             self.assertTrue(s["guard_installed"]); self.assertTrue(s["brief_installed"])
 
@@ -178,7 +178,7 @@ class TestHooksStatus(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             settings = os.path.join(d, "settings.json")
             open(settings, "w").write("{not valid json")
-            s = G.hooks_status(settings, "cabina")
+            s = G.hooks_status(settings, "project-os")
             self.assertTrue(s["exists"])
             self.assertFalse(s["valid_json"])
             self.assertTrue(s.get("error"))
@@ -193,11 +193,11 @@ class TestHooksStatus(unittest.TestCase):
             self.assertIsNone(s["cmd_path"])
 
 
-class TestCmdIsCabina(unittest.TestCase):
-    """U2: hooks_write must only ever wire a command that runs cabina itself -- never an
+class TestCmdIsProjectOs(unittest.TestCase):
+    """U2: hooks_write must only ever wire a command that runs project-os itself -- never an
     arbitrary shell command, even with force=True."""
     def test_bash_dash_c_refused(self):
-        ok, reason = G._cmd_is_cabina("bash -c 'curl x|bash'")
+        ok, reason = G._cmd_is_project_os("bash -c 'curl x|bash'")
         self.assertFalse(ok)
         with tempfile.TemporaryDirectory() as d:
             settings = os.path.join(d, "settings.json")
@@ -205,33 +205,64 @@ class TestCmdIsCabina(unittest.TestCase):
             self.assertFalse(wok)
             self.assertFalse(os.path.isfile(settings))
 
-    def test_plain_cabina_allowed(self):
-        with mock.patch.object(G, "_cmd_resolves", return_value=(True, "/usr/local/bin/cabina")):
-            ok, reason = G._cmd_is_cabina("cabina")
+    def test_plain_project_os_allowed(self):
+        with mock.patch.object(G, "_cmd_resolves", return_value=(True, "/usr/local/bin/project-os")):
+            ok, reason = G._cmd_is_project_os("project-os")
         self.assertTrue(ok, reason)
 
-    def test_plain_cabina_allowed_even_when_not_yet_on_path(self):
-        # force still works for an as-yet-uninstalled cabina: the allowlist checks the raw
+    def test_plain_project_os_allowed_even_when_not_yet_on_path(self):
+        # force still works for an as-yet-uninstalled project-os: the allowlist checks the raw
         # token's basename when the first token does not resolve.
         with mock.patch.object(G, "_cmd_resolves", return_value=(False, None)):
-            ok, reason = G._cmd_is_cabina("cabina")
+            ok, reason = G._cmd_is_project_os("project-os")
         self.assertTrue(ok, reason)
 
-    def test_python_dash_m_cabina_allowed(self):
-        ok, reason = G._cmd_is_cabina("python3 -m cabina")
+    def test_python_dash_m_project_os_allowed(self):
+        ok, reason = G._cmd_is_project_os("python3 -m project_os")
         self.assertTrue(ok, reason)
 
-    def test_absolute_python_dash_m_cabina_allowed(self):
-        ok, reason = G._cmd_is_cabina("/usr/bin/python3.12 -m cabina")
+    def test_absolute_python_dash_m_project_os_allowed(self):
+        ok, reason = G._cmd_is_project_os("/usr/bin/python3.12 -m project_os")
         self.assertTrue(ok, reason)
 
-    def test_cabina_with_shell_metacharacters_refused(self):
-        ok, reason = G._cmd_is_cabina("cabina; rm -rf ~")
+    def test_project_os_with_shell_metacharacters_refused(self):
+        ok, reason = G._cmd_is_project_os("project-os; rm -rf ~")
         self.assertFalse(ok)
 
     def test_python_dash_m_wrong_module_refused(self):
-        ok, reason = G._cmd_is_cabina("python3 -m http.server")
+        ok, reason = G._cmd_is_project_os("python3 -m http.server")
         self.assertFalse(ok)
+
+    def test_impostor_basename_refused(self):
+        # A `startswith` check would let "project-os-evil" through -- only the EXACT basename
+        # "project-os" (post ".exe" strip) may be wired.
+        with mock.patch.object(G, "_cmd_resolves", return_value=(False, None)):
+            ok, reason = G._cmd_is_project_os("project-os-evil")
+        self.assertFalse(ok)
+
+    def test_impostor_basename_with_args_refused(self):
+        with mock.patch.object(G, "_cmd_resolves", return_value=(False, None)):
+            ok, reason = G._cmd_is_project_os("/tmp/project-os-evil --flag")
+        self.assertFalse(ok)
+
+    def test_project_os_with_subcommand_allowed(self):
+        with mock.patch.object(G, "_cmd_resolves", return_value=(False, None)):
+            ok, reason = G._cmd_is_project_os("project-os brief")
+        self.assertTrue(ok, reason)
+
+    def test_absolute_project_os_with_subcommand_allowed(self):
+        with mock.patch.object(G, "_cmd_resolves", return_value=(True, "/usr/local/bin/project-os")):
+            ok, reason = G._cmd_is_project_os("/usr/local/bin/project-os guard")
+        self.assertTrue(ok, reason)
+
+    def test_project_os_exe_with_subcommand_allowed(self):
+        with mock.patch.object(G, "_cmd_resolves", return_value=(False, None)):
+            ok, reason = G._cmd_is_project_os("project-os.exe brief")
+        self.assertTrue(ok, reason)
+
+    def test_python_dash_m_project_os_with_subcommand_allowed(self):
+        ok, reason = G._cmd_is_project_os("python3 -m project_os guard")
+        self.assertTrue(ok, reason)
 
     def test_bash_never_bypassed_by_break_test_patch_sanity(self):
         # Sanity companion to the break-test in test_breaks.py: with the real guard in place,
@@ -240,6 +271,6 @@ class TestCmdIsCabina(unittest.TestCase):
             settings = os.path.join(d, "settings.json")
             ok, msg = G.hooks_write(settings, "bash -c 'echo pwned'", force=True)
             self.assertFalse(ok)
-            self.assertIn("cabina", msg)
+            self.assertIn("project-os", msg)
             self.assertFalse(os.path.isfile(settings))
 if __name__ == "__main__": unittest.main()

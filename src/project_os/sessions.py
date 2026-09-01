@@ -162,9 +162,9 @@ def _git_project_fallback(cwd, cfg_roots):
     """Fallback for a session whose cwd matches no scanned project (scan.py only registers a
     project when it finds a `.claude/` dir there): walk up from `cwd` looking for a git repo
     root (a `.git` dir or file, e.g. a worktree) while still inside one of `cfg_roots`. Found ->
-    attribute the session to that repo, so cabina never silently hides real work just because
-    the repo has no cabina-visible assets yet. Name is ALWAYS the path relative to the
-    containing cfg root (e.g. root ~/Documents, repo ~/Documents/Webs/cabina -> "Webs/cabina") —
+    attribute the session to that repo, so project-os never silently hides real work just because
+    the repo has no project-os-visible assets yet. Name is ALWAYS the path relative to the
+    containing cfg root (e.g. root ~/Documents, repo ~/Documents/Webs/acme -> "Webs/acme") —
     deterministic regardless of what else happens to be scanned; a repo directly under a root
     naturally reduces to its basename. Returns (name, git_root) so the caller can also
     relativize files_touched against it, or None if no `.git` turns up before leaving every cfg

@@ -1,4 +1,4 @@
-"""`cabina fleet` — terminal TUI (curses, stdlib) over the live provider + cached scan."""
+"""`project-os fleet` — terminal TUI (curses, stdlib) over the live provider + cached scan."""
 import time, sys, os
 try:
     import curses
@@ -17,7 +17,7 @@ VIEWS = ["Live", "Agents", "Projects"]
 
 def run(cfg):
     if not available():
-        print("cabina fleet needs a curses-capable terminal (not available on this Python/OS). Use `cabina` for the web UI.")
+        print("project-os fleet needs a curses-capable terminal (not available on this Python/OS). Use `project-os` for the web UI.")
         return 2
     prov = LIVE.get(cfg)
     data = scan.ensure(cfg)
@@ -48,7 +48,7 @@ def run(cfg):
         cnt = {}
         for a in state["live"]["agents"]:
             cnt[a["status"]] = cnt.get(a["status"], 0) + 1
-        head = f" CABINA  {len(state['live']['agents'])} live agents · provider: {prov.name} "
+        head = f" PROJECT-OS  {len(state['live']['agents'])} live agents · provider: {prov.name} "
         scr.addstr(0, 0, head[:W - 1], C(6) | curses.A_BOLD)
         x = len(head) + 1
         for k in ("working", "done", "idle"):

@@ -2,7 +2,7 @@ import json, os, subprocess, sys, tempfile, unittest
 from unittest import mock
 import _helpers  # noqa
 from _env import Env
-from cabina import healthlog as HL, server as SRV
+from project_os import healthlog as HL, server as SRV
 
 
 def _findings(crit=0, warn=0, info=0):
@@ -101,14 +101,14 @@ class TestHealthlog(unittest.TestCase):
         try:
             open(os.path.join(env.alpha, ".claude", "agents", "broken.md"), "w").write(
                 "---\nname: broken\nmodel: sonnet\n---\nBody without a description.\n")
-            from cabina import scan
+            from project_os import scan
             scan.save(env.cfg, scan.run(env.cfg))
             with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False) as f:
                 f.write(f"claude_home = '{env.claude}'\ncodex_home = '{env.codex}'\nroots = ['{env.projects}']\n"
                         f"state_dir = '{env.state}'\n[live]\nprovider = \"none\"\n[scan]\nmeasure_worktrees = false\ncheck_mcp = false\n")
                 cfgp = f.name
             src = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
-            r = subprocess.run([sys.executable, "-m", "cabina", "--config", cfgp, "check", "--json"],
+            r = subprocess.run([sys.executable, "-m", "project_os", "--config", cfgp, "check", "--json"],
                                 capture_output=True, text=True, env={**os.environ, "PYTHONPATH": src}, timeout=60)
             os.unlink(cfgp)
             self.assertEqual(r.returncode, 1, r.stderr)  # crit finding -> exit 1
@@ -150,14 +150,14 @@ class TestHealthlog(unittest.TestCase):
         try:
             open(os.path.join(env.alpha, ".claude", "agents", "broken.md"), "w").write(
                 "---\nname: broken\nmodel: sonnet\n---\nBody without a description.\n")
-            from cabina import scan
+            from project_os import scan
             scan.save(env.cfg, scan.run(env.cfg))
             with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False) as f:
                 f.write(f"claude_home = '{env.claude}'\ncodex_home = '{env.codex}'\nroots = ['{env.projects}']\n"
                         f"state_dir = '{env.state}'\n[live]\nprovider = \"none\"\n[scan]\nmeasure_worktrees = false\ncheck_mcp = false\n")
                 cfgp = f.name
             src = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
-            r = subprocess.run([sys.executable, "-m", "cabina", "--config", cfgp, "check", "--quick", "--json"],
+            r = subprocess.run([sys.executable, "-m", "project_os", "--config", cfgp, "check", "--quick", "--json"],
                                 capture_output=True, text=True, env={**os.environ, "PYTHONPATH": src}, timeout=60)
             os.unlink(cfgp)
             self.assertEqual(r.returncode, 1, r.stderr)  # still a crit finding -> exit 1

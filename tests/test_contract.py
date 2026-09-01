@@ -1,6 +1,6 @@
 import os, tempfile, unittest
 import _helpers  # noqa
-from cabina.contract import Contract, categorize
+from project_os.contract import Contract, categorize
 
 def fm(**kv):
     return "\n".join(["---"] + [f"{k}: {v}" for k, v in kv.items()] + ["---", "", "Body."])

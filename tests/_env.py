@@ -1,7 +1,7 @@
 """A synthetic Claude Code environment in a temp dir: global + one project, for server tests."""
 import os, json, tempfile, time
 import _helpers  # noqa
-from cabina import config as CFG
+from project_os import config as CFG
 
 AGENT = "---\nname: {n}\ndescription: Reviews things carefully\nmodel: sonnet\ntools: Read, Grep\n---\nBody.\n"
 
@@ -98,14 +98,14 @@ class Env:
         """Conveniencia para tests que necesitan `activity` poblada antes de llamar a
         snapshot.export_activity o de golpear el hub: corre sessions.refresh() de verdad
         contra el cfg de este Env, devuelve la lista de resúmenes."""
-        from cabina import sessions as SESS
+        from project_os import sessions as SESS
         return SESS.refresh(self.cfg)
 
 
 def sample_export(machine, project="alpha", sessions=1, hours=1.0):
-    """Un payload de `cabina export --activity` mínimo pero realista — para tests de hub que
+    """Un payload de `project-os export --activity` mínimo pero realista — para tests de hub que
     necesitan DOS O MÁS máquinas sin levantar un segundo Env sintético completo por cada una."""
-    return {"cabina": 1, "machine": machine, "os": "Linux", "when": "2026-08-18T10:00",
+    return {"project_os": 1, "machine": machine, "os": "Linux", "when": "2026-08-18T10:00",
             "agents": [], "skills": [], "harness": [], "projects": [project],
             "activity": {"aggregated": [{"project": project, "sessions": sessions, "hours": hours,
                                           "tokens": {"in": 100, "out": 200}, "commits": 1,

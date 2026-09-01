@@ -17,7 +17,7 @@ class TestHubFixtures(unittest.TestCase):
 
 class TestHubLoadDir(unittest.TestCase):
     def test_hub_normalizes_hostile_export_rows_and_css_enums(self):
-        from cabina import hub as HUB
+        from project_os import hub as HUB
         payload = '<img src=x onerror=alert(1)>'
         hostile = {
             "machine": payload,
@@ -54,7 +54,7 @@ class TestHubLoadDir(unittest.TestCase):
         self.assertEqual(merged["activity"]["sessions"][0]["branch"], payload)
 
     def test_hub_activity_tokens_keep_only_historical_fields(self):
-        from cabina import config as CFG, hub as HUB
+        from project_os import config as CFG, hub as HUB
         tokens = {"in": 1, "out": 2, "cache_read": 3, "cache_write": 4,
                   "thinking": 99, "thinking_lines": 100, "thinking_trace": "secret"}
         export = {"machine": "m", "agents": [], "skills": [], "harness": [], "projects": ["p"],
@@ -72,7 +72,7 @@ class TestHubLoadDir(unittest.TestCase):
         self.assertEqual(api["sessions"][0]["tokens"], expected)
 
     def test_hub_rejects_scalar_collections_and_extreme_numbers(self):
-        from cabina import config as CFG, hub as HUB
+        from project_os import config as CFG, hub as HUB
         huge = 10 ** 4000
         hostile = {
             "machine": "m",
@@ -120,12 +120,12 @@ class TestHubLoadDir(unittest.TestCase):
         self.assertEqual(merged["activity"]["sessions"][0]["duration_s"], 0)
 
     def test_hub_lists_sessions_from_multiple_exports(self):
-        from cabina import hub as HUB
+        from project_os import hub as HUB
         with tempfile.TemporaryDirectory() as d:
-            open(os.path.join(d, "m1.json"), "w").write(json.dumps({"cabina": 1, "machine": "m1", "os": "macOS", "when": "x",
+            open(os.path.join(d, "m1.json"), "w").write(json.dumps({"project_os": 1, "machine": "m1", "os": "macOS", "when": "x",
                 "agents": [], "skills": [], "harness": [], "projects": ["alpha"],
                 "activity": {"aggregated": [{"project": "alpha", "sessions": 2, "hours": 1.0}]}}))
-            open(os.path.join(d, "m2.json"), "w").write(json.dumps({"cabina": 1, "machine": "m2", "os": "Linux", "when": "y",
+            open(os.path.join(d, "m2.json"), "w").write(json.dumps({"project_os": 1, "machine": "m2", "os": "Linux", "when": "y",
                 "agents": [], "skills": [], "harness": [], "projects": ["alpha"],
                 "activity": {"aggregated": [{"project": "alpha", "sessions": 3, "hours": 2.0}]}}))
             out = HUB.load_dir(d, 5)
@@ -135,7 +135,7 @@ class TestHubLoadDir(unittest.TestCase):
             self.assertEqual(machines, {"m1", "m2"})
 
     def test_hub_rejects_symlink_escaping_dir(self):
-        from cabina import hub as HUB
+        from project_os import hub as HUB
         with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as outside:
             secret = os.path.join(outside, "secret.json")
             open(secret, "w").write(json.dumps({"machine": "evil", "agents": [{"name": "leaked"}], "skills": [], "harness": [], "projects": []}))
@@ -148,12 +148,12 @@ class TestHubLoadDir(unittest.TestCase):
         # Orchestrator amendment: a file with only `aggregated` and a file with `sessions`
         # detail must BOTH survive the merge — detail from one machine must never push the
         # aggregated-only rows of another machine out of the response.
-        from cabina import hub as HUB
+        from project_os import hub as HUB
         with tempfile.TemporaryDirectory() as d:
-            open(os.path.join(d, "m1.json"), "w").write(json.dumps({"cabina": 1, "machine": "m1", "os": "macOS", "when": "x",
+            open(os.path.join(d, "m1.json"), "w").write(json.dumps({"project_os": 1, "machine": "m1", "os": "macOS", "when": "x",
                 "agents": [], "skills": [], "harness": [], "projects": ["alpha"],
                 "activity": {"aggregated": [{"project": "alpha", "sessions": 2, "hours": 1.0}]}}))
-            open(os.path.join(d, "m2.json"), "w").write(json.dumps({"cabina": 1, "machine": "m2", "os": "Linux", "when": "y",
+            open(os.path.join(d, "m2.json"), "w").write(json.dumps({"project_os": 1, "machine": "m2", "os": "Linux", "when": "y",
                 "agents": [], "skills": [], "harness": [], "projects": ["alpha"],
                 "activity": {"aggregated": [{"project": "alpha", "sessions": 3, "hours": 2.0}],
                              "sessions": [{"project": "alpha", "started": "s", "title": "t"}]}}))
@@ -164,13 +164,13 @@ class TestHubLoadDir(unittest.TestCase):
             self.assertEqual(sess_machines, {"m2"})
 
     def test_hub_merges_projects_detail_with_machine(self):
-        from cabina import hub as HUB
+        from project_os import hub as HUB
         with tempfile.TemporaryDirectory() as d:
-            open(os.path.join(d, "m1.json"), "w").write(json.dumps({"cabina": 1, "machine": "m1", "os": "macOS", "when": "x",
+            open(os.path.join(d, "m1.json"), "w").write(json.dumps({"project_os": 1, "machine": "m1", "os": "macOS", "when": "x",
                 "agents": [], "skills": [], "harness": [], "projects": ["alpha"],
                 "projects_detail": [{"name": "alpha", "branch": "main", "dirty": 0, "worktrees": 0, "docs": {},
                                       "memory_days": None, "last_commit": "", "agents": 1, "skills": 1}]}))
-            open(os.path.join(d, "m2.json"), "w").write(json.dumps({"cabina": 1, "machine": "m2", "os": "Linux", "when": "y",
+            open(os.path.join(d, "m2.json"), "w").write(json.dumps({"project_os": 1, "machine": "m2", "os": "Linux", "when": "y",
                 "agents": [], "skills": [], "harness": [], "projects": ["alpha"]}))   # no projects_detail key
             out = HUB.load_dir(d, 5)
             rows = out["merged"]["projects_detail"]
@@ -179,7 +179,7 @@ class TestHubLoadDir(unittest.TestCase):
             self.assertEqual(rows[0]["name"], "alpha")
 
     def test_hub_skips_oversized_file(self):
-        from cabina import hub as HUB
+        from project_os import hub as HUB
         with tempfile.TemporaryDirectory() as d:
             open(os.path.join(d, "big.json"), "w").write(json.dumps({"machine": "m1", "agents": [], "skills": [], "harness": [], "projects": [], "pad": "x" * 2000}))
             out = HUB.load_dir(d, max_mb=0.001)          # ~1 KB cap, file is bigger
@@ -189,7 +189,7 @@ class TestHubLoadDir(unittest.TestCase):
     def test_hub_skips_fifo_without_hanging(self):
         # D1: a FIFO named *.json under DIR would block forever inside open() (_read_export) —
         # and since every hub endpoint calls load_dir, that hang would take down the whole hub.
-        from cabina import hub as HUB
+        from project_os import hub as HUB
         import threading
         with tempfile.TemporaryDirectory() as d:
             os.mkfifo(os.path.join(d, "pipe.json"))
@@ -203,7 +203,7 @@ class TestHubLoadDir(unittest.TestCase):
             self.assertEqual(result["out"]["files"][0]["status"], "not-a-file")
 
     def test_hub_marks_corrupt_json_as_unreadable_without_crashing(self):
-        from cabina import hub as HUB
+        from project_os import hub as HUB
         with tempfile.TemporaryDirectory() as d:
             open(os.path.join(d, "bad.json"), "w").write("{not valid json")
             open(os.path.join(d, "good.json"), "w").write(json.dumps({"machine": "m1",
@@ -222,7 +222,7 @@ class TestHubMergedCache(unittest.TestCase):
         # (name, mtime, size) fingerprint of DIR's *.json entries; only re-read when that
         # fingerprint changes.
         from unittest import mock
-        from cabina import hub as HUB, config as CFG
+        from project_os import hub as HUB, config as CFG
         with tempfile.TemporaryDirectory() as d:
             p = os.path.join(d, "m1.json")
             open(p, "w").write(json.dumps({"machine": "m1", "agents": [{"name": "x"}], "skills": [], "harness": [], "projects": []}))
@@ -244,10 +244,10 @@ class TestHubServer(unittest.TestCase):
     def setUpClass(cls):
         import threading
         from http.server import ThreadingHTTPServer
-        from cabina import hub as HUB, config as CFG
+        from project_os import hub as HUB, config as CFG
         cls.dir = tempfile.mkdtemp()
         open(os.path.join(cls.dir, "m1.json"), "w").write(json.dumps({
-            "cabina": 1, "machine": "m1", "os": "macOS", "when": "x",
+            "project_os": 1, "machine": "m1", "os": "macOS", "when": "x",
             "agents": [{"name": "rev", "project": "alpha", "tool": "claude", "category": "valid", "model": "sonnet", "uses": 1}],
             "skills": [], "harness": [{"project": "alpha", "level": "partial", "hooks_dead": [], "hooks_broken": []}],
             "projects": ["alpha"],

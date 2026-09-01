@@ -1,7 +1,7 @@
 import os, json, tempfile, unittest
 import _helpers  # noqa
-from cabina.contract import Contract, parse_agent_file
-from cabina import drift as DR, usage as U
+from project_os.contract import Contract, parse_agent_file
+from project_os import drift as DR, usage as U
 
 TOML = 'name = "code-reviewer"\ndescription = "Reviews code"\ndeveloper_instructions = """\nYou review code.\n"""\n'
 MD = "---\nname: code-reviewer\ndescription: Reviews code\nmodel: sonnet\ntools: Read\n---\nYou review code.\n"

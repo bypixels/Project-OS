@@ -10,26 +10,26 @@ def _can_symlink():
             os.symlink(d, os.path.join(d, "l")); return True
     except (OSError, NotImplementedError):
         return False
-from cabina import host, config as CFG, roster as R_, scan as SC, skills as SK
+from project_os import host, config as CFG, roster as R_, scan as SC, skills as SK
 
 class TestPaths(unittest.TestCase):
     def test_windows_defaults(self):
         with mock.patch.object(host.sys, "platform", "win32"), mock.patch.object(host.os, "name", "nt"), \
              mock.patch.dict(os.environ, {"APPDATA": r"C:\Users\d\AppData\Roaming", "LOCALAPPDATA": r"C:\Users\d\AppData\Local"}):
             d = host.default_dirs()
-            self.assertTrue(d["config"].endswith(os.path.join("Roaming", "cabina")))
-            self.assertTrue(d["state"].endswith(os.path.join("Local", "cabina")))
+            self.assertTrue(d["config"].endswith(os.path.join("Roaming", "project-os")))
+            self.assertTrue(d["state"].endswith(os.path.join("Local", "project-os")))
     def test_mac_defaults(self):
         with mock.patch.object(host.sys, "platform", "darwin"), mock.patch.object(host.os, "name", "posix"), mock.patch.dict(os.environ, {}, clear=False):
             os.environ.pop("XDG_CONFIG_HOME", None); os.environ.pop("XDG_DATA_HOME", None)
             d = host.default_dirs()
-            self.assertTrue(d["config"].endswith(os.path.join(".config", "cabina")))
-            self.assertTrue(d["state"].endswith(os.path.join(".local", "share", "cabina")))
+            self.assertTrue(d["config"].endswith(os.path.join(".config", "project-os")))
+            self.assertTrue(d["state"].endswith(os.path.join(".local", "share", "project-os")))
     def test_xdg_respected(self):
         with mock.patch.object(host.sys, "platform", "linux"), mock.patch.object(host.os, "name", "posix"), \
              mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": "/x/cfg", "XDG_DATA_HOME": "/x/data"}):
             d = host.default_dirs()
-            self.assertEqual(d["config"], os.path.join("/x/cfg", "cabina")); self.assertEqual(d["state"], os.path.join("/x/data", "cabina"))
+            self.assertEqual(d["config"], os.path.join("/x/cfg", "project-os")); self.assertEqual(d["state"], os.path.join("/x/data", "project-os"))
     def test_tool_homes_are_home_relative_everywhere(self):
         d = host.default_dirs()
         self.assertEqual(d["claude_home"], os.path.join(os.path.expanduser("~"), ".claude"))
@@ -39,7 +39,7 @@ class TestPaths(unittest.TestCase):
         self.assertEqual(cfg["state_dir"], host.default_dirs()["state"])
 
 class TestExampleTomlCoversDefaults(unittest.TestCase):
-    """cabina config --example must show every key a user could override, not a stale subset."""
+    """project-os config --example must show every key a user could override, not a stale subset."""
     def _leaf_paths(self, d, prefix=()):
         for k, v in d.items():
             path = prefix + (k,)
@@ -62,8 +62,8 @@ class TestExampleTomlCoversDefaults(unittest.TestCase):
 
     def test_state_dir_is_not_a_hardcoded_unix_path(self):
         example_text = CFG.example_toml()
-        self.assertNotIn("$CABINA_CONFIG", example_text,
-                          "state_dir has no $CABINA_CONFIG override mechanism; the comment must not claim one")
+        self.assertNotIn("$PROJECT_OS_CONFIG", example_text,
+                          "state_dir has no $PROJECT_OS_CONFIG override mechanism; the comment must not claim one")
         parsed = tomllib.loads(example_text)
         self.assertEqual(os.path.expanduser(parsed["state_dir"]), CFG.DEFAULTS["state_dir"],
                           "the example's state_dir must be THIS platform's actual default, not a hardcoded Unix path")
@@ -116,15 +116,15 @@ class TestNotifyNoInjection(unittest.TestCase):
         return calls
     def test_macos_text_goes_out_of_band(self):
         calls = self._capture("darwin", "posix"); self.assertEqual(len(calls), 1)
-        args, kw = calls[0]; self.assertNotIn(self.EVIL, " ".join(args)); self.assertEqual(kw["env"]["CABINA_BODY"], self.EVIL)
+        args, kw = calls[0]; self.assertNotIn(self.EVIL, " ".join(args)); self.assertEqual(kw["env"]["PROJECT_OS_BODY"], self.EVIL)
     def test_windows_text_goes_out_of_band(self):
         calls = self._capture("win32", "nt"); self.assertEqual(len(calls), 1)
-        args, kw = calls[0]; self.assertNotIn(self.EVIL, " ".join(args)); self.assertIn("$env:CABINA_TITLE", " ".join(args)); self.assertEqual(kw["env"]["CABINA_TITLE"], self.EVIL)
+        args, kw = calls[0]; self.assertNotIn(self.EVIL, " ".join(args)); self.assertIn("$env:PROJECT_OS_TITLE", " ".join(args)); self.assertEqual(kw["env"]["PROJECT_OS_TITLE"], self.EVIL)
 
 class TestFleetWithoutCurses(unittest.TestCase):
     def test_fleet_degrades(self):
         with mock.patch.dict(sys.modules, {"curses": None}):
-            from cabina import fleet
+            from project_os import fleet
             import importlib; importlib.reload(fleet)
             self.assertFalse(fleet.available())
             self.assertEqual(fleet.run({}), 2)

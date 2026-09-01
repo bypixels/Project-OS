@@ -1,8 +1,8 @@
-"""History of `cabina check` results, for the Health tab's trend view. Writes ONLY
+"""History of `project-os check` results, for the Health tab's trend view. Writes ONLY
 <state_dir>/health.jsonl — one line per check run, appended, never rewritten in place except
 by the periodic prune (tmp + os.replace, same pattern as docs.py's atomic write).
 
-Called from exactly two places (never from check.run() itself, so `cabina mcp`, the guard hook
+Called from exactly two places (never from check.run() itself, so `project-os mcp`, the guard hook
 and `check --repo` stay pure): cli.py's `check` branch and server.py's api_health. A write here
 must never break either caller — append() catches everything and returns False on failure.
 """
