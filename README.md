@@ -18,9 +18,14 @@ contract, a real usage count, and a place in one window.
 
 ## Screenshots
 
-<!-- TODO(danny): recorded GIF/PNG of the Agents tab with real (but non-sensitive) data,
-     before tagging v0.1.0. Suggested: one GIF showing archive-with-references-check,
-     one static shot of the health check output. -->
+The health check with its 30-day trend, evidence pane and generated (never executed) fix command:
+
+![Health view](images/health.png)
+
+The agent roster: contract status, per-project attribution, real usage counts (`≈` marks a count
+shared with homonyms — honesty over precision):
+
+![Agents view](images/agents.png)
 
 ## What you get
 

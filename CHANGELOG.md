@@ -50,6 +50,34 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Never-invoked skills detector** (info, non-quick runs), the skills twin of the never-invoked
+  agents detector — Claude skills only: Codex transcripts record no skill invocations, so a Codex
+  "never used" would be a measurement lie. The adversarial review of this batch then hardened BOTH
+  never-invoked detectors: evaluation is now per-instance with shadowing semantics (a used global
+  homonym no longer hides a project's own never-used twin) and requires full `by_project`/`n_total`
+  consistency before accusing — unattributed or desynced usage data keeps the detector silent,
+  because a false accusation is worse than no finding.
+- **`project_os_skills` MCP tool** (ninth read-only tool): the skill catalog across both tools with
+  name/project/tool/status/description/usage, filterable, so an agent can ask "does a skill for X
+  already exist?" in one call. Codex rows say `"not measurable for codex"`, never a fabricated zero.
+- **Last Codex session per project**: `usage.codex_sessions()` (previously dead code) is now wired
+  into `GET /api/projects` as `codex_last` (30s TTL cache, invalidated on rescan) and shown in the
+  project detail ("n/a" when unmeasured). Codex-only projects — a root with `AGENTS.md`, no
+  `.claude/`, and its **own `.git`** — are now discovered by the same scan walk; the `.git`
+  requirement exists because review caught the naive rule inventing projects out of a nested app
+  folder and a composer vendor package shipping its upstream `AGENTS.md`.
+- **Measured-but-hidden data now visible in the UI**: the per-session subagent token aggregate
+  (per-field "n/a" fallback — the hub export deliberately omits it, and rendering zeros would
+  fabricate numbers), a top-10 most-touched-files block in Activity, and a 30-day health trend
+  strip in Health fed by the existing `/api/health-history` ("not enough history yet" below two
+  points). An intent test now pins that `GET /api/activity` serves `cwd`/`source_path`
+  deliberately (local-only UI) so removing them — or copying them to hub — must be a conscious act.
+- **`--help` in Spanish** when `language = "es"`: subcommand and flag descriptions flow through
+  `i18n.py`, resolved from config before the parser is built, falling back to English on any
+  config failure (a broken config must never break `--help`). argparse's own chrome (`usage:`,
+  `positional arguments:`) stays English; the README states exactly that.
+- **README screenshots** of the redesigned UI (Health with the new trend + detector, Agents roster).
+
 - **Skill body viewer** in the Skills tab: "View SKILL.md" shows the skill's full text (escaped,
   never rendered) plus a clickable list of its attached files with per-file preview — so a skill
   can be read before it is trusted or archived. `GET /api/skill-body`, `GET /api/skill-file`,
