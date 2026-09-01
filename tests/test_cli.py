@@ -278,5 +278,70 @@ class TestWorktreesCommand(unittest.TestCase):
             env.cleanup()
 
 
+def _unwrap(s):
+    """argparse wraps help text at the terminal width, so a translated string with an em dash
+    or long clause can land split across a newline in captured stdout. Collapse all whitespace
+    runs to a single space before substring-matching so wrapping doesn't fail an otherwise
+    correct assertion."""
+    return " ".join(s.split())
+
+
+class TestHelpI18n(unittest.TestCase):
+    """`--help` used to be English-only no matter what `language` said in config, because
+    argparse bakes its help text in at parser-construction time and main() used to load config
+    only AFTER parse_args() ran. Descriptions and help= strings now come from i18n.py, resolved
+    from config BEFORE the parser is built (README's known limitation shrinks accordingly:
+    the translated chrome is the subcommand/flag help text, not argparse's own "usage:" /
+    "positional arguments:" / "options:" wording, which stays English on purpose)."""
+
+    def _run_help(self, extra_argv, config_env=None):
+        src = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
+        env = {**os.environ, "PYTHONPATH": src}
+        if config_env is not None:
+            env["PROJECT_OS_CONFIG"] = config_env
+        return subprocess.run([sys.executable, "-m", "project_os", *extra_argv],
+                               capture_output=True, text=True, env=env, timeout=30)
+
+    def test_help_is_spanish_when_config_says_es(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False) as f:
+            f.write('language = "es"\n')
+            cfgp = f.name
+        try:
+            r = self._run_help(["--config", cfgp, "--help"])
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn(_unwrap(t("es", "cli.help.description")), _unwrap(r.stdout))
+        finally:
+            os.unlink(cfgp)
+
+    def test_help_is_english_by_default(self):
+        with tempfile.TemporaryDirectory() as d:
+            # No real config file at this path: exercises the actual default (English).
+            r = self._run_help(["--help"], config_env=os.path.join(d, "missing.toml"))
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn(_unwrap(t("en", "cli.help.description")), _unwrap(r.stdout))
+
+    def test_help_falls_back_to_english_on_corrupt_config(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False) as f:
+            f.write("not valid toml {{{")
+            cfgp = f.name
+        try:
+            r = self._run_help(["--config", cfgp, "--help"])
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn(_unwrap(t("en", "cli.help.description")), _unwrap(r.stdout))
+        finally:
+            os.unlink(cfgp)
+
+    def test_subcommand_help_is_translated_too(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False) as f:
+            f.write('language = "es"\n')
+            cfgp = f.name
+        try:
+            r = self._run_help(["--config", cfgp, "check", "--help"])
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn(t("es", "cli.help.check_quick"), r.stdout)
+        finally:
+            os.unlink(cfgp)
+
+
 if __name__ == "__main__":
     unittest.main()

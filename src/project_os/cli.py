@@ -23,54 +23,80 @@ from . import __version__, config as CFG
 from .i18n import t
 
 
+def _pre_config_path(argv):
+    """Pull --config's value out of argv without a real parse, so a language can be picked
+    before the argparse parser is built (help text is baked in at construction time, long
+    before parse_args() would normally see --config). Best-effort: returns None (-> the
+    default config path) if --config is absent or malformed."""
+    for i, arg in enumerate(argv):
+        if arg == "--config" and i + 1 < len(argv):
+            return argv[i + 1]
+        if arg.startswith("--config="):
+            return arg.split("=", 1)[1]
+    return None
+
+
+def _help_language(argv):
+    """Language to build --help text in. Loads config exactly like the real run later will,
+    but must never fail --help itself: a missing file, a corrupt TOML, or a bad --config path
+    all fall back to English, same philosophy as the guard hook (a failure in the extra must
+    never block the basic path)."""
+    try:
+        return CFG.load(_pre_config_path(argv))["language"]
+    except Exception:
+        return "en"
+
+
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="project-os", description="Control plane for a Claude Code environment. Measures, warns, blocks — never acts on its own.")
+    arglist = sys.argv[1:] if argv is None else argv
+    L = _help_language(arglist)
+    ap = argparse.ArgumentParser(prog="project-os", description=t(L, "cli.help.description"))
     ap.add_argument("--version", action="version", version=f"project-os {__version__}")
-    ap.add_argument("--config", help="path to config.toml (default: ~/.config/project-os/config.toml or $PROJECT_OS_CONFIG)")
+    ap.add_argument("--config", help=t(L, "cli.help.config"))
     sub = ap.add_subparsers(dest="cmd")
 
-    ui = sub.add_parser("ui", help="open the web UI (default)")
+    ui = sub.add_parser("ui", help=t(L, "cli.help.ui"))
     ui.add_argument("--port", type=int); ui.add_argument("--no-open", action="store_true")
 
-    ck = sub.add_parser("check", help="health check (exit 1 on critical)")
-    ck.add_argument("--quick", action="store_true", help="skip slow detectors (usage history)")
-    ck.add_argument("--json", action="store_true"); ck.add_argument("--notify", action="store_true", help="desktop notification if anything to see")
-    ck.add_argument("--repo", metavar="PATH", help="check ONE repository on its own (CI mode): .claude/agents against .project-os.toml; no home, no cache")
+    ck = sub.add_parser("check", help=t(L, "cli.help.check"))
+    ck.add_argument("--quick", action="store_true", help=t(L, "cli.help.check_quick"))
+    ck.add_argument("--json", action="store_true"); ck.add_argument("--notify", action="store_true", help=t(L, "cli.help.check_notify"))
+    ck.add_argument("--repo", metavar="PATH", help=t(L, "cli.help.check_repo"))
 
-    ag = sub.add_parser("agents", help="agent roster")
+    ag = sub.add_parser("agents", help=t(L, "cli.help.agents"))
     ag.add_argument("action", nargs="?", choices=["list", "archive", "refs"], default="list")
     ag.add_argument("name", nargs="?"); ag.add_argument("--project"); ag.add_argument("--force", action="store_true")
     ag.add_argument("--invalid", action="store_true"); ag.add_argument("--unused", action="store_true"); ag.add_argument("--json", action="store_true")
-    ag.add_argument("--tool", choices=["claude", "codex"], help="only agents of one tool")
+    ag.add_argument("--tool", choices=["claude", "codex"], help=t(L, "cli.help.agents_tool"))
 
-    sc = sub.add_parser("scan", help="rebuild the environment cache")
-    sc.add_argument("--mcp", action="store_true", help="also check MCP servers (needs the claude CLI; slow)")
-    sc.add_argument("--worktrees", action="store_true", help="also measure worktree sizes with du (~2 s each)")
+    sc = sub.add_parser("scan", help=t(L, "cli.help.scan"))
+    sc.add_argument("--mcp", action="store_true", help=t(L, "cli.help.scan_mcp"))
+    sc.add_argument("--worktrees", action="store_true", help=t(L, "cli.help.scan_worktrees"))
 
-    sub.add_parser("fleet", help="terminal TUI")
-    ex = sub.add_parser("export", help="export this environment as JSON (agents, skills, harness, projects)"); ex.add_argument("-o", "--out")
-    ex.add_argument("--activity", action="store_true", help="also export session activity (aggregated per project by default)")
-    ex.add_argument("--detail", action="store_true", help="with --activity: add per-session rows")
-    ex.add_argument("--titles", action="store_true", help="with --activity --detail: add session titles")
-    ex.add_argument("--project", action="append", help="with --activity: restrict to this project (repeatable)")
-    cp = sub.add_parser("compare", help="compare two exports (two machines, or then vs now)"); cp.add_argument("a"); cp.add_argument("b")
-    ini = sub.add_parser("init", help="print an example .project-os.toml (--ci: the GitHub Actions workflow)"); ini.add_argument("--ci", action="store_true")
-    mc = sub.add_parser("mcp", help="run the read-only MCP server over stdio (register with --install)"); mc.add_argument("--install", action="store_true", help="print how to register it in Claude Code and Codex")
-    sub.add_parser("guard", help="hook: PreToolUse on Edit|Write — validate agent files (reads stdin JSON)")
-    br = sub.add_parser("brief", help="hook: SessionStart — print a short health/context brief"); br.add_argument("--cwd")
-    hk = sub.add_parser("hooks", help="print the settings.json entries for guard+brief; --write merges them")
-    hk.add_argument("--write", action="store_true"); hk.add_argument("--settings", help="path to settings.json (default: ~/.claude/settings.json)")
-    hk.add_argument("--cmd", dest="hook_cmd", default="project-os", help="command name to wire (default: project-os)")
-    cf = sub.add_parser("config", help="show effective config"); cf.add_argument("--example", action="store_true", help="print an example config.toml")
+    sub.add_parser("fleet", help=t(L, "cli.help.fleet"))
+    ex = sub.add_parser("export", help=t(L, "cli.help.export")); ex.add_argument("-o", "--out")
+    ex.add_argument("--activity", action="store_true", help=t(L, "cli.help.export_activity"))
+    ex.add_argument("--detail", action="store_true", help=t(L, "cli.help.export_detail"))
+    ex.add_argument("--titles", action="store_true", help=t(L, "cli.help.export_titles"))
+    ex.add_argument("--project", action="append", help=t(L, "cli.help.export_project"))
+    cp = sub.add_parser("compare", help=t(L, "cli.help.compare")); cp.add_argument("a"); cp.add_argument("b")
+    ini = sub.add_parser("init", help=t(L, "cli.help.init")); ini.add_argument("--ci", action="store_true")
+    mc = sub.add_parser("mcp", help=t(L, "cli.help.mcp")); mc.add_argument("--install", action="store_true", help=t(L, "cli.help.mcp_install"))
+    sub.add_parser("guard", help=t(L, "cli.help.guard"))
+    br = sub.add_parser("brief", help=t(L, "cli.help.brief")); br.add_argument("--cwd")
+    hk = sub.add_parser("hooks", help=t(L, "cli.help.hooks"))
+    hk.add_argument("--write", action="store_true"); hk.add_argument("--settings", help=t(L, "cli.help.hooks_settings"))
+    hk.add_argument("--cmd", dest="hook_cmd", default="project-os", help=t(L, "cli.help.hooks_cmd"))
+    cf = sub.add_parser("config", help=t(L, "cli.help.config_cmd")); cf.add_argument("--example", action="store_true", help=t(L, "cli.help.config_example"))
 
-    ac = sub.add_parser("activity", help="session activity read from Claude Code transcripts")
+    ac = sub.add_parser("activity", help=t(L, "cli.help.activity"))
     ac.add_argument("--project"); ac.add_argument("--days", type=int, default=30); ac.add_argument("--json", action="store_true")
 
-    hb = sub.add_parser("hub", help="serve the UI, read-only, over N `project-os export --activity` files in DIR")
+    hb = sub.add_parser("hub", help=t(L, "cli.help.hub"))
     hb.add_argument("dir"); hb.add_argument("--port", type=int); hb.add_argument("--no-open", action="store_true")
 
-    wt = sub.add_parser("worktrees", help="worktree cleanup report: prints a script to review and run yourself (project-os never runs it)")
-    wt.add_argument("--project", help="restrict to this project"); wt.add_argument("--json", action="store_true")
+    wt = sub.add_parser("worktrees", help=t(L, "cli.help.worktrees"))
+    wt.add_argument("--project", help=t(L, "cli.help.worktrees_project")); wt.add_argument("--json", action="store_true")
 
     a = ap.parse_args(argv)
     cfg = CFG.load(a.config)
