@@ -89,6 +89,21 @@ class TestContract(unittest.TestCase):
         r = C.validate_text(fm(**dict(VALID, colour="red")), "my-agent")
         self.assertEqual(r.category, "warnings"); self.assertTrue(any("colour" in w for w in r.warnings))
 
+    def test_effort_and_memory_are_known_fields(self):
+        r = C.validate_text(fm(**dict(VALID, effort="low", memory="project")), "my-agent")
+        self.assertEqual((r.category, r.warnings), ("valid", []))
+
+    def test_config_defaults_know_the_documented_fields(self):
+        from project_os.config import DEFAULTS
+        r = Contract({"contract": DEFAULTS["contract"]}).validate_text(fm(**dict(VALID, effort="low", memory="project")), "my-agent")
+        self.assertEqual((r.category, r.warnings), ("valid", []))
+
+    def test_example_toml_known_fields_matches_defaults(self):
+        import tomllib
+        from project_os.config import DEFAULTS, example_toml
+        parsed = tomllib.loads(example_toml())
+        self.assertEqual(parsed["contract"]["known_fields"], DEFAULTS["contract"]["known_fields"])
+
     def test_permissions_format_is_invalid_and_flagged(self):
         txt = "---\nname: AVISA Code Reviewer\ndescription: Reviews\npermissions:\n  allow:\n    - \"Read(**)\"\n---\nbody"
         r = C.validate_text(txt, "code-reviewer")

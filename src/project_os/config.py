@@ -17,7 +17,7 @@ DEFAULTS = {
         "critical": ["name", "description"],            # missing -> critical
         "warn": ["model", "tools"],                     # missing -> warning
         "models": ["sonnet", "opus", "haiku"],
-        "known_fields": ["overrides", "maxTurns", "color", "version"],
+        "known_fields": ["overrides", "maxTurns", "color", "version", "effort", "memory", "disallowedTools", "permissionMode", "skills", "mcpServers", "hooks", "background", "isolation", "initialPrompt", "experimental"],
     },
     "scan": {
         "measure_worktrees": False,                     # `du` over worktrees: ~2 s each; enable with `project-os scan --worktrees`
@@ -83,7 +83,7 @@ required = ["name", "description", "model", "tools"]
 critical = ["name", "description"]
 warn = ["model", "tools"]
 models = ["sonnet", "opus", "haiku"]
-known_fields = ["overrides", "maxTurns", "color", "version"]   # extra frontmatter fields that don't warn
+known_fields = ["overrides", "maxTurns", "color", "version", "effort", "memory", "disallowedTools", "permissionMode", "skills", "mcpServers", "hooks", "background", "isolation", "initialPrompt", "experimental"]   # extra frontmatter fields that don't warn
 
 [scan]
 measure_worktrees = false     # slow: ~2 s per worktree

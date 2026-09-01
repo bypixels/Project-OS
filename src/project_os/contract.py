@@ -45,7 +45,7 @@ class Contract:
         self.critical = set(c.get("critical", ("name", "description")))
         self.warn = set(c.get("warn", ("model", "tools")))
         self.models = tuple(c.get("models", ("sonnet", "opus", "haiku")))
-        self.known = set(self.required) | set(c.get("known_fields", ("overrides", "maxTurns", "color", "version")))
+        self.known = set(self.required) | set(c.get("known_fields", ("overrides", "maxTurns", "color", "version", "effort", "memory", "disallowedTools", "permissionMode", "skills", "mcpServers", "hooks", "background", "isolation", "initialPrompt", "experimental")))
 
     def _sev(self, fld):
         return "critical" if fld in self.critical else "warn"
