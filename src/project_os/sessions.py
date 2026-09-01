@@ -29,11 +29,17 @@ SUMMARY_FIELDS = ("session_id", "project", "cwd_changed", "cwd", "branch", "tool
                    "started", "ended", "duration_s", "turns", "tool_calls", "files_touched",
                    "agents", "skills", "commits", "tokens", "subagent_tokens", "subagents",
                    "sidechain_lines", "version", "source_path", "size", "mtime", "offset",
-                   "entrypoint")
+                   "entrypoint", "last_tools", "subagent_rows")
 
 PARTIAL_STATE_FIELDS = ("session_id", "cwd_counts", "branch", "version", "title", "started",
                         "ended", "turns", "tool_calls", "files_touched", "agents", "skills",
-                        "commits", "tokens", "sidechain_lines", "subagent_files", "entrypoint")
+                        "commits", "tokens", "sidechain_lines", "subagent_files", "entrypoint",
+                        "last_tools")
+
+_LAST_TOOLS_CAP = 8
+_TOOL_DETAIL_CAP = 120
+_BASH_DETAIL_CAP = 80
+_DETAIL_FILE_TOOLS = ("Read", "Edit", "Write", "NotebookEdit")
 
 _REFRESH_LOCK = threading.Lock()
 
@@ -85,9 +91,16 @@ def _hydrate_tokens(tok):
 
 
 def _hydrate_state(state):
-    """Back-compat: a partial_state persisted before entrypoint/thinking existed. setdefault only
-    — never clobbers a value already parsed."""
+    """Back-compat: a partial_state persisted before entrypoint/thinking/last_tools existed.
+    setdefault only — never clobbers a value already parsed. A session recorded before
+    last_tools existed renders an empty list, never None: there is nothing meaningful to
+    backfill (unlike entrypoint, a rolling "last 8" has no single value sitting near the top of
+    an already-consumed transcript to recover). Defensive: last_tools must be a LIST -- a
+    corrupt or hand-edited registry (None, a dict, a stray string) is coerced back to [] rather
+    than left to break `.append`/`len()` on the next refresh."""
     state.setdefault("entrypoint", None)
+    if not isinstance(state.get("last_tools"), list):
+        state["last_tools"] = []
     _hydrate_tokens(state.setdefault("tokens", _empty_tokens()))
     return state
 
@@ -96,7 +109,24 @@ def _new_state():
     return {"session_id": None, "cwd_counts": {}, "branch": None, "version": None, "title": None,
             "started": None, "ended": None, "turns": 0, "tool_calls": {}, "files_touched": [],
             "agents": {}, "skills": {}, "commits": 0, "tokens": _empty_tokens(), "sidechain_lines": 0,
-            "entrypoint": None}
+            "entrypoint": None, "last_tools": []}
+
+
+def _tool_detail(name, inp):
+    """One short, local-only descriptor for a tool_use block -- never exported (SUMMARY_FIELDS
+    carries it, but snapshot._detail_row is a separate explicit whitelist that does not)."""
+    if name == "Agent":
+        d = inp.get("subagent_type") or ""
+    elif name == "Skill":
+        d = inp.get("skill") or ""
+    elif name in _DETAIL_FILE_TOOLS:
+        fp = inp.get("file_path") or ""
+        d = os.path.basename(fp) if fp else ""
+    elif name == "Bash":
+        d = (inp.get("command") or "")[:_BASH_DETAIL_CAP]
+    else:
+        d = ""
+    return d[:_TOOL_DETAIL_CAP]
 
 
 def _merge_lines(state, lines):
@@ -155,6 +185,9 @@ def _merge_lines(state, lines):
                     state["files_touched"].append(inp["file_path"])
                 if name == "Bash" and _COMMIT.search(inp.get("command") or ""):
                     state["commits"] += 1
+                state["last_tools"].append({"name": name, "detail": _tool_detail(name, inp), "ts": ts})
+                if len(state["last_tools"]) > _LAST_TOOLS_CAP:
+                    state["last_tools"] = state["last_tools"][-_LAST_TOOLS_CAP:]
     return state
 
 
@@ -198,12 +231,41 @@ def _guess_project_from_encoded_dir(source_path, roots):
     return usage._project_of(enc.replace("-", "/"), roots) or "unknown"
 
 
-def _subagents_count(source_path):
+def _subagents_dir(source_path):
     sid = os.path.splitext(os.path.basename(source_path))[0]
-    d = os.path.join(os.path.dirname(source_path), sid, "subagents")
+    return os.path.join(os.path.dirname(source_path), sid, "subagents")
+
+
+def _subagents_count(source_path):
+    d = _subagents_dir(source_path)
     if not os.path.isdir(d):
         return 0
     return sum(1 for f in os.listdir(d) if f.endswith(".jsonl"))
+
+
+def _subagents_grew(source_path, subagent_files_state):
+    """True if any subagents/*.jsonl file is now larger than the byte offset already recorded
+    for it in `subagent_files_state` -- used in _refresh to defeat the PARENT transcript's own
+    unchanged-mtime/size fast path, which would otherwise never re-run _subagent_tokens even
+    though a subagent can keep writing long after the parent stops changing (the parent's own
+    stat never reflects that growth)."""
+    d = _subagents_dir(source_path)
+    if not os.path.isdir(d):
+        return False
+    subagent_files_state = subagent_files_state or {}
+    for f in os.listdir(d):
+        if not f.endswith(".jsonl"):
+            continue
+        fp = os.path.join(d, f)
+        try:
+            size = os.path.getsize(fp)
+        except OSError:
+            continue
+        entry = subagent_files_state.get(fp)
+        recorded = entry.get("offset", 0) if isinstance(entry, dict) else 0
+        if size > recorded:
+            return True
+    return False
 
 
 def _subagent_tokens(source_path, state):
@@ -213,8 +275,7 @@ def _subagent_tokens(source_path, state):
     is kept in state["subagent_files"] = {path: {"offset", "tokens"}}, mutated in place so it
     rides along with the rest of the partial_state that refresh() persists. Kept SEPARATE from
     the session's own `tokens` (R3: never summed together)."""
-    sid = os.path.splitext(os.path.basename(source_path))[0]
-    d = os.path.join(os.path.dirname(source_path), sid, "subagents")
+    d = _subagents_dir(source_path)
     files_state = state.setdefault("subagent_files", {})
     total = _empty_tokens()
     if not os.path.isdir(d):
@@ -240,8 +301,12 @@ def _subagent_tokens(source_path, state):
                 d2 = json.loads(raw)
             except Exception:
                 continue
-            if d2.get("isSidechain"):
-                continue
+            # Asymmetry, deliberate: the PARENT transcript's R6 skip excludes isSidechain lines
+            # because they duplicate work already counted elsewhere in that same transcript. A
+            # SUBAGENT transcript carries no such duplication -- every line in it is marked
+            # isSidechain:true simply because it happened off the main conversation branch, and
+            # skipping them here would fabricate 0 tokens for every subagent (confirmed on real
+            # data: a 30-line subagent transcript, all isSidechain, ~916k real tokens read as 0).
             usg = ((d2.get("message") or {}).get("usage")) or {}
             entry["tokens"]["in"] += usg.get("input_tokens", 0) or 0
             entry["tokens"]["out"] += usg.get("output_tokens", 0) or 0
@@ -257,6 +322,47 @@ def _subagent_tokens(source_path, state):
         for k in total:
             total[k] += entry["tokens"][k]
     return total
+
+
+_HASH_SUFFIX_RE = re.compile(r"-[0-9a-f]{16}$", re.IGNORECASE)
+
+
+def _subagent_display_name(fp):
+    """Human-readable name for a subagent transcript. Prefers the sibling <stem>.meta.json
+    Claude Code writes next to it ("name" or "agentType") over the raw filename stem, which is
+    often <type>-<16 hex chars>.jsonl -- showing that stem as-is would put a meaningless hash in
+    front of the user. Falls back to the stem with a trailing 16-hex-char suffix stripped when
+    there is no usable meta.json."""
+    stem = os.path.splitext(os.path.basename(fp))[0]
+    meta_path = os.path.join(os.path.dirname(fp), stem + ".meta.json")
+    try:
+        with open(meta_path, encoding="utf-8") as f:
+            meta = json.load(f)
+        if isinstance(meta, dict):
+            name = meta.get("name") or meta.get("agentType")
+            if isinstance(name, str) and name.strip():
+                return name.strip()
+    except Exception:
+        pass
+    return _HASH_SUFFIX_RE.sub("", stem)
+
+
+def _subagent_rows(files_state):
+    """One row per subagent transcript already tracked in state["subagent_files"] (populated by
+    _subagent_tokens, called just before this in _finalize) -- no new state, purely derived.
+    "tokens" is the sum of the four summable dimensions (in/out/cache_read/cache_write);
+    thinking/thinking_lines are excluded, same convention as the aggregate. Honesty: an entry
+    with no "tokens" dict at all (never actually measured -- a missing/corrupt state entry)
+    reports tokens=None, never a fabricated 0; 0 is reported only once a real read summed to
+    zero. Sorted by tokens descending, unmeasured (None) rows last."""
+    rows = []
+    for fp, entry in (files_state or {}).items():
+        name = _subagent_display_name(fp)
+        tok = entry.get("tokens") if isinstance(entry, dict) else None
+        total = sum(tok.get(k, 0) or 0 for k in ("in", "out", "cache_read", "cache_write")) if isinstance(tok, dict) else None
+        rows.append({"name": name, "tokens": total})
+    rows.sort(key=lambda r: (r["tokens"] is None, -(r["tokens"] or 0)))
+    return rows
 
 
 def _to_local_iso(ts):
@@ -380,7 +486,12 @@ def _refresh(cfg, days=30):
             if st.st_mtime < cutoff:
                 continue
             offset, state, checked = 0, _new_state(), False
-        elif st.st_mtime == cached.get("mtime") and st.st_size == cached.get("size"):
+        elif st.st_mtime == cached.get("mtime") and st.st_size == cached.get("size") and \
+                not _subagents_grew(fp, (cached.get("partial_state") or {}).get("subagent_files")):
+            # The parent transcript itself is unchanged, but a subagent can still be writing
+            # long after the parent stops -- that growth is invisible to the parent's own stat,
+            # so it must be checked separately before taking this fast path (falls through to
+            # the incremental-resume branch below when it has).
             if not (cached.get("summary") or {}).get("entrypoint") and not cached.get("entrypoint_checked"):
                 ep = _backfill_entrypoint(fp)
                 cached["entrypoint_checked"] = True    # remember the LOOK, not just a hit -- a miss is never retried
@@ -459,6 +570,7 @@ def _finalize(state, source_path, roots, offset, cfg_roots=()):
         size, mtime = st.st_size, st.st_mtime
     except OSError:
         size, mtime = 0, 0
+    subagent_tokens = _subagent_tokens(source_path, state)   # mutates state["subagent_files"] in place
     return {
         "session_id": state["session_id"] or os.path.splitext(os.path.basename(source_path))[0],
         "project": project, "cwd_changed": cwd_changed, "cwd": cwd, "branch": state["branch"],
@@ -469,5 +581,7 @@ def _finalize(state, source_path, roots, offset, cfg_roots=()):
         "commits": state["commits"], "tokens": state["tokens"], "version": state["version"],
         "sidechain_lines": state["sidechain_lines"], "source_path": source_path,
         "size": size, "mtime": mtime, "offset": offset,
-        "subagent_tokens": _subagent_tokens(source_path, state), "subagents": _subagents_count(source_path),
+        "subagent_tokens": subagent_tokens, "subagents": _subagents_count(source_path),
+        "last_tools": state.get("last_tools") or [],
+        "subagent_rows": _subagent_rows(state.get("subagent_files")),
     }

@@ -58,8 +58,11 @@ class Env:
             f'{{"type":"assistant","timestamp":"2026-08-10T09:03:00Z","cwd":"{a}","gitBranch":"main","sessionId":"{self.session_id}","message":{{"role":"assistant","content":[{{"type":"tool_use","name":"Bash","input":{{"command":"git commit -m done"}}}}],"usage":{{"input_tokens":30,"output_tokens":20,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}}}}\n'
             f'{{"type":"ai-title","aiTitle":"Refactor the widget loader","sessionId":"{self.session_id}"}}\n'
         )
+        # A real subagent transcript marks EVERY line isSidechain:true (relative to the parent
+        # conversation) -- unlike the parent transcript's own occasional sidechain line, this is
+        # not a duplicate to exclude; it is the only shape subagent lines ever come in.
         open(os.path.join(sdir, self.session_id, "subagents", "agent-1.jsonl"), "w").write(
-            '{"type":"assistant","timestamp":"2026-08-10T09:01:35Z","message":{"role":"assistant","content":[{"type":"tool_use","name":"Grep","input":{"pattern":"x"}}],"usage":{"input_tokens":15,"output_tokens":25,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}\n')
+            '{"type":"assistant","timestamp":"2026-08-10T09:01:35Z","isSidechain":true,"message":{"role":"assistant","content":[{"type":"tool_use","name":"Grep","input":{"pattern":"x"}}],"usage":{"input_tokens":15,"output_tokens":25,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}\n')
         # CRITICAL fix from adversarial review: default every transcript fixture (the pre-existing
         # -x/s.jsonl included) to a STALE mtime, so live.TranscriptProvider (Tarea 20) never marks
         # "alpha" active by accident in an ordinary Env-based test. Tests that need "active"

@@ -49,6 +49,22 @@ class TestExportActivity(unittest.TestCase):
         self.assertEqual(row["files_outside"], 1)
         self.assertNotIn("/Users/x", json.dumps(out))
 
+    def test_export_activity_detail_never_leaks_last_tools_or_subagent_rows(self):
+        # last_tools/subagent_rows are local-only fields for the UI's own session view --
+        # _detail_row is an explicit whitelist and must not grow to include them.
+        fake_session = {"project": "alpha", "started": "2026-08-10T09:00", "ended": None,
+                         "duration_s": 60, "turns": 1, "commits": 0, "branch": "main",
+                         "files_touched": [], "agents": {}, "skills": {},
+                         "tokens": {"in": 1, "out": 1}, "subagents": 0,
+                         "last_tools": [{"name": "Bash", "detail": "rm -rf /", "ts": "2026-08-10T09:00:00Z"}],
+                         "subagent_rows": [{"name": "agent-1", "tokens": 999}]}
+        with mock.patch.object(SESS, "load", return_value=[fake_session]):
+            out = SNAP.export_activity(self.env.cfg, detail=True)
+        dumped = json.dumps(out)
+        self.assertNotIn("last_tools", dumped)
+        self.assertNotIn("subagent_rows", dumped)
+        self.assertNotIn("rm -rf", dumped)
+
     def test_detail_row_tokens_are_exact_historical_whitelist(self):
         row = SNAP._detail_row({"project": "alpha", "tokens": {
             "in": 1, "out": 2, "cache_read": 3, "cache_write": 4,

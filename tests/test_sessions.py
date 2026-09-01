@@ -78,6 +78,72 @@ class TestMergeLinesCore(unittest.TestCase):
         self.assertEqual(state["skills"], {"sessions-demo-skill": 1})
         self.assertEqual(state["commits"], 1)
 
+    def test_last_tools_rolling_window_and_details(self):
+        lines, _ = S._read_new_lines(self.env.session_file, 0)
+        state = S._merge_lines(S._new_state(), lines)
+        # the sidechain Read (excluded above) never reaches last_tools either -- it `continue`s
+        # out of _merge_lines before the tool_use loop is ever entered for that line.
+        self.assertEqual(state["last_tools"], [
+            {"name": "Edit", "detail": "widget.py", "ts": "2026-08-10T09:01:00Z"},
+            {"name": "Agent", "detail": "sessions-demo-agent", "ts": "2026-08-10T09:01:30Z"},
+            {"name": "Skill", "detail": "sessions-demo-skill", "ts": "2026-08-10T09:01:30Z"},
+            {"name": "Bash", "detail": "git commit -m done", "ts": "2026-08-10T09:03:00Z"},
+        ])
+
+    def test_last_tools_caps_at_eight_dropping_the_oldest(self):
+        lines = [
+            '{"type":"assistant","timestamp":"2026-08-10T09:%02d:00Z","message":{"role":"assistant",'
+            '"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/p/f%d.py"}}],'
+            '"usage":{"input_tokens":1,"output_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}'
+            % (i, i) for i in range(9)
+        ]
+        state = S._merge_lines(S._new_state(), lines)
+        self.assertEqual(len(state["last_tools"]), 8)
+        self.assertEqual(state["last_tools"][0]["detail"], "f1.py")    # f0 (the 1st) evicted
+        self.assertEqual(state["last_tools"][-1]["detail"], "f8.py")
+
+    def test_last_tools_detail_per_tool_type(self):
+        lines = [
+            '{"type":"assistant","timestamp":"t1","message":{"role":"assistant","content":[{"type":"tool_use","name":"Read","input":{"file_path":"/a/b/c.py"}}],"usage":{}}}',
+            '{"type":"assistant","timestamp":"t2","message":{"role":"assistant","content":[{"type":"tool_use","name":"Write","input":{"file_path":"/a/b/d.py"}}],"usage":{}}}',
+            '{"type":"assistant","timestamp":"t3","message":{"role":"assistant","content":[{"type":"tool_use","name":"NotebookEdit","input":{"file_path":"/a/b/e.ipynb"}}],"usage":{}}}',
+            '{"type":"assistant","timestamp":"t4","message":{"role":"assistant","content":[{"type":"tool_use","name":"Grep","input":{"pattern":"x"}}],"usage":{}}}',
+        ]
+        state = S._merge_lines(S._new_state(), lines)
+        self.assertEqual([t["detail"] for t in state["last_tools"]], ["c.py", "d.py", "e.ipynb", ""])
+
+    def test_last_tools_bash_detail_truncated_to_80_chars(self):
+        cmd = "echo " + "y" * 100
+        line = ('{"type":"assistant","timestamp":"t1","message":{"role":"assistant","content":'
+                '[{"type":"tool_use","name":"Bash","input":{"command":"%s"}}],"usage":{}}}' % cmd)
+        state = S._merge_lines(S._new_state(), [line])
+        self.assertEqual(state["last_tools"][0]["detail"], cmd[:80])
+        self.assertEqual(len(state["last_tools"][0]["detail"]), 80)
+
+    def test_last_tools_detail_hard_capped_at_120_chars(self):
+        long_name = "x" * 200 + ".py"
+        line = ('{"type":"assistant","timestamp":"t1","message":{"role":"assistant","content":'
+                '[{"type":"tool_use","name":"Read","input":{"file_path":"/a/%s"}}],"usage":{}}}' % long_name)
+        state = S._merge_lines(S._new_state(), [line])
+        self.assertEqual(len(state["last_tools"][0]["detail"]), 120)
+
+class TestLastToolsHydration(unittest.TestCase):
+    def test_hydrate_state_defaults_last_tools_to_empty_list(self):
+        # simulates a partial_state persisted before last_tools existed -- an old session
+        # must render an empty list, never None.
+        hydrated = S._hydrate_state({})
+        self.assertEqual(hydrated["last_tools"], [])
+
+    def test_hydrate_state_coerces_non_list_last_tools_to_empty_list(self):
+        for bad in (None, {"oops": 1}, "not-a-list", 42):
+            hydrated = S._hydrate_state({"last_tools": bad})
+            self.assertEqual(hydrated["last_tools"], [], f"did not coerce {bad!r}")
+
+    def test_hydrate_state_keeps_a_real_last_tools_list_untouched(self):
+        real = [{"name": "Bash", "detail": "ls", "ts": "t"}]
+        hydrated = S._hydrate_state({"last_tools": real})
+        self.assertEqual(hydrated["last_tools"], real)
+
 class TestFinalize(unittest.TestCase):
     def setUp(self):
         self.env = Env()
@@ -131,6 +197,13 @@ class TestFinalize(unittest.TestCase):
                                                          "thinking": 0, "thinking_lines": 0})  # grew by exactly the appended amount
         self.assertGreater(state["subagent_files"][sub_path]["offset"], off1)
 
+    def test_subagent_rows_derived_from_subagent_files_sorted_by_tokens_desc(self):
+        lines, off = S._read_new_lines(self.env.session_file, 0)
+        state = S._merge_lines(S._new_state(), lines)
+        summary = S._finalize(state, self.env.session_file, {"alpha": self.env.alpha}, off)
+        # fixture subagent agent-1.jsonl: in=15, out=25, cache_read=0, cache_write=0 -> 40 total
+        self.assertEqual(summary["subagent_rows"], [{"name": "agent-1", "tokens": 40}])
+
     def test_never_stores_prompt_text_and_matches_allowlist(self):
         lines, off = S._read_new_lines(self.env.session_file, 0)
         state = S._merge_lines(S._new_state(), lines)
@@ -138,6 +211,47 @@ class TestFinalize(unittest.TestCase):
         dumped = json.dumps(summary)
         self.assertNotIn("PROMPT_MARKER_DO_NOT_LEAK", dumped)
         self.assertEqual(set(summary), set(S.SUMMARY_FIELDS))
+
+class TestSubagentRowsHonesty(unittest.TestCase):
+    """subagent_rows must distinguish "read and summed to zero for real" (0) from "no
+    measurement in the state at all" (None) -- a missing/malformed "tokens" entry must never
+    fabricate a 0."""
+    def test_measured_zero_stays_zero(self):
+        files_state = {"/x/agent-1.jsonl": {"offset": 10, "tokens": S._empty_tokens()}}
+        self.assertEqual(S._subagent_rows(files_state), [{"name": "agent-1", "tokens": 0}])
+
+    def test_unmeasured_entry_is_none_not_zero(self):
+        files_state = {"/x/agent-2.jsonl": {"offset": 0}}   # no "tokens" key: never measured
+        self.assertEqual(S._subagent_rows(files_state), [{"name": "agent-2", "tokens": None}])
+
+    def test_none_rows_sort_after_measured_rows(self):
+        files_state = {
+            "/x/unmeasured.jsonl": {"offset": 0},
+            "/x/measured.jsonl": {"offset": 5, "tokens": {**S._empty_tokens(), "in": 3}},
+        }
+        rows = S._subagent_rows(files_state)
+        self.assertEqual([r["name"] for r in rows], ["measured", "unmeasured"])
+
+class TestSubagentDisplayName(unittest.TestCase):
+    def test_prefers_sibling_meta_json_name(self):
+        with tempfile.TemporaryDirectory() as d:
+            fp = os.path.join(d, "agent-c66d104646b4ce40.jsonl")
+            open(os.path.join(d, "agent-c66d104646b4ce40.meta.json"), "w").write('{"name": "abench"}')
+            rows = S._subagent_rows({fp: {"offset": 0, "tokens": S._empty_tokens()}})
+            self.assertEqual(rows[0]["name"], "abench")
+
+    def test_falls_back_to_agent_type_in_meta_json(self):
+        with tempfile.TemporaryDirectory() as d:
+            fp = os.path.join(d, "agent-c66d104646b4ce40.jsonl")
+            open(os.path.join(d, "agent-c66d104646b4ce40.meta.json"), "w").write('{"agentType": "bench"}')
+            rows = S._subagent_rows({fp: {"offset": 0, "tokens": S._empty_tokens()}})
+            self.assertEqual(rows[0]["name"], "bench")
+
+    def test_falls_back_to_hash_stripped_stem_without_meta_json(self):
+        with tempfile.TemporaryDirectory() as d:
+            fp = os.path.join(d, "bench-c66d104646b4ce40.jsonl")
+            rows = S._subagent_rows({fp: {"offset": 0, "tokens": S._empty_tokens()}})
+            self.assertEqual(rows[0]["name"], "bench")     # the hash never reaches the user
 
 class TestSessionsRegistry(unittest.TestCase):
     def test_save_load_roundtrip_and_missing(self):
@@ -169,6 +283,37 @@ class TestSessionsRefresh(unittest.TestCase):
         self.assertGreater(reg2[self.env.session_file]["offset"], off1)
         s = next(s for s in items if s["session_id"] == "sess-1")
         self.assertIn("Write", s["tool_calls"])
+
+    def test_refresh_reprocesses_when_only_a_subagent_transcript_grew(self):
+        # Fast-path bug: the parent transcript's mtime/size are what gate re-processing on a
+        # refresh, but a subagent can still be writing long after the parent stops changing --
+        # growing ONLY the subagent file must still be picked up on the next refresh.
+        S.refresh(self.env.cfg, days=30)
+        sub_path = os.path.join(os.path.dirname(self.env.session_file), self.env.session_id, "subagents", "agent-1.jsonl")
+        open(sub_path, "a").write(
+            '{"type":"assistant","timestamp":"2026-08-10T09:05:00Z","isSidechain":true,"message":{"role":"assistant","content":[{"type":"tool_use","name":"Grep","input":{"pattern":"y"}}],"usage":{"input_tokens":7,"output_tokens":3,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}\n')
+        items = S.refresh(self.env.cfg, days=30)
+        s = next(s for s in items if s["session_id"] == "sess-1")
+        self.assertEqual(s["subagent_tokens"]["in"], 22)      # 15 + 7
+        self.assertEqual(s["subagent_tokens"]["out"], 28)     # 25 + 3
+        self.assertEqual(s["subagent_rows"], [{"name": "agent-1", "tokens": 50}])   # 22 + 28
+
+    def test_refresh_recovers_from_corrupt_last_tools_in_registry(self):
+        # Defensive: a persisted partial_state whose last_tools is not a list (None, a dict, a
+        # stray string -- e.g. from a bug in an earlier version, or hand-edited state) must
+        # never stop the session from refreshing normally afterwards.
+        S.refresh(self.env.cfg, days=30)
+        reg_path = S.registry_path(self.env.cfg)
+        reg = S._load_registry(reg_path)
+        reg[self.env.session_file]["partial_state"]["last_tools"] = None
+        S._save_registry(reg_path, reg)
+        open(self.env.session_file, "a").write(
+            '{"type":"assistant","timestamp":"2026-08-10T09:04:00Z","cwd":"%s","message":{"role":"assistant","content":[{"type":"tool_use","name":"Write","input":{"file_path":"%s/src/new2.py"}}],"usage":{"input_tokens":1,"output_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}\n'
+            % (self.env.alpha, self.env.alpha))
+        items = S.refresh(self.env.cfg, days=30)
+        s = next(s for s in items if s["session_id"] == "sess-1")
+        self.assertIn("Write", s["tool_calls"])
+        self.assertIsInstance(s["last_tools"], list)
 
     def test_refresh_survives_source_deletion_but_prunes_by_retention_age(self):
         S.refresh(self.env.cfg, days=30)

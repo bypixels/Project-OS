@@ -263,6 +263,14 @@ active nav and the primary action all speak with it; nothing else does.
 in words ("n/a", "size not measured", "never recorded"). Unknown never borrows moss, amber or rust,
 and it is never rendered as 0.
 
+**The Identity-Color Rule.** Identity hues live only in the 8px rounded swatch beside an agent's
+name — never on a background, never on text, and never in the warm/green arc the status colors own
+(moss, amber, rust). It is a second channel, not a louder status: the status dot stays first and
+unchanged. The hue is a pure function of the name (hash into 12 fixed stops), so the
+same agent is the same color in every list, with nothing stored. The stops are OKLCH hues 195°–338°
+(cyan through blue and violet to magenta) at one perceived lightness, so no agent's swatch weighs
+more than another's and none of them lands on rust (~30°), amber (~65°) or moss (~150°).
+
 ## Typography
 
 **Display / Body Font:** the platform system stack (`-apple-system`, `BlinkMacSystemFont`,

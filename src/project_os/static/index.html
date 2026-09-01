@@ -30,6 +30,12 @@ input:focus,select:focus,textarea:focus,button:focus-visible,a:focus-visible,[ta
 .chip{font-size:var(--fs-2);line-height:1.25;padding:4px 10px;border-radius:99px;border:1px solid var(--line);background:none;color:var(--dim)}.chip:hover{color:var(--ink);border-color:var(--neutral)}.chip.on{background:var(--accent-soft);color:var(--accent-ink);border-color:var(--accent-soft);font-weight:600}
 .rows{overflow-y:auto;flex:1}.row{display:grid;grid-template-columns:8px 1fr auto;gap:12px;align-items:center;padding:6px 14px;min-height:34px;border-bottom:1px solid var(--line);cursor:pointer;width:100%;text-align:left;background:none;border-left:0;border-right:0;border-top:0;color:var(--ink)}.row:hover{background:var(--hover)}.row.sel{background:var(--accent-soft);box-shadow:inset 1px 0 0 var(--accent)}.row.sel .n{color:var(--accent-ink);font-weight:600}.row.sel .w,.row.sel .p,.row.sel .c{color:var(--accent-ink)}.row.focus .n{color:var(--accent-ink);font-weight:600}
 .row.cols{grid-template-columns:8px minmax(0,1fr) minmax(0,116px) 62px;gap:10px}
+.idc{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;vertical-align:baseline;background:hsl(var(--h) 55% 42%);background:oklch(52% .14 var(--h))}@media (prefers-color-scheme:dark){.idc{background:hsl(var(--h) 55% 64%);background:oklch(74% .13 var(--h))}}
+.idn{display:inline-flex;align-items:baseline;margin-right:12px}
+.tools,.subs{display:flex;flex-direction:column}
+.toolRow{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:baseline;padding:4px 0;border-bottom:1px solid var(--line)}.toolRow:last-child{border-bottom:0}
+.tn{font-size:var(--fs-2);font-weight:500;white-space:nowrap}.td{font-family:var(--mono);font-size:var(--fs-2);color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tt{font-size:var(--fs-1);color:var(--dim);white-space:nowrap}
+.subRow{display:flex;align-items:baseline;padding:3px 0 3px 14px;font-size:var(--fs-2)}.sn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.st{color:var(--dim);margin-left:10px;white-space:nowrap}
 .row.stack{align-items:start;padding:8px 14px}.row .nn{display:flex;flex-direction:column;gap:1px;min-width:0}.row .sub{font-size:var(--fs-2);line-height:1.35;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.row .sub:empty{display:none}.row.stack .w{padding-top:1px}
 .dot{width:8px;height:8px;border-radius:50%;flex:none}.d-valid,.d-done,.d-ok,.d-complete{background:var(--moss)}.d-warnings,.d-working,.d-partial{background:var(--amber)}.d-invalid,.d-bad{background:var(--rust)}.d-document,.d-idle,.d-none,.d-unknown{background:var(--neutral)}
 .row .n{font-family:var(--mono);font-size:var(--fs-3);letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.row .w{color:var(--dim);font-size:var(--fs-2);white-space:nowrap}
@@ -78,7 +84,7 @@ const I18N={
 en:{tabs:{health:"Health",agents:"Agents",live:"Live",skills:"Skills",projects:"Projects",harness:"Harness",mcp:"MCP",docs:"Docs",activity:"Activity"},
  navAria:"Sections",navStatus:"Status",navCatalog:"Catalog",navProjects:"Projects",navSystem:"System",
  legendNeutral:"no state",approxT:"count shared with agents of the same name in other projects — not attributable to this one",approxNote:"≈ count shared with homonyms",
- pickFinding:"Select a finding.",hEvidence:"Evidence",hFix:"Suggested command",
+ pickFinding:"Select a finding.",hEvidence:"Evidence",hFix:"Suggested command",recentTools:"Recent tools",subagentRows:"Subagents",
  recheck:"Re-check",checking:"checking…",ranAt:"last run: {t}",copy:"Copy",copied:"Copied",healthOk:"All clear.",sevCrit:"critical",sevWarn:"warnings",sevInfo:"info",
  healthActiveNow:"active now",healthNoActive:"Nothing running right now.",healthRecent:"recent",healthNoRecent:"No recent sessions.",
  pickSession:"Select a session.",noSessions:"No sessions in this window.",untitled:"(untitled)",
@@ -128,7 +134,7 @@ en:{tabs:{health:"Health",agents:"Agents",live:"Live",skills:"Skills",projects:"
 es:{tabs:{health:"Salud",agents:"Agentes",live:"En vivo",skills:"Skills",projects:"Proyectos",harness:"Harness",mcp:"MCP",docs:"Documentos",activity:"Actividad"},
  navAria:"Secciones",navStatus:"Estado",navCatalog:"Catálogo",navProjects:"Proyectos",navSystem:"Sistema",
  legendNeutral:"sin estado",approxT:"conteo compartido con agentes del mismo nombre en otros proyectos — no atribuible a este",approxNote:"≈ conteo compartido con homónimos",
- pickFinding:"Seleccioná un hallazgo.",hEvidence:"Evidencia",hFix:"Comando sugerido",
+ pickFinding:"Seleccioná un hallazgo.",hEvidence:"Evidencia",hFix:"Comando sugerido",recentTools:"Herramientas recientes",subagentRows:"Subagentes",
  recheck:"Volver a chequear",checking:"comprobando…",ranAt:"última corrida: {t}",copy:"Copiar",copied:"Copiado",healthOk:"Todo en orden.",sevCrit:"críticos",sevWarn:"avisos",sevInfo:"info",
  healthActiveNow:"activo ahora",healthNoActive:"Nada corriendo en este momento.",healthRecent:"reciente",healthNoRecent:"Sin sesiones recientes.",
  pickSession:"Seleccioná una sesión.",noSessions:"No hay sesiones en esta ventana.",
@@ -247,6 +253,14 @@ async function commitBox(id, path){const r=await GET("/api/in-repo?path="+encode
 async function maybeCommit(id, path, message){const cb=$(id+"-cb");if(!cb||!cb.checked)return;const r=await POST("/api/commit",{path,message});toast(r.ok?`${T("committed")} · ${r.message}`:T("commitFail",{m:r.message}));}
 function chipFocus(){return S.focus?`<button class="chip on" id="chipFocus">${esc(T("focusChip",{p:S.focus}))}</button>`:"";}function bindFocus(){const c=$("chipFocus");if(c)c.onclick=()=>{S.focus=null;render();};}
 function mchip(x){return x.machine?` <span class="tl">${esc(x.machine)}</span>`:"";}
+// Identity channel — deliberately NOT the status channel. A deterministic 8px rounded swatch
+// beside an agent NAME, so the same agent reads as the same colour in every list. The hues skip
+// the OKLCH arc the status colours live in (rust~30, amber~65, moss~150), and never appear on a
+// background or on text. Same name in, same hue out, with no stored state.
+const ID_HUES=[195,208,221,234,247,260,273,286,299,312,325,338];
+function idHue(name){let h=5381;const t=String(name??"");for(let i=0;i<t.length;i++)h=((h<<5)+h+t.charCodeAt(i))>>>0;return ID_HUES[h%ID_HUES.length];}
+// emits no caller data at all, only an integer hue, so it is not an escaping sink.
+const idSwatch=name=>`<span class="idc" style="--h:${idHue(name)}" aria-hidden="true"></span>`;
 // ---------- HEALTH ----------
 async function loadHealth(){S.health=await GET("/api/health");if(S.view==="health")renderHealth();}
 function healthSevPill(sev){return sev==="crit"?"invalid":sev==="warn"?"warnings":"document";}
@@ -298,7 +312,8 @@ function renderAgents(){if(!S.data){$("rows").innerHTML=`<div class="empty">${T(
   // counts only stack under tabular-nums when they share one right-aligned column.
   $("rows").innerHTML=sel.length?sel.map(x=>{const key=x.tool+":"+x.project+"/"+x.name;const approx=x.homonyms>1&&!(x.attributed&&x.uses_here!=null);
   const u=x.is_agent&&x.tool==="claude"?`${fmtNum(x.attributed&&x.uses_here!=null?x.uses_here:x.uses)}${approx?`<span class="approx" title="${esc(T("approxT"))}">≈</span>`:""}`:"—";
-  return `<button class="row cols ${S.sel===key?"sel":""}" data-k="${esc(key)}"><span class="dot d-${agentClass(x.category)}"></span><span class="n">${esc(x.name)}${x.tool==="codex"?'<span class="tl codex">codex</span>':""}</span><span class="p">${esc(x.project)}${mchip(x)}</span><span class="c">${u}</span></button>`;}).join(""):`<div class="empty">${T("nothing")}</div>`;
+  const sw=idSwatch(x.name);
+  return `<button class="row cols ${S.sel===key?"sel":""}" data-k="${esc(key)}"><span class="dot d-${agentClass(x.category)}"></span><span class="n">${sw}${esc(x.name)}${x.tool==="codex"?'<span class="tl codex">codex</span>':""}</span><span class="p">${esc(x.project)}${mchip(x)}</span><span class="c">${u}</span></button>`;}).join(""):`<div class="empty">${T("nothing")}</div>`;
  document.querySelectorAll(".row").forEach(r=>r.onclick=()=>{S.sel=r.dataset.k;S.mode=null;renderAgents();renderAgentDetail();});
  const ag=a.filter(x=>x.is_agent);const inv=ag.filter(x=>x.category==="invalid").length,av=ag.filter(x=>x.category==="warnings").length,su=ag.filter(x=>x.uses===0).length,dc=a.filter(x=>x.category==="document").length;
  $("foot").textContent=`${sel.filter(x=>x.is_agent).length} / ${ag.length}`+(inv?` · ${inv} ${T("invalid")}`:"")+(av?` · ${av} ${T("warnings")}`:"")+(su?` · ${su} ${T("unused")}`:"")+(dc?` · ${dc} ${T("documents")}`:"")+(S.data.window?` · ${S.data.window} →`:"");
@@ -392,6 +407,12 @@ function actTimeline(sessions){const days=14;const today=new Date();today.setHou
  const max=Math.max(1,...buckets),w=140,h=28,bw=w/days;
  const bars=buckets.map((v,i)=>{const bh=Math.round((v/max)*h);return `<rect x="${i*bw+1}" y="${h-bh}" width="${bw-2}" height="${Math.max(bh,1)}" rx="1"></rect>`;}).join("");
  return `<svg width="${w}" height="${h}" style="color:var(--moss);fill:currentColor;vertical-align:middle" role="img" aria-label="14-day session count">${bars}</svg>`;}
+// A tool timestamp is a reading: its relative age, or the raw value when it cannot be parsed.
+// Accepts an ISO string, epoch seconds or epoch millis — whichever the transcript carried.
+function toolTime(ts){if(ts==null||ts==="")return "";
+ const d=new Date(typeof ts==="number"?(ts<1e12?ts*1000:ts):ts);
+ if(isNaN(d.getTime()))return String(ts);
+ return relTime(d.toISOString());}
 function sessKey(x){return x.source_path||(x.project+"|"+x.started+"|"+(x.machine||""));}
 const fmtNum=n=>{const v=Number(n);return Number.isFinite(v)&&v>=0?v.toLocaleString(LANG==="es"?"es-CR":"en-US"):"0";};
 function renderActivity(){if(!S.activity){$("rows").innerHTML=`<div class="empty">${T("loading")}</div>`;$("filters").innerHTML="";return;}
@@ -438,7 +459,8 @@ function renderActivityAggregated(){const a=S.activity.aggregated||[];
   $("detail").innerHTML=`<div class="h">${esc(x.project||"—")}${mchip(x)}</div><div class="meta"><span>${T("sessCommits")}</span><b>${fmtNum(x.commits)}</b><span>${T("sessDuration")}</span><b>${fmtNum(x.hours)}h</b><span>${T("sessTokens")}</span><b>${fmtNum(x.tokens&&x.tokens.in)} / ${fmtNum(x.tokens&&x.tokens.out)}</b></div>`;}
 function renderSessionDetail(){const x=(S.activity?.sessions||[]).find(y=>sessKey(y)===S.sel);if(!x){$("detail").innerHTML=`<div class="muted">${T("pickSession")}</div>`;return;}
  const tc=Object.entries(x.tool_calls||{}).map(([k,v])=>`${k}:${v}`).join(", ")||"—";
- const ag=Object.keys(x.agents||{}).join(", ")||"—",sk=Object.keys(x.skills||{}).join(", ")||"—";
+ const agNames=Object.keys(x.agents||{}),sk=Object.keys(x.skills||{}).join(", ")||"—";
+ const ag=agNames.length?agNames.map(n=>`<span class="idn">${idSwatch(n)}${esc(n)}</span>`).join(""):"—";
  // tokens.thinking/thinking_lines did not exist before 2026-08-12 (and hub-detail exports never
  // carry them at all, snapshot._detail_row is a whitelist) — an OLD/whitelisted record has no
  // such keys. thinking_lines===0 means "this file cannot tell us", not "no reasoning happened":
@@ -449,12 +471,20 @@ function renderSessionDetail(){const x=(S.activity?.sessions||[]).find(y=>sessKe
  let h=`<div class="h">${esc(x.title||T("untitled"))}${mchip(x)}</div><div class="meta"><span>${T("where")}</span><b>${esc(x.project||"—")}</b><span>${T("sessBranch")}</span><b>${esc(x.branch||"—")}</b>`+
    `<span>${T("sessStarted")}</span><b>${esc(x.started||"—")}</b><span>${T("sessDuration")}</span><b>${fmtNum(Math.round((x.duration_s||0)/60))}m</b>`+
   `<span>${T("sessTurns")}</span><b>${x.turns}</b><span>${T("sessFiles")}</span><b>${(x.files_touched||[]).length}</b>`+
-  `<span>${T("sessAgents")}</span><b>${esc(ag)}</b><span>${T("sessSkills")}</span><b>${esc(sk)}</b>`+
+  `<span>${T("sessAgents")}</span><b>${ag}</b><span>${T("sessSkills")}</span><b>${esc(sk)}</b>`+
    `<span>${T("sessCommits")}</span><b>${fmtNum(x.commits)}</b><span>${T("sessSubagents")}</span><b>${fmtNum(x.subagents)}</b>`+
   `<span>${T("tokIn")}</span><b>${fmtNum(tIn)}</b><span>${T("tokCacheRead")}</span><b>${fmtNum(tCR)}</b>`+
   `<span>${T("tokCacheWrite")}</span><b>${fmtNum(tCW)}</b><span>${T("tokOut")}</span><b>${fmtNum(tOut)}</b>`+
   `<span>${T("tokReasoning")}</span><b>${reasoning}</b><span>${T("tokCacheRate")}</span><b>${cacheRate}</b></div>`+
   `<div class="muted">${esc(tc)}</div>`+((x.files_touched||[]).length?`<pre class="doc">${(x.files_touched||[]).map(esc).join("\n")}</pre>`:"");
+ // last_tools arrives oldest-last; the operator reads the newest action first. An old session
+ // carries an empty list — the section is then absent, never a heading over a zero.
+ const tools=(x.last_tools||[]).slice().reverse();
+ if(tools.length)h+=`<div><div class="grp" style="position:static;border:0;padding:0 0 6px">${T("recentTools")}</div><div class="tools">`+
+  tools.map(t=>`<div class="toolRow"><span class="tn">${esc(t.name)}</span><code class="td">${wbr(esc(t.detail||""))}</code><span class="tt">${esc(toolTime(t.ts))}</span></div>`).join("")+`</div></div>`;
+ const subs=x.subagent_rows||[];
+ if(subs.length)h+=`<div><div class="grp" style="position:static;border:0;padding:0 0 6px">${T("subagentRows")}</div><div class="subs">`+
+  subs.map(r=>`<div class="subRow">${idSwatch(r.name)}<span class="sn">${esc(r.name)}</span><span class="st">${r.tokens==null?esc(T("tokNa")):fmtNum(r.tokens)}</span></div>`).join("")+`</div></div>`;
  $("detail").innerHTML=h;}
 // Note: x.title is ALWAYS interpolated through esc() — Fase 2 (hub) depends on this staying true (R10, XSS).
 // ---------- PROJECTS ----------
@@ -690,7 +720,7 @@ function renderDocEdit(){const d=S.doc;S.editing=true;$("detail").innerHTML=`<di
 // ---------- LIVE ----------
 function renderLive(){const l=S.live;$("filters").innerHTML=`<span class="muted">${l&&l.ok?T("liveHint",{p:l.provider}):T("noLive")}</span>`;
  if(!l||!l.ok){$("rows").innerHTML=`<div class="empty">${esc(l?.reason||T("noLive"))}</div>`;$("foot").textContent="";$("detail").innerHTML=`<div class="muted">${T("noLive")}</div>`;return;}const ico={working:"●",done:"✓",idle:"○"};
- $("rows").innerHTML=l.agents.length?l.agents.map(a=>`<button class="row" data-p="${esc(a.pane)}"><span class="dot d-${a.status}"></span><span class="n">${esc(a.agent)} <span class="muted">${esc(a.workspace)}</span></span><span class="w">${esc(a.task||"—")}</span></button>`).join(""):`<div class="empty">${T("noAgents")}</div>`;
+ $("rows").innerHTML=l.agents.length?l.agents.map(a=>`<button class="row" data-p="${esc(a.pane)}"><span class="dot d-${a.status}"></span><span class="n">${idSwatch(a.agent)}${esc(a.agent)} <span class="muted">${esc(a.workspace)}</span></span><span class="w">${esc(a.task||"—")}</span></button>`).join(""):`<div class="empty">${T("noAgents")}</div>`;
  document.querySelectorAll(".row").forEach(r=>r.onclick=async()=>{toast((await POST("/api/focus",{pane:r.dataset.p})).message);});const c={};l.agents.forEach(a=>c[a.status]=(c[a.status]||0)+1);
  $("foot").textContent=T("inWs",{n:l.agents.length,w:l.workspaces.length})+" · "+Object.entries(c).map(([k,v])=>`${ico[k]||"·"} ${v} ${T(k)}`).join("  ");const done=l.agents.filter(a=>a.status==="done");
  $("detail").innerHTML=done.length?`<div class="h">${T("waitReview")}</div>`+done.map(a=>`<div class="box warn"><b>${esc(a.agent)}</b> · ${esc(a.workspace)}<br>${esc(a.task||"—")}</div>`).join(""):`<div class="muted">${T("noneDone")}</div>`;}
