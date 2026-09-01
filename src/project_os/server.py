@@ -145,6 +145,7 @@ class App:
         self.live = LIVE.get(cfg)
         self._roster = None; self._rows = None; self._items = None; self._t = 0
         self._skills = None; self._skills_t = 0
+        self._codex = None; self._codex_t = 0
         self._scan_lock = threading.Lock()          # non-blocking: a second POST /api/rescan while one runs is refused, not queued
         self._scanning = False
         self._scan_started = None; self._scan_finished = None; self._scan_error = None
@@ -183,6 +184,17 @@ class App:
                 r["tool"] = "codex"
                 rows.append(r)
         return rows
+
+    def codex_sessions(self, fresh=False):
+        """Same TTL-cached pattern as roster()/skills(): usage.codex_sessions() os.walks every
+        Codex session file (~1500 files, ~0.9s measured), so a request thread must not pay that
+        cost on every GET /api/projects."""
+        with self.lock:
+            if fresh or self._codex is None or time.time() - self._codex_t > 30:
+                cx = self.data.get("codex", {})
+                self._codex = usage.codex_sessions(os.path.join(cx["home"], "sessions"), self.roots()) if cx.get("present") else {}
+                self._codex_t = time.time()
+            return self._codex
 
     def roots(self):
         return scan.project_roots(self.cfg, self.data)
@@ -223,7 +235,12 @@ class App:
         rows, meta = self.skills()
         return {"skills": rows, "window": meta.get("history_window_from")}
 
-    def api_projects(self): return {"projects": PROJ.load(self.data)}
+    def api_projects(self):
+        rows = PROJ.load(self.data)
+        codex = self.codex_sessions()
+        for r in rows:
+            r["codex_last"] = codex.get(r["name"], {}).get("last")
+        return {"projects": rows}
     def api_harness(self): return {"states": HAR.states(self.data), "runlogs": HAR.runlogs(self.data), "drift": DR.report(self.cfg, self.data)}
     def api_live(self): return self.live.list() | {"provider": self.live.name}
     def api_docs(self): return {"docs": self.docs().list_all(), "working": self.working()}
@@ -516,7 +533,7 @@ class App:
                 # rather than starting a second scan concurrently with this one's cleanup.
                 if d is not None:
                     with self.lock:
-                        self.data = d; self._roster = None; self._skills = None
+                        self.data = d; self._roster = None; self._skills = None; self._codex = None
                 self._scan_finished = datetime.now().isoformat(timespec="seconds")
                 self._scanning = False
             finally:

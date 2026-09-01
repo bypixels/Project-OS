@@ -17,16 +17,35 @@ def _read(p, limit=200_000):
 
 
 def find_claude_dirs(roots, skip):
-    found = []
+    """Single walk of `roots` -> (claude_dirs, codex_only_roots). `claude_dirs` is every
+    `.claude` dir found, same as before -- including a root that IS itself a `.claude` dir
+    (os.walk never re-examines a root's own basename against its parent, so that case needs an
+    explicit check before descending). `codex_only_roots` is every directory that has an
+    AGENTS.md file, no `.claude` subdir of its own, AND its own `.git` entry (dir or file --
+    worktrees use a file) -- a Codex-only project that would otherwise never be discovered
+    (find_claude_dirs used to look only for `.claude`). The `.git` requirement matters because
+    without it a bare AGENTS.md anywhere under a root qualifies, which in practice caught a
+    subdirectory of an existing Claude project and a vendor/composer package -- neither is a
+    project. `.git` is checked directly with os.path.exists rather than via `dn`/`fn`, because
+    `.git` is in the default skip_dirs and would already be filtered out of `dn` by the time it
+    could be inspected there. A directory with BOTH `.claude` and AGENTS.md never lands in
+    codex_only_roots: the `.claude` in dn check below wins, so run() never has to de-duplicate
+    the two lists against each other."""
+    found, codex_only = [], []
     for root in roots:
         if not os.path.isdir(root):
             continue
+        if os.path.basename(os.path.normpath(root)) == ".claude":
+            found.append(os.path.normpath(root))
+            continue
         for dp, dn, fn in os.walk(root):
             dn[:] = [d for d in dn if d not in skip]
-            if os.path.basename(dp) == ".claude":
-                found.append(dp)
-                dn[:] = []
-    return found
+            if ".claude" in dn:
+                found.append(os.path.join(dp, ".claude"))
+                dn.remove(".claude")     # already recorded; no need to descend into it
+            elif "AGENTS.md" in fn and os.path.exists(os.path.join(dp, ".git")):
+                codex_only.append(dp)
+    return found, codex_only
 
 
 def _assets(cdir, kind):
@@ -216,7 +235,8 @@ def run(cfg):
                      "skills": _assets(cx, "skills") if os.path.isdir(cx) else []}
     data["mcp"] = mcp_servers(ch) if sc.get("check_mcp") else {"checked": False, "servers": []}
     seen_names = set()
-    for cdir in sorted(find_claude_dirs(cfg["roots"], set(sc["skip_dirs"]))):
+    claude_dirs, codex_only_roots = find_claude_dirs(cfg["roots"], set(sc["skip_dirs"]))
+    for cdir in sorted(claude_dirs):
         root = os.path.dirname(cdir)
         if os.path.realpath(root) == os.path.realpath(HOME):     # ~/.claude is the global one
             continue
@@ -231,6 +251,18 @@ def run(cfg):
         has_harness = any(os.path.exists(os.path.join(cdir, x)) for x in ("MEMORY.md", "HARNESS.md", "hooks", "settings.json"))
         if has_assets or has_harness or entry["claude_md"] or entry["agents_md"]:
             data["projects"].append(entry)
+    # Codex-only projects: AGENTS.md at the root, no .claude/ at all, own .git -- find_claude_dirs
+    # already guarantees a codex_only root is never the SAME directory as a claude_dirs project
+    # root, so no de-dup needed here (it can still be a nested repo under one, e.g. a submodule --
+    # that's a distinct root, not a duplicate).
+    for root in sorted(codex_only_roots):
+        if os.path.realpath(root) == os.path.realpath(HOME):
+            continue
+        data["projects"].append({"path": root, "name": _unique_name(root, cfg["roots"], seen_names),
+                 "agents": [], "skills": [], "commands": [], "rules": [],
+                 "git": _git_info(root, sc.get("measure_worktrees", True)),
+                 "claude_md": os.path.isfile(os.path.join(root, "CLAUDE.md")),
+                 "agents_md": True, "agents_md_link": os.path.islink(os.path.join(root, "AGENTS.md"))})
     return data
 
 

@@ -2,6 +2,7 @@
 and prunable worktrees (directory removed) must degrade cleanly instead of raising."""
 import os, shutil, subprocess, tempfile, unittest
 import _helpers  # noqa
+from _env import Env
 from project_os import scan
 
 
@@ -117,6 +118,90 @@ class TestProjectsCarriesWorktreeFields(unittest.TestCase):
         gone = next(d for d in rows[0]["worktrees_detail"] if d["name"] == "gone")
         self.assertTrue(gone["prunable"])
         self.assertEqual(gone["branch"], "")
+
+
+class TestSoloCodexDiscovery(unittest.TestCase):
+    """A directory with AGENTS.md at its root but no .claude/ (a Codex-only project) must be
+    discovered as a project too -- not just directories that have .claude/ (see CLAUDE.md's
+    'find_claude_dirs searches only .claude')."""
+    def setUp(self):
+        self.env = Env()
+    def tearDown(self):
+        self.env.cleanup()
+
+    def test_solo_agents_md_project_is_discovered(self):
+        data = scan.run(self.env.cfg)
+        names = {p["name"] for p in data["projects"]}
+        self.assertIn("beta-codex-only", names)
+        beta = next(p for p in data["projects"] if p["name"] == "beta-codex-only")
+        self.assertTrue(beta["agents_md"])
+        self.assertEqual(beta["agents"], [])
+        self.assertEqual(beta["path"], self.env.codex_only)
+        roots = scan.project_roots(self.env.cfg, data)
+        self.assertEqual(roots["beta-codex-only"], self.env.codex_only)
+
+    def test_project_with_both_claude_and_agents_md_is_not_duplicated(self):
+        """alpha has BOTH .claude/ and AGENTS.md -- it must appear exactly once, via the
+        .claude/ path, never a second time as a would-be solo-Codex entry."""
+        data = scan.run(self.env.cfg)
+        names = [p["name"] for p in data["projects"]]
+        self.assertEqual(names.count("alpha"), 1)
+
+
+class TestRootIsClaudeDir(unittest.TestCase):
+    """Regression: the old walk matched a `.claude` dir by `basename(dp) == ".claude"`, which
+    also caught a configured root that IS itself a `.claude` dir. The new walk only recognizes
+    `.claude` as a CHILD (`".claude" in dn`), so a root that is a `.claude` dir directly is never
+    its own child and was silently dropped."""
+    def test_root_that_is_itself_a_claude_dir_is_found(self):
+        with tempfile.TemporaryDirectory() as t:
+            root = os.path.join(t, "x", ".claude")
+            os.makedirs(os.path.join(root, "agents"))
+            found, codex_only = scan.find_claude_dirs([root], set())
+            self.assertEqual(found, [os.path.normpath(root)])
+            self.assertEqual(codex_only, [])
+
+
+class TestCodexOnlyRequiresOwnGit(unittest.TestCase):
+    """A bare AGENTS.md used to qualify as a Codex-only project discovery at ANY depth -- in
+    the real environment this caught a subdirectory of an existing Claude project and a
+    vendor/composer package, neither of which is a project. New rule: a codex_only candidate
+    must have its OWN `.git` entry in that same directory (dir or file -- worktrees use a
+    file), i.e. its own repository."""
+    def setUp(self):
+        self.env = Env()
+    def tearDown(self):
+        self.env.cleanup()
+
+    def _codex_only(self):
+        _, codex_only = scan.find_claude_dirs(self.env.cfg["roots"], set(self.env.cfg["scan"]["skip_dirs"]))
+        return codex_only
+
+    def test_nested_agents_md_without_git_inside_claude_project_not_discovered(self):
+        sub = os.path.join(self.env.alpha, "some-subdir")
+        os.makedirs(sub)
+        open(os.path.join(sub, "AGENTS.md"), "w").write("# nested, no .git\n")
+        self.assertNotIn(sub, self._codex_only())
+
+    def test_vendor_package_agents_md_without_git_not_discovered(self):
+        vendor = os.path.join(self.env.projects, "some-app", "vendor", "some", "package")
+        os.makedirs(vendor)
+        open(os.path.join(vendor, "AGENTS.md"), "w").write("# vendored package docs\n")
+        self.assertNotIn(vendor, self._codex_only())
+
+    def test_agents_md_with_own_git_dir_is_discovered(self):
+        solo = os.path.join(self.env.projects, "solo-with-git")
+        os.makedirs(os.path.join(solo, ".git"))
+        open(os.path.join(solo, "AGENTS.md"), "w").write("# solo codex project\n")
+        self.assertIn(solo, self._codex_only())
+
+    def test_agents_md_with_own_git_file_worktree_is_discovered(self):
+        """git worktrees use a `.git` FILE (a gitdir pointer), not a directory."""
+        solo = os.path.join(self.env.projects, "solo-worktree")
+        os.makedirs(solo)
+        open(os.path.join(solo, ".git"), "w").write("gitdir: /somewhere/.git/worktrees/solo-worktree\n")
+        open(os.path.join(solo, "AGENTS.md"), "w").write("# solo codex worktree\n")
+        self.assertIn(solo, self._codex_only())
 
 
 if __name__ == "__main__":

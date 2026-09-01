@@ -43,6 +43,14 @@ class Env:
         os.makedirs(os.path.join(self.codex, "sessions", "2026", "08"))
         open(os.path.join(self.codex, "sessions", "2026", "08", "r.jsonl"), "w").write(f'{{"timestamp":"2026-08-04T00:00:00Z","type":"session_meta","payload":{{"cwd":"{a}"}}}}\n')
         open(os.path.join(a, "AGENTS.md"), "w").write("# AGENTS.md\nThis file provides guidance to Codex.\n")   # a copy, not a link
+        # a solo-Codex project: AGENTS.md at its root but NO .claude/ dir at all -- must still be
+        # discovered as a project (scan.find_claude_dirs used to only look for .claude). It needs
+        # its own .git too (scan.find_claude_dirs requires one, so a bare AGENTS.md anywhere
+        # under a root doesn't qualify -- a plain os.makedirs is enough to simulate the entry).
+        self.codex_only = os.path.join(self.projects, "beta-codex-only")
+        os.makedirs(self.codex_only)
+        os.makedirs(os.path.join(self.codex_only, ".git"))
+        open(os.path.join(self.codex_only, "AGENTS.md"), "w").write("# AGENTS.md\nSolo-Codex project, no .claude/ here.\n")
         # sessions fixture: one real-shaped transcript for project alpha + one subagent file.
         # Uses names ("sessions-demo-agent"/"sessions-demo-skill") that do NOT collide with
         # "reviewer"/"deploy" above, so usage.py-based assertions elsewhere stay unaffected.
