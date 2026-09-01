@@ -3,7 +3,7 @@ control plane before acting: is anyone working in project X? does this agent mee
 who references Y? Nothing here writes. Newline-delimited JSON-RPC 2.0, stdlib only.
 """
 import os, sys, json, time
-from . import scan, check as CHECK, live as LIVE, drift as DR, projects as PROJ, harness as HAR, usage
+from . import scan, check as CHECK, live as LIVE, drift as DR, projects as PROJ, harness as HAR, usage, skills as SK
 from .roster import Roster
 
 PROTOCOL = "2024-11-05"
@@ -28,6 +28,8 @@ def tools_spec():
          "inputSchema": S()},
         {"name": "project_os_activity", "description": "Session activity from Claude Code transcripts, aggregated for ONE project — no titles, no paths, no cwd (R11 of the design contract). Read-only; reads the cached registry (a `project-os activity` run or a UI visit may be needed first to populate it).",
          "inputSchema": {"type": "object", "properties": {"project": {"type": "string"}, "days": {"type": "integer", "description": "lookback window in days (default 30)"}}, "required": ["project"], "additionalProperties": False}},
+        {"name": "project_os_skills", "description": "List skills in the catalog (global + per-project, Claude and Codex) with their description, so an agent can check 'does a skill for X already exist?' before writing one from scratch. Optional filters: project, tool (claude|codex). Read-only.",
+         "inputSchema": S(project={"type": "string"}, tool={"type": "string"})},
     ]
 
 
@@ -37,6 +39,7 @@ class Server:
         self.data = scan.ensure(cfg)
         self.live = LIVE.get(cfg)
         self._roster = None; self._t = 0
+        self._skills = None; self._skills_t = 0
 
     def roster(self):
         """Same 30s TTL as server.py App.roster(): the stdio server lives for a whole session,
@@ -49,6 +52,27 @@ class Server:
             self._rows, self._items = self._roster.load(refresh_usage=False)
             self._t = time.time()
         return self._roster, self._rows, self._items
+
+    def skills(self):
+        """Same 30s TTL pattern as roster(): the skill catalog (global + per-project, both
+        tools) plus the cached usage-skills.json — a read (usage.load), never a refresh, so
+        this tool never triggers a transcript scan."""
+        if self._skills is None or time.time() - self._skills_t > 30:
+            d = scan.load(self.cfg)
+            if d is not None:
+                self.data = d
+            rows = SK.load(self.cfg, self.data)
+            for r in rows:
+                r["tool"] = "claude"
+            cx = self.data.get("codex", {})
+            if cx.get("present"):
+                for r in SK.scan_dir(os.path.join(cx["home"], "skills"), "global"):
+                    r["tool"] = "codex"
+                    rows.append(r)
+            self._skills = rows
+            self._skills_items = usage.load(os.path.join(self.cfg["state_dir"], "usage-skills.json"))
+            self._skills_t = time.time()
+        return self._skills, self._skills_items
 
     # ---- tools ----
     def t_health(self, quick=True, **_):
@@ -109,13 +133,24 @@ class Server:
                         "turns": s.get("turns"), "commits": s.get("commits"), "agents": s.get("agents"), "skills": s.get("skills")})
         return {"project": project, "aggregate": agg, "sessions": out}
 
+    def t_skills(self, project=None, tool=None, **_):
+        rows, items = self.skills()
+        out = []
+        for r in rows:
+            if project and r["project"].lower() != project.lower(): continue
+            if tool and r["tool"] != tool: continue
+            out.append({"name": r["name"], "project": r["project"], "tool": r["tool"], "status": r["state"],
+                        "description": r.get("desc", ""),
+                        "usage": usage.for_agent(items, r["name"], r["project"]) if r["tool"] == "claude" else "not measurable for codex"})
+        return {"count": len(out), "skills": out}
+
     # ---- JSON-RPC ----
     def handle(self, msg):
         m, i, params = msg.get("method"), msg.get("id"), msg.get("params") or {}
         if m == "initialize":
             return self._ok(i, {"protocolVersion": PROTOCOL, "capabilities": {"tools": {}},
                                 "serverInfo": {"name": "project-os", "version": __import__("project_os").__version__},
-                                "instructions": "project-os is READ-ONLY. Ask project_os_working before editing MEMORY.md/CLAUDE.md in a project; ask project_os_agent before creating an agent with an existing name; ask project_os_references before archiving anything."})
+                                "instructions": "project-os is READ-ONLY. Ask project_os_working before editing MEMORY.md/CLAUDE.md in a project; ask project_os_agent before creating an agent with an existing name; ask project_os_references before archiving anything; ask project_os_skills before writing a new skill, to check one doesn't already exist."})
         if m == "notifications/initialized" or m is None and i is None:
             return None
         if m == "ping":
@@ -126,7 +161,7 @@ class Server:
             name = params.get("name", ""); args = params.get("arguments") or {}
             fn = {"project_os_health": self.t_health, "project_os_working": self.t_working, "project_os_agent": self.t_agent,
                   "project_os_agents": self.t_agents, "project_os_references": self.t_references, "project_os_project": self.t_project,
-                  "project_os_drift": self.t_drift, "project_os_activity": self.t_activity}.get(name)
+                  "project_os_drift": self.t_drift, "project_os_activity": self.t_activity, "project_os_skills": self.t_skills}.get(name)
             if not fn:
                 return self._ok(i, {"content": [{"type": "text", "text": f"unknown tool {name}"}], "isError": True})
             try:

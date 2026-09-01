@@ -17,7 +17,7 @@ class TestMcpInProcess(unittest.TestCase):
         self.assertEqual(r["result"]["serverInfo"]["name"], "project-os"); self.assertIn("READ-ONLY", r["result"]["instructions"])
         self.assertIsNone(self.srv.handle({"jsonrpc": "2.0", "method": "notifications/initialized"}))
         names = {t["name"] for t in self.srv.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})["result"]["tools"]}
-        self.assertEqual(names, {"project_os_health", "project_os_working", "project_os_agent", "project_os_agents", "project_os_references", "project_os_project", "project_os_drift", "project_os_activity"})
+        self.assertEqual(names, {"project_os_health", "project_os_working", "project_os_agent", "project_os_agents", "project_os_references", "project_os_project", "project_os_drift", "project_os_activity", "project_os_skills"})
     def test_health_and_working(self):
         h = self.call("project_os_health"); self.assertIn("critical", h); self.assertIsInstance(h["findings"], list)
         w = self.call("project_os_working"); self.assertEqual(w["provider"], "none"); self.assertEqual(w["working"], [])
@@ -25,6 +25,23 @@ class TestMcpInProcess(unittest.TestCase):
         a = self.call("project_os_agent", name="reviewer"); self.assertTrue(a["found"]); self.assertEqual({i["tool"] for i in a["instances"]}, {"claude", "codex"})
         self.assertFalse(self.call("project_os_agent", name="nope")["found"])
         l = self.call("project_os_agents", project="alpha", category="document"); self.assertEqual([x["name"] for x in l["agents"]], ["guide"])
+    def test_skills(self):
+        s = self.call("project_os_skills")
+        by_key = {(x["name"], x["tool"], x["project"]) for x in s["skills"]}
+        self.assertIn(("gsk", "claude", "global"), by_key)
+        self.assertIn(("deploy", "claude", "alpha"), by_key)
+        self.assertIn(("gsk", "codex", "global"), by_key)
+        codex_row = next(x for x in s["skills"] if x["tool"] == "codex")
+        self.assertEqual(codex_row["usage"], "not measurable for codex")
+        claude_row = next(x for x in s["skills"] if x["name"] == "deploy")
+        self.assertIsInstance(claude_row["usage"], dict)
+        self.assertIn("total", claude_row["usage"])
+        alpha_only = self.call("project_os_skills", project="alpha")
+        self.assertEqual([x["name"] for x in alpha_only["skills"]], ["deploy"])
+        codex_only = self.call("project_os_skills", tool="codex")
+        self.assertTrue(all(x["tool"] == "codex" for x in codex_only["skills"]))
+        self.assertTrue(any(x["name"] == "gsk" for x in codex_only["skills"]))
+
     def test_references_project_drift(self):
         self.assertIn("count", self.call("project_os_references", name="reviewer"))
         p = self.call("project_os_project", name="alpha"); self.assertTrue(p["found"]); self.assertEqual(p["harness"]["hooks_dead"], ["dead.sh"])
