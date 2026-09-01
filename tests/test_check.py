@@ -1,9 +1,62 @@
 import os
 import shutil
 import unittest
+from unittest import mock
 import _helpers  # noqa
 from _env import Env, AGENT
 from project_os import scan, check, usage
+
+
+class TestCheckUpstream(unittest.TestCase):
+    """`project-os check --upstream` (opt-in only -- `check.run` never touches the network
+    unless `upstream=True` is passed explicitly) compares contract.known_fields against
+    Claude Code's own sub-agents documentation. The fetch is mocked in every test here: no
+    real network call is ever made by the suite."""
+
+    def test_doc_with_extra_field_is_a_warning(self):
+        env = Env()
+        try:
+            scan.save(env.cfg, scan.run(env.cfg))
+            doc = "| Field | Type |\n|---|---|\n| `name` | s |\n| `description` | s |\n| `model` | s |\n| `tools` | s |\n| `brand-new-field` | s |\n"
+            with mock.patch("project_os.upstream.fetch_doc", return_value=(doc, None)):
+                findings = check.run(env.cfg, quick=True, upstream=True)
+            f = next((x for x in findings if "brand-new-field" in x["detail"]), None)
+            self.assertIsNotNone(f, f"no finding mentions brand-new-field: {findings}")
+            self.assertNotEqual(f["sev"], "crit")   # --upstream must never be able to fail the run
+        finally:
+            env.cleanup()
+
+    def test_fetch_failure_is_a_neutral_info_and_exit_code_is_untouched(self):
+        env = Env()
+        try:
+            scan.save(env.cfg, scan.run(env.cfg))
+            with mock.patch("project_os.upstream.fetch_doc", side_effect=Exception("boom")):
+                findings_upstream = check.run(env.cfg, quick=True, upstream=True)
+                findings_plain = check.run(env.cfg, quick=True, upstream=False)
+            crit_upstream = sum(1 for x in findings_upstream if x["sev"] == "crit")
+            crit_plain = sum(1 for x in findings_plain if x["sev"] == "crit")
+            self.assertEqual(crit_upstream, crit_plain)   # a fetch exception never adds a critical
+            unavailable = next((x for x in findings_upstream if x["sev"] == "info" and "upstream" in x["title"].lower()
+                                 or "documentation" in x["title"].lower() or "documentación" in x["title"].lower()), None)
+            self.assertIsNotNone(unavailable, f"no neutral unavailable finding: {findings_upstream}")
+        finally:
+            env.cleanup()
+
+    def test_ssl_failure_gets_its_own_message_with_the_fix_command(self):
+        """A stock python.org install on macOS has no CA bundle, so fetch_doc reports
+        reason="ssl" (see test_upstream.py) -- check must surface a DIFFERENT, specific message
+        here, with the exact command to fix it, instead of the generic "no network, or the doc's
+        format changed" (which would be a false diagnostic: the doc IS reachable)."""
+        env = Env()
+        try:
+            scan.save(env.cfg, scan.run(env.cfg))
+            with mock.patch("project_os.upstream.fetch_doc", return_value=(None, "ssl")):
+                findings = check.run(env.cfg, quick=True, upstream=True)
+            f = next((x for x in findings if x["sev"] == "info" and "certifi" in (x["fix"] or "")), None)
+            self.assertIsNotNone(f, f"no ssl-specific finding carrying the certifi fix command: {findings}")
+            self.assertNotEqual(f["sev"], "crit")
+        finally:
+            env.cleanup()
 
 
 class TestCheckWarnAgentsDetail(unittest.TestCase):

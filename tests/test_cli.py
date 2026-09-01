@@ -278,6 +278,44 @@ class TestWorktreesCommand(unittest.TestCase):
             env.cleanup()
 
 
+class TestAgentsInvalidDetail(unittest.TestCase):
+    """`--invalid` used to only ever show the roster table, whose 'detail' column is
+    textwrap.shorten()'d to 38 chars and shows only the FIRST warning/critical -- a
+    non-developer user had to ask someone else what a warning meant. `--invalid` now also
+    prints a detail block per problem agent: every warning/critical in FULL (no truncation),
+    plus a 3-part plain-language explanation (what it means / does the agent still work /
+    what to do) for messages project-os recognizes."""
+
+    def test_agent_detail_explains_an_unknown_field(self):
+        from project_os import cli as CLI
+        from project_os.contract import Contract
+        txt = "---\nname: my-agent\ndescription: Does things\nmodel: sonnet\ntools: Read\nsparkle: yes\n---\nBody.\n"
+        r = Contract().validate_text(txt, "my-agent")
+        lines = CLI._agent_detail("en", r)
+        joined = "\n".join(lines)
+        self.assertIn("fields Claude Code does not read: sparkle", joined)
+        self.assertIn(t("en", "agents.explain.unknown_fields"), joined)
+        self.assertIn(t("en", "agents.explain.unknown_fields.action"), joined)
+
+    def test_invalid_flag_prints_full_warning_without_ellipsis(self):
+        import argparse
+        from project_os import cli as CLI
+        env = Env()
+        try:
+            scan.save(env.cfg, scan.run(env.cfg))
+            a = argparse.Namespace(action="list", name=None, project=None, force=False,
+                                    invalid=True, unused=False, json=False, tool=None)
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                CLI._agents(env.cfg, a)
+            out = buf.getvalue()
+            full_warning = "shadows a global agent with the same name without declaring `overrides: global`"
+            self.assertIn(full_warning, out)
+            self.assertIn(t("en", "agents.explain.shadow_undeclared"), out)
+        finally:
+            env.cleanup()
+
+
 def _unwrap(s):
     """argparse wraps help text at the terminal width, so a translated string with an em dash
     or long clause can land split across a newline in captured stdout. Collapse all whitespace
@@ -341,6 +379,55 @@ class TestHelpI18n(unittest.TestCase):
             self.assertIn(t("es", "cli.help.check_quick"), r.stdout)
         finally:
             os.unlink(cfgp)
+
+
+class TestCheckUpstreamHealthlogExclusion(unittest.TestCase):
+    """--upstream's own findings (`extra` ALWAYS includes `overrides`/`version` by design, since
+    those are project-os's own conventions, never in Claude Code's doc) must never pollute the
+    30-day health trend in health.jsonl -- otherwise every networked run adds an info finding
+    that has nothing to do with the environment's health, and the trend measures the flag
+    instead. health.jsonl must log the SAME counts whether or not --upstream was passed."""
+
+    def _cfg_file(self, env):
+        f = tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False)
+        f.write(f"claude_home = '{env.claude}'\ncodex_home = '{env.codex}'\nroots = ['{env.projects}']\nstate_dir = '{env.state}'\n[live]\nprovider = \"none\"\n[scan]\nmeasure_worktrees = false\ncheck_mcp = false\n")
+        f.close()
+        return f.name
+
+    def test_healthlog_append_ignores_upstream_findings(self):
+        from project_os import cli as CLI
+        env = Env()
+        cfgp = self._cfg_file(env)
+        try:
+            scan.save(env.cfg, scan.run(env.cfg))
+            doc = "| Field | Required |\n| :--- | :--- |\n| `name` | Yes |\n| `description` | Yes |\n| `model` | No |\n| `tools` | No |\n"
+            calls = []
+            def fake_append(cfg, findings, **kw):
+                calls.append(list(findings)); return True
+            with mock.patch("project_os.upstream.fetch_doc", return_value=(doc, None)), \
+                 mock.patch("project_os.healthlog.append", side_effect=fake_append):
+                with redirect_stdout(io.StringIO()):
+                    CLI.main(["--config", cfgp, "check", "--upstream"])
+                    CLI.main(["--config", cfgp, "check"])
+            self.assertEqual(len(calls), 2, "healthlog.append should run once per check call")
+            self.assertEqual(calls[0], calls[1], "the --upstream run appended different findings than the plain run")
+        finally:
+            os.unlink(cfgp); env.cleanup()
+
+
+class TestCheckRepoRejectsUpstream(unittest.TestCase):
+    """`--upstream` needs the network; `check --repo` is the CI mode that runs offline, on its
+    own, with no home and no cache. Silently accepting and ignoring the flag there used to hide
+    that the two are incompatible -- reject it with a clear message instead."""
+
+    def test_repo_mode_rejects_upstream_with_a_clear_message(self):
+        from project_os import cli as CLI
+        with tempfile.TemporaryDirectory() as d:
+            buf_err = io.StringIO()
+            with mock.patch("sys.stderr", buf_err), redirect_stdout(io.StringIO()):
+                rc = CLI.main(["check", "--repo", d, "--upstream"])
+            self.assertEqual(rc, 2)
+            self.assertIn(t("en", "cli.error.upstream_repo"), buf_err.getvalue())
 
 
 if __name__ == "__main__":

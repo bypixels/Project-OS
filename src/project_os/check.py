@@ -20,17 +20,27 @@ def _warn_kind(w):
     return w[:min(stops)].strip() if stops else w.strip()
 
 
-def run(cfg, quick=False):
+def run(cfg, quick=False, upstream=False):
     """Returns list of findings: {sev, title, detail, fix}, plus a `projects` list (names as in
     scan.project_roots, "global" for the global home) ONLY when the finding is genuinely about
     one or more specific projects — never guessed from free text. Findings about the environment
-    as a whole (broken symlinks in ~/.claude, mcp, stale scan cache…) carry no `projects` key."""
+    as a whole (broken symlinks in ~/.claude, mcp, stale scan cache…) carry no `projects` key.
+    `upstream=True` is the ONLY thing in this module that touches the network (opt-in, never on
+    a plain `project-os check`) — see upstream.py; its findings are never `crit`, so `--upstream`
+    can never change check's exit code. Those findings also carry `upstream: True` (added ONLY
+    when true, same convention as `projects` below) -- they are about whether project-os itself
+    is up to date, not about the environment's health, so a caller writing to the 30-day health
+    trend (cli.py's `check` branch) must filter them out before appending, or `extra` (which
+    ALWAYS includes project-os's own `overrides`/`version` conventions by design) would add a
+    finding to every networked run and the trend would measure the flag, not the environment."""
     L = cfg["language"]; ch = cfg["claude_home"]
     F = []
-    def add(sev, title, detail="", fix="", projects=None):
+    def add(sev, title, detail="", fix="", projects=None, upstream=False):
         d = {"sev": sev, "title": title, "detail": detail, "fix": fix}
         if projects:
             d["projects"] = sorted(set(projects))
+        if upstream:
+            d["upstream"] = True
         F.append(d)
     data = scan.load(cfg)
     skills_dir = os.path.join(ch, "skills"); agents_dir = os.path.join(ch, "agents")
@@ -249,6 +259,24 @@ def run(cfg, quick=False):
             add("info", t(L, "check.stale_scan", days=int(age)), "", t(L, "fix.rescan"))
     else:
         add("warn", t(L, "check.no_scan"), "", t(L, "fix.rescan"))
+
+    # 10. upstream drift (opt-in only -- see upstream.py; never emits "crit", so this can never
+    # change check's exit code, and never runs unless the caller explicitly asked for it)
+    if upstream:
+        from . import upstream as UP
+        cmp = UP.compare(cfg)
+        if cmp["unavailable"]:
+            if cmp.get("reason") == "ssl":
+                add("info", t(L, "check.upstream_unavailable_ssl"), "", t(L, "fix.upstream_ssl"), upstream=True)
+            else:
+                add("info", t(L, "check.upstream_unavailable"), upstream=True)
+        else:
+            if cmp["missing"]:
+                add("warn", t(L, "check.upstream_missing", n=len(cmp["missing"])),
+                    t(L, "check.upstream_missing.d") + "\n    " + ", ".join(cmp["missing"]), t(L, "fix.upstream_missing"), upstream=True)
+            if cmp["extra"]:
+                add("info", t(L, "check.upstream_extra", n=len(cmp["extra"])),
+                    t(L, "check.upstream_extra.d") + "\n    " + ", ".join(cmp["extra"]), upstream=True)
 
     F.sort(key=lambda h: SEV_ORDER.get(h["sev"], 9))
     return F

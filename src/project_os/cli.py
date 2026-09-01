@@ -2,7 +2,7 @@
 
   project-os                  open the UI (default; same as `project-os ui`)
   project-os ui               open the web UI                              [--port] [--no-open]
-  project-os check            health check; exit 1 on critical findings     [--quick] [--json] [--notify] [--repo PATH]
+  project-os check            health check; exit 1 on critical findings     [--quick] [--json] [--notify] [--repo PATH] [--upstream]
   project-os agents           agent roster / archive / references           [list|archive|refs] [--invalid] [--unused] [--project P] [--tool claude|codex] [--json] [--force]
   project-os scan             rebuild the environment cache                 [--mcp] [--worktrees]
   project-os fleet            terminal TUI (live provider + roster)
@@ -62,6 +62,7 @@ def main(argv=None):
     ck.add_argument("--quick", action="store_true", help=t(L, "cli.help.check_quick"))
     ck.add_argument("--json", action="store_true"); ck.add_argument("--notify", action="store_true", help=t(L, "cli.help.check_notify"))
     ck.add_argument("--repo", metavar="PATH", help=t(L, "cli.help.check_repo"))
+    ck.add_argument("--upstream", action="store_true", help=t(L, "cli.help.check_upstream"))
 
     ag = sub.add_parser("agents", help=t(L, "cli.help.agents"))
     ag.add_argument("action", nargs="?", choices=["list", "archive", "refs"], default="list")
@@ -109,14 +110,21 @@ def main(argv=None):
         cfg["scan"]["measure_worktrees"] = cfg["scan"]["measure_worktrees"] or a.worktrees
         d = scan.run(cfg); p = scan.save(cfg, d)
         print(f"scanned {len(d['projects'])} projects · {len(d['global']['agents'])} global agents · {len(d['global']['skills'])} global skills -> {p}"); return 0
+    if a.cmd == "check" and a.repo and a.upstream:
+        print(t(cfg["language"], "cli.error.upstream_repo"), file=sys.stderr); return 2
     if a.cmd == "check" and a.repo:
         from . import repo
         r = repo.check_repo(a.repo)
         print(json.dumps(r, indent=1) if a.json else repo.render(r)); return r["exit"]
     if a.cmd == "check":
         from . import check, healthlog
-        F = check.run(cfg, quick=a.quick)
-        if not a.quick: healthlog.append(cfg, F)   # a quick run skips slow detectors: never record a false sawtooth
+        F = check.run(cfg, quick=a.quick, upstream=a.upstream)
+        # a quick run skips slow detectors: never record a false sawtooth. --upstream's own
+        # findings are about project-os itself (is known_fields current?), not the environment's
+        # health -- `extra` ALWAYS includes overrides/version by design, so logging it would add
+        # an info finding to every networked run and the 30-day trend would measure the flag,
+        # not the environment (see check.py's `add(..., upstream=True)`).
+        if not a.quick: healthlog.append(cfg, [f for f in F if not f.get("upstream")])
         if a.json: print(json.dumps(F, ensure_ascii=False, indent=1))
         else: print(check.render(cfg, F, color=sys.stdout.isatty()))
         if a.notify: check.notify(cfg, F)
@@ -203,6 +211,53 @@ def main(argv=None):
     server.serve(cfg, port=port, open_browser=not no_open); return 0
 
 
+# Maps a contract.py warning/critical message to its i18n explanation stem, by substring --
+# contract.py's own strings are shared with guard/UI/tests and must not change, so the mapping
+# lives here instead. Checked in order; each needle is specific enough that order doesn't matter
+# in practice, but keep the more literal (name/description/model/tools) checks near the top.
+_EXPLAIN_RULES = [
+    ("missing `name`", "missing_name"),
+    ("`name` is not kebab-case", "bad_kebab"),
+    (" does not match the file (", "name_mismatch"),
+    ("missing `description`", "missing_description"),
+    ("missing `model`", "missing_model"),
+    ("unknown `model`:", "unknown_model"),
+    ("missing `tools`", "missing_tools"),
+    ("`tools` is empty", "empty_tools"),
+    ("shadows a global agent", "shadow_undeclared"),
+    ("declares `overrides: global` but shadows no global agent", "overrides_no_shadow"),
+    ("unknown `overrides` value:", "unknown_overrides"),
+    ("fields Claude Code does not read:", "unknown_fields"),
+]
+
+
+def _explain_stem(msg):
+    """The i18n explanation stem for one contract.py message, or None when project-os has no
+    canned explanation for it (a message from a future contract.py change, say) -- callers must
+    handle that by simply skipping the extra detail, never by crashing."""
+    for needle, stem in _EXPLAIN_RULES:
+        if needle in msg:
+            return stem
+    return None
+
+
+def _agent_detail(lang, r):
+    """Full detail block for one problem agent: every critical/warning message in FULL (unlike
+    the roster table's textwrap.shorten()'d 'detail' column, which shows only the first one),
+    plus a 3-part plain-language explanation -- what it means, whether the agent still works,
+    what to do -- for messages project-os recognizes."""
+    lines = []
+    for sev, msgs in (("crit", r.critical), ("warn", r.warnings)):
+        for msg in msgs:
+            lines.append(f"    [{t(lang, 'sev.' + sev)}] {msg}")
+            stem = _explain_stem(msg)
+            if stem:
+                lines.append(f"      {t(lang, f'agents.explain.{stem}')}")
+                lines.append(f"      {t(lang, f'agents.explain.{stem}.works')}")
+                lines.append(f"      {t(lang, f'agents.explain.{stem}.action')}")
+    return lines
+
+
 def _agents(cfg, a):
     from .roster import Roster
     from . import usage
@@ -247,6 +302,12 @@ def _agents(cfg, a):
     print("─" * 100)
     print(f"  {len(ag)} agents ({nc} codex) · {sum(1 for r in ag if r.category=='invalid')} invalid · {sum(1 for r in ag if r.category=='warnings')} warnings · "
           f"{sum(1 for _, r, u, _, t in out if r.is_agent and t=='claude' and u['total']==0)} unused · {sum(1 for _, r, _, _, _ in out if r.category=='document')} documents\n")
+    if a.invalid:
+        for proj, r, u, path, tool in out:
+            print(f"  {r.name} ({proj}):")
+            for line in _agent_detail(cfg["language"], r):
+                print(line)
+            print()
     return 0
 
 

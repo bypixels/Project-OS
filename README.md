@@ -32,7 +32,7 @@ shared with homonyms — honesty over precision):
 | Command | What it does |
 |---|---|
 | `project-os` | Opens the UI in your browser (local server on 127.0.0.1) — nine tabs: Health, Agents, Live, Skills, Projects, Harness, MCP, Docs, Activity |
-| `project-os check` | Health check. 9 detectors, exit code 1 on critical. Run it from cron / launchd / a systemd timer |
+| `project-os check` | Health check. 9 detectors, exit code 1 on critical. Run it from cron / launchd / a systemd timer. `--upstream` opt-in checks `contract.known_fields` against Claude Code's own docs (needs network; never affects the exit code) |
 | `project-os check --repo .` | CI mode: validates one repository's agents against `.project-os.toml` on its own — no user home, no cache |
 | `project-os agents` | Agent roster with contract state and real usage. `--invalid`, `--unused`, `--project`, `archive` |
 | `project-os scan` | Rebuild the environment cache (fast; `--worktrees` and `--mcp` opt into the slow parts) |
