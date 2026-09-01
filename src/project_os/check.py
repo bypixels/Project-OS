@@ -2,7 +2,7 @@
 Every detector encodes a failure that once went unnoticed for weeks."""
 import os, re, json, sys, time
 from datetime import datetime
-from . import scan, harness as HAR, usage, drift as DR
+from . import scan, harness as HAR, usage, drift as DR, skills as SK
 from .contract import Contract
 from .i18n import t
 from . import host
@@ -168,16 +168,78 @@ def run(cfg, quick=False):
         if failed: add("crit", t(L, "check.mcp_failed", n=len(failed)), "\n    ".join(failed))
         if unv: add("info", t(L, "check.mcp_unverified", n=len(unv)), t(L, "check.mcp_unverified.d") + "\n    " + ", ".join(unv))
 
-    # 8. never-invoked agents (slow-ish: reads history)
+    # 8. never-invoked agents (slow-ish: reads history). A by-NAME comparison mixes homonyms:
+    # if global `deploy` was used, a project's own never-used `deploy` was never reported. Usage
+    # items carry by_project -- check per INSTANCE with shadowing semantics: a project's own
+    # instance is unused unless by_project credits THAT project; the global instance is unused
+    # only when n_total==0, or every recorded use is attributed to a project that defines its
+    # own homonym (so it could never have been the global one). Ambiguous cases (unattributed
+    # uses, or uses from a project with no homonym of its own) are left alone -- this detector
+    # is info, and a false accusation is worse than staying silent.
     if not quick and data:
         items = usage.load(os.path.join(cfg["state_dir"], "usage-agents.json"))
         defined_rows = [(p, r) for p, r in rows if r.is_agent]
-        defined = {r.name for _, r in defined_rows}
-        never = sorted(defined - {k for k, v in items.items() if v.get("n_total", 0) > 0})
+        homonym_projects = {}
+        for p, r in defined_rows:
+            if p != "global":
+                homonym_projects.setdefault(r.name, set()).add(p)
+        never = []
+        for p, r in defined_rows:
+            e = items.get(r.name) or {}
+            n_total = e.get("n_total", 0)
+            bp = e.get("by_project") or {}
+            if p == "global":
+                hp = homonym_projects.get(r.name, set())
+                # NOT just "the homonym-defining subset sums to n_total" -- that can match by
+                # coincidence on desynced data (e.g. after transcript rotation) where by_project
+                # also carries a key OUTSIDE hp that isn't reflected in n_total at all. Require
+                # every by_project key to be homonym-defining AND the full sum to equal n_total,
+                # so any unattributed or non-homonym use keeps this silent (ambiguous -> global).
+                unused = n_total == 0 or (set(bp) <= hp and sum(bp.values()) == n_total)
+            else:
+                # symmetric guard: bp.get(p, 0)==0 alone doesn't mean "0 uses here" -- it can
+                # also mean "n_total uses that never resolved to ANY project root" (unattributed,
+                # by_project={}). Require the full total to be accounted for in by_project, or a
+                # genuinely-unattributed use would read as a false "never invoked".
+                unused = bp.get(p, 0) == 0 and sum(bp.values()) == n_total
+            if unused:
+                never.append((p, r))
         if never and items:
-            never_set = set(never)
-            add("info", t(L, "check.unused_agents", n=len(never)), ", ".join(never[:14]) + (" …" if len(never) > 14 else ""),
-                projects=[p for p, r in defined_rows if r.name in never_set])
+            names = sorted({r.name for _, r in never})
+            add("info", t(L, "check.unused_agents", n=len(never)), ", ".join(names[:14]) + (" …" if len(names) > 14 else ""),
+                projects=[p for p, _ in never])
+
+    # 8b. never-invoked skills (Claude only: skills.load() reads only claude_home + project
+    # .claude dirs, so Codex skills never reach `valid_skills` -- Codex transcripts carry no
+    # skill invocations at all (see usage.codex_sessions docstring), so "never used" for one
+    # would be a measurement lie, not a finding)
+    if not quick and data:
+        valid_skills = [r for r in SK.load(cfg, data) if r["state"] == "ok"]
+        sitems = usage.load(os.path.join(cfg["state_dir"], "usage-skills.json"))
+        # same by-INSTANCE / shadowing fix as #8 above, for skills.
+        homonym_projects = {}
+        for r in valid_skills:
+            if r["project"] != "global":
+                homonym_projects.setdefault(r["name"], set()).add(r["project"])
+        never_sk = []
+        for r in valid_skills:
+            e = sitems.get(r["name"]) or {}
+            n_total = e.get("n_total", 0)
+            bp = e.get("by_project") or {}
+            if r["project"] == "global":
+                hp = homonym_projects.get(r["name"], set())
+                # same desync fix as #8 above: full-set-subset + full-sum-match, not a partial
+                # sum over hp alone (which can coincidentally match n_total on desynced data).
+                unused = n_total == 0 or (set(bp) <= hp and sum(bp.values()) == n_total)
+            else:
+                # same symmetric guard as #8 above.
+                unused = bp.get(r["project"], 0) == 0 and sum(bp.values()) == n_total
+            if unused:
+                never_sk.append(r)
+        if never_sk and sitems:
+            names = sorted({r["name"] for r in never_sk})
+            add("info", t(L, "check.unused_skills", n=len(never_sk)), ", ".join(names[:14]) + (" …" if len(names) > 14 else ""),
+                t(L, "fix.archive_skill"), projects=[r["project"] for r in never_sk])
 
     # 9. scan freshness
     cp = scan.cache_path(cfg)
