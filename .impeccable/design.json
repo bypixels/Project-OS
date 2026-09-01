@@ -1,0 +1,204 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-01T00:00:00Z",
+  "title": "Design System: Project-OS",
+  "extensions": {
+    "themes": {
+      "strategy": "Single :root palette overridden wholesale under @media (prefers-color-scheme: dark). Every token keeps its name and its role across themes; no component redefines a color per theme. colorMeta.<token>.dark carries the dark-theme value of each token.",
+      "light": "color-scheme: light — panel #FFFFFF over bg #F6F7F8",
+      "dark": "color-scheme: dark — panel #131518 over bg #0C0D0F"
+    },
+    "colorMeta": {
+      "bg": { "role": "neutral", "displayName": "Paper", "canonical": "#F6F7F8", "dark": "#0C0D0F", "tonalRamp": ["oklch(18% 0.005 250)", "oklch(28% 0.005 250)", "oklch(38% 0.005 250)", "oklch(50% 0.005 250)", "oklch(62% 0.005 250)", "oklch(76% 0.004 250)", "oklch(88% 0.004 250)", "oklch(97% 0.003 250)"] },
+      "panel": { "role": "neutral", "displayName": "Panel White", "canonical": "#FFFFFF", "dark": "#131518" },
+      "ink": { "role": "neutral", "displayName": "Near Black", "canonical": "#0B0D0F", "dark": "#E8EAED" },
+      "dim": { "role": "neutral", "displayName": "Cool Gray Text", "canonical": "#5E636A", "dark": "#9AA0A8" },
+      "line": { "role": "neutral", "displayName": "Hairline", "canonical": "#E2E5E8", "dark": "#24272C" },
+      "hover": { "role": "neutral", "displayName": "Hover Ground", "canonical": "#F0F1F3", "dark": "#1B1E22" },
+      "neutral": { "role": "neutral", "displayName": "Unknown Gray", "canonical": "#AEB3B9", "dark": "#4C5158", "purpose": "The color of a thing that was not measured: the dot for document / idle / none / unknown, and the input hover border." },
+      "accent": { "role": "primary", "displayName": "Working Blue", "canonical": "#0B5FCE", "dark": "#5CA0FF", "tonalRamp": ["oklch(20% 0.11 258)", "oklch(30% 0.15 258)", "oklch(40% 0.18 258)", "oklch(48% 0.19 258)", "oklch(58% 0.17 258)", "oklch(70% 0.13 258)", "oklch(85% 0.06 258)", "oklch(96% 0.02 258)"] },
+      "accent-ink": { "role": "primary", "displayName": "Deep Working Blue", "canonical": "#0A4FA8", "dark": "#9AC2FF" },
+      "accent-soft": { "role": "primary", "displayName": "Blue Wash", "canonical": "#E7EFFC", "dark": "#16273D" },
+      "on-accent": { "role": "primary", "displayName": "On Accent", "canonical": "#FFFFFF", "dark": "#08131F" },
+      "moss": { "role": "secondary", "displayName": "Moss", "canonical": "#1C7A3E", "dark": "#6ECE8B", "tonalRamp": ["oklch(20% 0.06 152)", "oklch(30% 0.09 152)", "oklch(40% 0.11 152)", "oklch(50% 0.13 152)", "oklch(62% 0.14 152)", "oklch(74% 0.12 152)", "oklch(87% 0.06 152)", "oklch(96% 0.02 152)"] },
+      "moss-soft": { "role": "secondary", "displayName": "Moss Wash", "canonical": "#E1F2E7", "dark": "#13251A" },
+      "amber": { "role": "secondary", "displayName": "Burnt Amber", "canonical": "#875806", "dark": "#DFB158", "tonalRamp": ["oklch(20% 0.05 70)", "oklch(30% 0.07 70)", "oklch(42% 0.09 70)", "oklch(53% 0.11 70)", "oklch(65% 0.12 70)", "oklch(78% 0.10 70)", "oklch(89% 0.06 70)", "oklch(96% 0.02 70)"] },
+      "amber-soft": { "role": "secondary", "displayName": "Amber Wash", "canonical": "#F9EDD6", "dark": "#2A2313" },
+      "rust": { "role": "secondary", "displayName": "Rust", "canonical": "#B22417", "dark": "#F08C7E", "tonalRamp": ["oklch(20% 0.08 28)", "oklch(30% 0.12 28)", "oklch(40% 0.16 28)", "oklch(50% 0.18 28)", "oklch(62% 0.17 28)", "oklch(74% 0.13 28)", "oklch(87% 0.07 28)", "oklch(96% 0.02 28)"] },
+      "rust-soft": { "role": "secondary", "displayName": "Rust Wash", "canonical": "#FAE4E1", "dark": "#331A18" },
+      "slate": { "role": "tertiary", "displayName": "Slate", "canonical": "#3B4A5B", "dark": "#9EB5CB", "purpose": "Informational chrome that is deliberately not a health verdict." },
+      "slate-soft": { "role": "tertiary", "displayName": "Slate Wash", "canonical": "#ECF0F4", "dark": "#182029" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "View Title", "purpose": "The current view's name in the top bar. One per screen; visually hidden below 840px." },
+      "headline": { "displayName": "Subject Name", "purpose": "The detail pane's subject, in monospace because it is an identifier read off disk." },
+      "body": { "displayName": "Body", "purpose": "Default text, buttons, tabs, row names, empty states. Prose caps at 72ch." },
+      "caption": { "displayName": "Metadata", "purpose": "Subtitles, footers, chips, stats, form labels, and all monospaced evidence." },
+      "label": { "displayName": "Section Label", "purpose": "Uppercase 0.07em nav-group headings and sticky list-group headers." },
+      "mono": { "displayName": "Measurement", "purpose": "Names, paths, sizes, counts, evidence lines, generated commands, diffs. Never a costume for 'technical'." }
+    },
+    "typeScale": { "fs-1": "11px", "fs-2": "12.5px", "fs-3": "14px", "fs-4": "18px", "fs-5": "22px", "note": "Exactly five steps. The body sets font-variant-numeric: tabular-nums globally." },
+    "shadows": [
+      { "name": "toast-float", "value": "0 1px 3px rgba(0,0,0,.18)", "purpose": "The only shadow in the system. The toast is fixed over the page and must read as detached." },
+      { "name": "selection-marker", "value": "inset 1px 0 0 var(--accent)", "purpose": "A 1px accent bar inside the left edge of a selected row or toggled button. A marker drawn with the shadow property, not elevation." },
+      { "name": "focus-ring", "value": "outline: 2px solid var(--accent); outline-offset: 2px", "purpose": "Shared by every focusable element. Offset drops to 0 on text fields so the field does not appear to grow." }
+    ],
+    "motion": [
+      { "name": "toast-fade", "value": "opacity .2s", "purpose": "The only transition in the product. Disabled under prefers-reduced-motion. Nothing animates on hover, selection, tab change or data refresh." }
+    ],
+    "breakpoints": [
+      { "name": "single", "value": "840px", "purpose": "The only breakpoint. Above: 212px sidebar nav and two side-by-side panes. Below: horizontal nav scroller with hidden scrollbar, stacked panes, hidden display title, and touch targets grown to 40px (tabs, rows) and 36px (buttons)." }
+    ],
+    "layout": {
+      "topBar": "min-height 56px (52px below 840px), 6px/16px padding, 1px bottom rule, panel ground",
+      "sidebar": "--nav: 212px, four labeled groups (Status / Catalog / Projects / System)",
+      "content": "grid minmax(300px,1.1fr) / minmax(290px,1fr) — list and detail, 1px rule between",
+      "rowDensity": "34px at rest, 40px on touch; 8px dot column fixed first so dots align down the list",
+      "spacingSteps": ["2px", "4px", "6px", "8px", "10px", "12px", "14px", "16px", "20px"],
+      "viewportCaps": { "evidenceAndDocs": "60vh", "editor": "52vh", "projectTiles": "30vh" }
+    }
+  },
+  "components": [
+    {
+      "name": "Default Button",
+      "kind": "button",
+      "refersTo": "button",
+      "description": "Every action except the one primary per pane. Bordered at rest so a control is distinguishable from text without hovering.",
+      "html": "<button class=\"ds-btn\">Open file</button>",
+      "css": ".ds-btn { font: 14px/1.5 var(--sans,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif); padding: 6px 12px; min-height: 32px; border-radius: var(--r,6px); border: 1px solid var(--line,#E2E5E8); background: var(--panel,#fff); color: var(--ink,#0B0D0F); cursor: pointer; } .ds-btn:hover { background: var(--hover,#F0F1F3); border-color: var(--neutral,#AEB3B9); } .ds-btn:focus-visible { outline: 2px solid var(--accent,#0B5FCE); outline-offset: 2px; } .ds-btn[disabled] { opacity: .45; cursor: default; }"
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "One per pane or dialog. Solid accent; hover deepens rather than lifts.",
+      "html": "<button class=\"ds-btn-primary\">Rescan</button>",
+      "css": ".ds-btn-primary { font: 14px/1.5 var(--sans,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif); font-weight: 500; padding: 6px 12px; min-height: 32px; border-radius: var(--r,6px); border: 1px solid var(--accent,#0B5FCE); background: var(--accent,#0B5FCE); color: var(--on-accent,#fff); cursor: pointer; } .ds-btn-primary:hover { background: var(--accent-ink,#0A4FA8); border-color: var(--accent-ink,#0A4FA8); } .ds-btn-primary:focus-visible { outline: 2px solid var(--accent,#0B5FCE); outline-offset: 2px; }"
+    },
+    {
+      "name": "Toggled Button",
+      "kind": "button",
+      "refersTo": "button-on",
+      "description": "A button holding an on state (focus filter, selected version). Carries the same inset accent marker as a selected row, so 'active' reads identically in both places.",
+      "html": "<button class=\"ds-btn-on\">Unfocus</button>",
+      "css": ".ds-btn-on { font: 14px/1.5 var(--sans,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif); font-weight: 600; padding: 6px 12px; min-height: 32px; border-radius: var(--r,6px); border: 1px solid var(--accent-soft,#E7EFFC); background: var(--accent-soft,#E7EFFC); color: var(--accent-ink,#0A4FA8); box-shadow: inset 1px 0 0 var(--accent,#0B5FCE); cursor: pointer; } .ds-btn-on:hover { border-color: var(--accent,#0B5FCE); }"
+    },
+    {
+      "name": "Filter Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Pill-shaped list filter. Chips filter; they never trigger an action.",
+      "html": "<button class=\"ds-chip\">problems</button> <button class=\"ds-chip ds-on\">unused</button>",
+      "css": ".ds-chip { font: 12.5px/1.25 var(--sans,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif); padding: 4px 10px; border-radius: 99px; border: 1px solid var(--line,#E2E5E8); background: none; color: var(--dim,#5E636A); cursor: pointer; } .ds-chip:hover { color: var(--ink,#0B0D0F); border-color: var(--neutral,#AEB3B9); } .ds-chip.ds-on { background: var(--accent-soft,#E7EFFC); color: var(--accent-ink,#0A4FA8); border-color: var(--accent-soft,#E7EFFC); font-weight: 600; }"
+    },
+    {
+      "name": "Status Pill",
+      "kind": "chip",
+      "refersTo": "pill-ok",
+      "description": "The readable twin of the status dot: always contains a word, never a second dot. Sans face inside an otherwise monospaced heading.",
+      "html": "<span class=\"ds-pill ds-ok\">ok</span> <span class=\"ds-pill ds-warn\">warnings</span> <span class=\"ds-pill ds-bad\">invalid</span> <span class=\"ds-pill ds-none\">document</span>",
+      "css": ".ds-pill { display: inline-block; font: 500 11px/1.4 var(--sans,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif); padding: 2px 8px; border-radius: 99px; white-space: nowrap; } .ds-pill.ds-ok { background: var(--moss-soft,#E1F2E7); color: var(--moss,#1C7A3E); } .ds-pill.ds-warn { background: var(--amber-soft,#F9EDD6); color: var(--amber,#875806); } .ds-pill.ds-bad { background: var(--rust-soft,#FAE4E1); color: var(--rust,#B22417); } .ds-pill.ds-none { background: var(--line,#E2E5E8); color: var(--dim,#5E636A); }"
+    },
+    {
+      "name": "List Row",
+      "kind": "custom",
+      "refersTo": "row",
+      "description": "The product's densest and most repeated surface: 8px status dot, monospace name, right-aligned dim metadata, on a 1px-ruled 34px band. Selected adds the blue wash and the inset accent marker.",
+      "html": "<button class=\"ds-row\"><span class=\"ds-dot ds-d-ok\"></span><span class=\"ds-n\">code-reviewer</span><span class=\"ds-c\">42</span></button><button class=\"ds-row ds-sel\"><span class=\"ds-dot ds-d-warn\"></span><span class=\"ds-n\">documentation-updater</span><span class=\"ds-c\">7</span></button>",
+      "css": ".ds-row { display: grid; grid-template-columns: 8px 1fr auto; gap: 12px; align-items: center; padding: 6px 14px; min-height: 34px; width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px solid var(--line,#E2E5E8); color: var(--ink,#0B0D0F); cursor: pointer; } .ds-row:hover { background: var(--hover,#F0F1F3); } .ds-row.ds-sel { background: var(--accent-soft,#E7EFFC); box-shadow: inset 1px 0 0 var(--accent,#0B5FCE); } .ds-row.ds-sel .ds-n, .ds-row.ds-sel .ds-c { color: var(--accent-ink,#0A4FA8); } .ds-row.ds-sel .ds-n { font-weight: 600; } .ds-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; } .ds-d-ok { background: var(--moss,#1C7A3E); } .ds-d-warn { background: var(--amber,#875806); } .ds-d-bad { background: var(--rust,#B22417); } .ds-d-unknown { background: var(--neutral,#AEB3B9); } .ds-row .ds-n { font-family: var(--mono,ui-monospace,'SF Mono',Menlo,monospace); font-size: 14px; letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .ds-row .ds-c { color: var(--dim,#5E636A); font-size: 12.5px; text-align: right; font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Sidebar Nav Item",
+      "kind": "nav",
+      "refersTo": "tab",
+      "description": "Grouped sidebar navigation above 840px; the same markup becomes a horizontal scroller below it. The active item carries aria-current=\"page\".",
+      "html": "<div class=\"ds-nav\"><div class=\"ds-navLabel\">Status</div><button class=\"ds-tab\">Health</button><button class=\"ds-tab ds-on\" aria-current=\"page\">Live</button><button class=\"ds-tab\">Activity</button></div>",
+      "css": ".ds-nav { padding: 12px 8px; } .ds-navLabel { display: block; padding: 0 10px 6px; font: 600 11px/1.4 var(--sans,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif); letter-spacing: .07em; text-transform: uppercase; color: var(--dim,#5E636A); } .ds-tab { display: block; width: 100%; text-align: left; font: 14px/1.5 var(--sans,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif); background: none; border: 1px solid transparent; padding: 8px 12px; border-radius: var(--r,6px); color: var(--dim,#5E636A); margin-bottom: 1px; cursor: pointer; } .ds-tab:hover { color: var(--ink,#0B0D0F); background: var(--hover,#F0F1F3); } .ds-tab.ds-on { color: var(--accent-ink,#0A4FA8); background: var(--accent-soft,#E7EFFC); font-weight: 600; }"
+    },
+    {
+      "name": "Search Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "The list filter field. Focus turns the border accent and sits the ring flush so the field does not appear to grow.",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"search…\">",
+      "css": ".ds-input { font: 14px/1.5 var(--sans,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif); color: var(--ink,#0B0D0F); background: var(--panel,#fff); border: 1px solid var(--line,#E2E5E8); border-radius: var(--r,6px); padding: 6px 10px; } .ds-input::placeholder { color: var(--dim,#5E636A); } .ds-input:hover { border-color: var(--neutral,#AEB3B9); } .ds-input:focus { border-color: var(--accent,#0B5FCE); outline: 2px solid var(--accent,#0B5FCE); outline-offset: 0; }"
+    },
+    {
+      "name": "State Box",
+      "kind": "card",
+      "refersTo": "box-warn",
+      "description": "A statement about state: soft tint, matching text color, no border. Slate is the informational variant, deliberately outside the green/amber/red vocabulary so an explanation is never read as a verdict.",
+      "html": "<div class=\"ds-box ds-warn\">An agent is working in <b>alpha</b> right now. You can read, but editing is blocked until it finishes.</div><div class=\"ds-box ds-info\">Agents from alpha, refreshed every second.</div>",
+      "css": ".ds-box { font: 14px/1.5 var(--sans,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif); padding: 10px 12px; border-radius: var(--r,6px); margin-bottom: 8px; } .ds-box.ds-warn { background: var(--amber-soft,#F9EDD6); color: var(--amber,#875806); } .ds-box.ds-bad { background: var(--rust-soft,#FAE4E1); color: var(--rust,#B22417); } .ds-box.ds-info { background: var(--slate-soft,#ECF0F4); color: var(--slate,#3B4A5B); }"
+    },
+    {
+      "name": "Evidence Block",
+      "kind": "custom",
+      "refersTo": "evidence-block",
+      "description": "Measured lines and generated commands. Scrolls sideways instead of wrapping so a line stays comparable to the line above it. cabina generates the command; it never runs it.",
+      "html": "<pre class=\"ds-lines\">mv ~/.claude/agents/stale-agent.md ~/.claude/_archive/2026-09-01/</pre>",
+      "css": ".ds-lines { font-family: var(--mono,ui-monospace,'SF Mono',Menlo,monospace); font-size: 12.5px; line-height: 1.5; white-space: pre; overflow-x: auto; background: var(--bg,#F6F7F8); border: 1px solid var(--line,#E2E5E8); border-radius: var(--r,6px); padding: 8px 12px; margin: 0; }"
+    },
+    {
+      "name": "Legend",
+      "kind": "custom",
+      "refersTo": "row",
+      "description": "Decodes the status dots for the current view, rebuilt per view and hidden when a view has none. Without it the densest signal on the screen is unreadable without clicking a row.",
+      "html": "<div class=\"ds-legend\"><i><span class=\"ds-dot ds-d-ok\"></span>ok</i><i><span class=\"ds-dot ds-d-warn\"></span>warnings</i><i><span class=\"ds-dot ds-d-bad\"></span>invalid</i><i><span class=\"ds-dot ds-d-unknown\"></span>no state</i></div>",
+      "css": ".ds-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 6px 14px; border-top: 1px solid var(--line,#E2E5E8); font: 11px/1.4 var(--sans,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif); color: var(--dim,#5E636A); background: var(--panel,#fff); } .ds-legend i { display: inline-flex; align-items: center; gap: 5px; font-style: normal; }"
+    },
+    {
+      "name": "Toast",
+      "kind": "custom",
+      "refersTo": "row",
+      "description": "Inverted confirmation, fixed over the page. The only element in the product with a shadow and the only one with a transition.",
+      "html": "<div class=\"ds-toast\">Copied</div>",
+      "css": ".ds-toast { display: inline-block; background: var(--ink,#0B0D0F); color: var(--bg,#F6F7F8); padding: 9px 14px; border-radius: var(--r,6px); font-size: 14px; box-shadow: 0 1px 3px rgba(0,0,0,.18); max-width: 90vw; transition: opacity .2s; } @media (prefers-reduced-motion: reduce) { .ds-toast { transition: none; } }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Instrument Panel",
+    "overview": "Project-OS looks like what it is: an instrument that reports measurements taken from the operator's own machine. Instruments do not decorate their readings. The entire visual budget goes into making a dense screen legible for an hour at a time — a near-monochrome ground of paper white and near-black, hairline rules instead of boxes, and exactly one saturated color for interaction. Everything that is colored is colored because it means something.\n\nHierarchy comes from three devices only: type weight, spacing, and a status dot. There are no cards floating over the page, no gradients, no glyph icons, no illustration. The one shadow in the system belongs to the toast, which floats over the page by definition. Depth is tonal instead — panel (#FFFFFF) sits on bg (#F6F7F8) and the seam between them is a 1px line. In dark mode the same relationship inverts (#131518 on #0C0D0F) and nothing else about the system changes.\n\nThe quality bar named in PRODUCT.md is Vercel's radical neutrality next to Grafana's observability-grade density; the failure mode named there is \"generic template.\" The build resolves that tension by refusing every decorative device the template offers and spending the savings on status legibility: four semantic hues, each with a soft companion tint, used only to report state.",
+    "keyCharacteristics": [
+      "Near-monochrome ground; one interaction accent (blue); three status hues plus a neutral gray.",
+      "System font stack, no webfonts, no network — the product must work fully offline.",
+      "Tabular numerals globally, so counts do not jitter as they refresh.",
+      "Five type sizes total (11 / 12.5 / 14 / 18 / 22px). No sixth.",
+      "Flat by construction: one shadow in the whole system.",
+      "Monospace marks what was measured; prose stays in the sans face.",
+      "Unknown is written as words, never drawn as a zero or a colored state."
+    ],
+    "rules": [
+      { "name": "The State-Only Color Rule", "body": "Moss, amber and rust are reserved for measured state. They may never be used for emphasis, branding, category, or decoration. If a hue would appear on something that is not a reading, it is the wrong hue.", "section": "colors" },
+      { "name": "The One Voice Rule", "body": "Blue is the only interaction color and the only accent. Selection, focus, active nav and the primary action all speak with it; nothing else does.", "section": "colors" },
+      { "name": "The Unknown-Is-Gray Rule", "body": "A thing that was not measured takes the neutral gray dot and says so in words (\"n/a\", \"size not measured\", \"never recorded\"). Unknown never borrows moss, amber or rust, and it is never rendered as 0.", "section": "colors" },
+      { "name": "The Mono-Is-Measurement Rule", "body": "Monospace marks something the product measured or generated: a name on disk, a path, a size, a count, an evidence line, a generated command, a diff. Explanatory prose stays in the sans face even inside a technical panel. The build enforces this at runtime — evidenceHtml() splits a finding into prose and measured lines and only monospaces the latter. Monospace is never a costume for \"this feels technical.\"", "section": "typography" },
+      { "name": "The Five-Step Rule", "body": "The ramp is exactly five sizes (11 / 12.5 / 14 / 18 / 22px), exposed as --fs-1 through --fs-5. A new surface picks one of the five; it does not introduce a sixth, and it does not hardcode a px value that a step already covers.", "section": "typography" },
+      { "name": "The Two-Pane Rule", "body": "Every view is the same shell: a list that carries clickable headlines and a detail pane that carries the evidence. A new view adopts the shell; it does not invent a layout.", "section": "layout" },
+      { "name": "The 840 Rule", "body": "One breakpoint, at 840px. Above it: sidebar nav, two panes side by side. Below it: the nav becomes a horizontal scroller with its scrollbar hidden, the panes stack with a rule between them, the display title is visually hidden, and every target grows (tabs and rows to 40px, buttons to 36px). There is no second breakpoint and no tablet-specific case.", "section": "layout" },
+      { "name": "The Flat Rule", "body": "Surfaces are flat at rest and flat on hover. Hover changes the ground color (hover) or a border color (neutral); it never adds a shadow, a lift, or a scale. If a new element seems to need elevation, it needs a hairline or a tonal step instead.", "section": "elevation" },
+      { "name": "The Motion-Free Rule", "body": "The product has one transition — the toast's 200ms opacity fade, itself disabled under prefers-reduced-motion. Nothing animates on hover, selection, tab change or data refresh. A screen that repaints once a second must not also be in motion.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do carry every color through its CSS custom property. Both themes are defined once on :root; a literal hex in a new rule is a bug in dark mode.",
+      "Do pick one of the five type steps (--fs-1…--fs-5) and one radius (6px, or 99px for a token shape).",
+      "Do pair every status color with a word — a pill, a legend entry, or the count it labels. Color is never the only channel.",
+      "Do write unknown as text (\"n/a\", \"size not measured\", \"never recorded\") and give it the neutral gray dot.",
+      "Do keep exactly one primary button per pane or dialog; every other action is a default button. The build holds to this across all eleven of its primary buttons.",
+      "Do monospace measured values and generated commands, and leave explanation in the sans face.",
+      "Do show a generated command in an evidence block for the user to read and run. cabina never runs it.",
+      "Do let long values ellipsize, and break paths after a separator."
+    ],
+    "donts": [
+      "Don't use moss, amber or rust for anything that is not a measured state — not for emphasis, not for a category, not for branding.",
+      "Don't introduce a second accent, or restyle the accent per view.",
+      "Don't add a resting shadow, a hover lift, or any transition beyond the toast's fade. One shadow exists and it belongs to the toast.",
+      "Don't render an unmeasured value as 0, an empty bar, or a green check.",
+      "Don't add glyph icons or an icon font. The 8px status dot is the icon set, and the product ships offline with no external assets.",
+      "Don't outline a control in a status color; a state is a fill plus a text color.",
+      "Don't wrap an evidence line. It scrolls sideways so it stays comparable to the line above it.",
+      "Don't add a breakpoint. There is one, at 840px.",
+      "Don't style a control with an inline style attribute when a class exists; the few that remain in the build are debt, not a pattern."
+    ]
+  }
+}

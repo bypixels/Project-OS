@@ -7,6 +7,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Full UI redesign** ("Project-OS"): the web UI's visible name is now Project-OS (the CLI
+  binary and every command remain `cabina`). The nine flat tabs became a grouped sidebar
+  (Status / Catalog / Projects / System; horizontal strip with the same groups under 840px),
+  with a five-step type scale, near-monochrome neutrals plus one blue interaction accent —
+  moss/amber/rust are reserved for measured state — one primary action per screen, and a
+  status-dot legend on every list. Health is now two-pane: findings on the left (title plus
+  first evidence line), evidence and the generated command on the right, first finding
+  auto-selected. Prose evidence renders as prose; monospace is reserved for measured lines,
+  which scroll inside their own block on mobile. A stale-worktrees title with unmeasured
+  sizes now says "size not measured" / "tamaño sin medir" instead of "(? GB)"
+  (`check.stale_worktrees.nogb`, both languages). Light and dark themes, AA contrast,
+  reduced-motion respected, no external dependencies. Design decisions recorded in
+  PRODUCT.md / DESIGN.md.
+
 ### Added
 
 - **Skill body viewer** in the Skills tab: "View SKILL.md" shows the skill's full text (escaped,

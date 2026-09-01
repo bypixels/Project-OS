@@ -1142,11 +1142,11 @@ class TestServer(unittest.TestCase):
         start = html.index("// ---------- DOCS ----------")
         end = html.index("// ---------- LIVE ----------")
         body = html[start:end]
-        # x.stamp is also used as a CSS-class lookup key (S.docVersionSel===x.stamp?"primary":"")
+        # x.stamp is also used as a CSS-class lookup key (S.docVersionSel===x.stamp?"on":"")
         # -- a safe ternary comparison, not a text interpolation, mirroring the cls[x.status]
         # precedent in test_mcp_block_fields_always_escaped. Whitelisted by exact substring so
         # any OTHER change to that line is still caught; checked separately below.
-        stamp_ternary = 'S.docVersionSel===x.stamp?"primary":""'
+        stamp_ternary = 'S.docVersionSel===x.stamp?"on":""'
         self.assertIn(stamp_ternary, body, "stamp ternary moved; update whitelist")
         self.assertIn('data-stamp="${esc(x.stamp)}"', body)   # the value itself IS escaped
         body_scan = body.replace(stamp_ternary, "")

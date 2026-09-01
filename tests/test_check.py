@@ -94,6 +94,21 @@ class TestCheckStaleWorktrees(unittest.TestCase):
         finally:
             env.cleanup()
 
+    def test_unmeasured_size_title_says_not_measured_not_a_question_mark(self):
+        # "? GB" is indecipherable on its own -- unknown must say "unknown", not "?".
+        env = Env()
+        try:
+            data = scan.run(env.cfg)
+            alpha = next(p for p in data["projects"] if p["name"] == "alpha")
+            self._set_git(alpha, [self._stale_row("clean-wt", mb=None)], measured=False)
+            scan.save(env.cfg, data)
+            findings = check.run(env.cfg, quick=True)
+            stale = next(f for f in findings if "worktree" in f["title"].lower() and f["sev"] == "warn")
+            self.assertNotIn("? GB", stale["title"])
+            self.assertIn("size not measured", stale["title"])
+        finally:
+            env.cleanup()
+
     def test_measured_size_still_reports_real_gb(self):
         env = Env()
         try:

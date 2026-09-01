@@ -2,47 +2,83 @@
 <html lang="__LANG__">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Cabina</title>
+<title>Project-OS</title>
 <style>
-:root{--bg:#F6F7F3;--panel:#FFFFFF;--ink:#1B1F19;--dim:#697064;--line:#DCDFD6;--hover:#EEF0EA;--moss:#3D5A3A;--moss-soft:#E4ECDF;--amber:#8A6A1E;--amber-soft:#F3EAD3;--rust:#8E3F31;--rust-soft:#F5E1DC;--slate:#3E5872;--slate-soft:#E1E8EF;--mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;--sans:-apple-system,'Segoe UI','Helvetica Neue',sans-serif}
-@media (prefers-color-scheme:dark){:root{--bg:#161815;--panel:#1E211C;--ink:#E7E9E2;--dim:#9AA094;--line:#2D312A;--hover:#252923;--moss:#9FC195;--moss-soft:#243020;--amber:#D8B45C;--amber-soft:#332C18;--rust:#E08D7C;--rust-soft:#3A241F;--slate:#8FB0CF;--slate-soft:#1F2A35}}
+:root{color-scheme:light;--bg:#F6F7F8;--panel:#FFFFFF;--ink:#0B0D0F;--dim:#5E636A;--line:#E2E5E8;--hover:#F0F1F3;--neutral:#AEB3B9;--accent:#0B5FCE;--accent-soft:#E7EFFC;--accent-ink:#0A4FA8;--on-accent:#FFFFFF;--moss:#1C7A3E;--moss-soft:#E1F2E7;--amber:#875806;--amber-soft:#F9EDD6;--rust:#B22417;--rust-soft:#FAE4E1;--slate:#3B4A5B;--slate-soft:#ECF0F4;--mono:ui-monospace,'SF Mono',SFMono-Regular,Menlo,Consolas,monospace;--sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;--r:6px;--nav:212px;--fs-1:11px;--fs-2:12.5px;--fs-3:14px;--fs-4:18px;--fs-5:22px}
+@media (prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#0C0D0F;--panel:#131518;--ink:#E8EAED;--dim:#9AA0A8;--line:#24272C;--hover:#1B1E22;--neutral:#4C5158;--accent:#5CA0FF;--accent-soft:#16273D;--accent-ink:#9AC2FF;--on-accent:#08131F;--moss:#6ECE8B;--moss-soft:#13251A;--amber:#DFB158;--amber-soft:#2A2313;--rust:#F08C7E;--rust-soft:#331A18;--slate:#9EB5CB;--slate-soft:#182029}}
 *{box-sizing:border-box;margin:0;padding:0}html,body{height:100%}
-body{background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans);-webkit-font-smoothing:antialiased;display:flex;flex-direction:column}
-button{font:inherit;cursor:pointer}input,select,textarea{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:7px 10px}
-input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid var(--moss);outline-offset:1px}code{font-family:var(--mono);font-size:.93em}
-.top{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 18px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}.top .t{font-weight:600;font-size:15px}
-.stats{display:flex;gap:8px;flex-wrap:wrap}.stat{font-size:12px;padding:6px 10px;border-radius:7px;background:var(--bg);border:1px solid var(--line);font-variant-numeric:tabular-nums;color:var(--dim)}.stat b{font-weight:600;color:var(--ink)}.stat.ok b{color:var(--moss)}.stat.warn b{color:var(--amber)}.stat.bad b{color:var(--rust)}
-.tabs{display:flex;gap:2px;padding:8px 14px 0;border-bottom:1px solid var(--line);background:var(--panel);overflow-x:auto}.tab{background:none;border:1px solid transparent;border-bottom:none;padding:8px 13px;border-radius:7px 7px 0 0;color:var(--dim);white-space:nowrap;font-size:13.5px}.tab.on{color:var(--ink);background:var(--bg);border-color:var(--line);margin-bottom:-1px}
-.main{flex:1;display:grid;grid-template-columns:minmax(320px,1.1fr) minmax(300px,1fr);min-height:0}@media (max-width:760px){.main{grid-template-columns:1fr}.detail{border-top:1px solid var(--line)}}
-.list{border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}@media (max-width:760px){.list{border-right:none}}
-.filters{display:flex;gap:6px;padding:10px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap;align-items:center}.filters input{flex:1;min-width:140px}
-.chip{font-size:12px;padding:4px 10px;border-radius:99px;border:1px solid var(--line);background:none;color:var(--dim)}.chip.on{background:var(--moss-soft);color:var(--moss);border-color:transparent}
-.rows{overflow-y:auto;flex:1}.row{display:grid;grid-template-columns:8px 1fr auto;gap:12px;align-items:center;padding:9px 14px;border-bottom:1px solid var(--line);cursor:pointer;width:100%;text-align:left;background:none;border-left:0;border-right:0;border-top:0;color:var(--ink)}.row:hover{background:var(--hover)}.row.sel{background:var(--hover);box-shadow:inset 3px 0 0 var(--moss)}.row.focus .n{color:var(--moss);font-weight:600}
-.dot{width:8px;height:8px;border-radius:50%}.d-valid,.d-done,.d-ok,.d-complete{background:var(--moss)}.d-warnings,.d-working,.d-partial{background:var(--amber)}.d-invalid,.d-bad{background:var(--rust)}.d-document,.d-idle,.d-none,.d-unknown{background:var(--line)}
-.row .n{font-family:var(--mono);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.row .w{color:var(--dim);font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums}
-.grp{padding:8px 14px;border-bottom:1px solid var(--line);font-size:12px;color:var(--dim);background:var(--bg);display:flex;justify-content:space-between}
-.empty{padding:28px 18px;color:var(--dim);font-size:13px}.foot{padding:8px 14px;border-top:1px solid var(--line);font-size:12px;color:var(--dim)}
-.detail{padding:18px 20px;display:flex;flex-direction:column;gap:14px;overflow-y:auto}.detail .h{font-family:var(--mono);font-size:16px;font-weight:600;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.pill{font-size:11px;padding:3px 8px;border-radius:99px;font-family:var(--sans);font-weight:500}.p-valid,.p-ok,.p-complete{background:var(--moss-soft);color:var(--moss)}.p-warnings,.p-partial{background:var(--amber-soft);color:var(--amber)}.p-invalid,.p-bad{background:var(--rust-soft);color:var(--rust)}.p-document,.p-none{background:var(--line);color:var(--dim)}
-.meta{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;font-size:13px;color:var(--dim)}.meta b{color:var(--ink);font-weight:500;word-break:break-word}
-.box{font-size:13px;padding:10px 12px;border-radius:8px}.box.warn{background:var(--amber-soft);color:var(--amber)}.box.bad{background:var(--rust-soft);color:var(--rust)}.box.info{background:var(--slate-soft);color:var(--slate)}.box ul{margin:4px 0 0 16px}
-.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:auto;padding-top:8px}.btn{font-size:13px;padding:8px 13px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink)}.btn:hover{background:var(--hover)}.btn.primary{background:var(--moss);color:#fff;border-color:var(--moss)}.btn.danger{color:var(--rust);border-color:var(--rust-soft)}.btn[disabled]{opacity:.5;cursor:default}
-.muted{color:var(--dim);font-size:13px}.tl{font-size:10px;padding:1px 6px;border-radius:5px;background:var(--slate-soft);color:var(--slate);font-family:var(--sans);margin-left:6px;vertical-align:middle}.tl.codex{background:var(--amber-soft);color:var(--amber)}.form{display:grid;gap:10px}.form label{display:grid;gap:4px;font-size:12.5px;color:var(--dim)}.form .err{color:var(--rust);font-size:12px;min-height:14px}
-.tilesGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px;margin-bottom:10px;max-height:30vh;overflow:auto}.tile{background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:6px 10px;min-height:48px;display:flex;align-items:center;gap:8px}.tileName{font-weight:600;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}.tilesHead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
-textarea{min-height:90px;resize:vertical;font-family:var(--mono);font-size:12.5px}textarea.editor{width:100%;min-height:52vh;line-height:1.5;tab-size:2}
-pre.doc,pre.preview{font-family:var(--mono);font-size:12.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px 14px;max-height:60vh;overflow:auto}
+body{background:var(--bg);color:var(--ink);font:var(--fs-3)/1.5 var(--sans);font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;display:flex;flex-direction:column}
+button{font:inherit;cursor:pointer;color:inherit}input,select,textarea{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:6px 10px}
+input::placeholder{color:var(--dim)}input:hover,select:hover,textarea:hover{border-color:var(--neutral)}
+input:focus,select:focus,textarea:focus,button:focus-visible,a:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}input:focus,select:focus,textarea:focus{border-color:var(--accent);outline-offset:0}code{font-family:var(--mono);font-size:.93em}
+.top{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:6px 16px;min-height:56px;border-bottom:1px solid var(--line);background:var(--panel)}
+.brand{display:flex;align-items:baseline;gap:10px;min-width:0}.top .t{font-size:var(--fs-3);font-weight:600;letter-spacing:-.01em;color:var(--dim);white-space:nowrap}
+.vt{font-size:var(--fs-5);font-weight:650;letter-spacing:-.02em;line-height:1.2;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stats{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.stat{font-size:var(--fs-2);line-height:1.25;padding:4px 8px;border-radius:var(--r);background:var(--bg);border:1px solid var(--line);color:var(--dim);white-space:nowrap}.stat b{font-weight:600;color:var(--ink)}.stat.ok b{color:var(--moss)}.stat.warn b{color:var(--amber)}.stat.bad b{color:var(--rust)}
+.tabs{display:flex;gap:2px;padding:8px 14px 0;border-bottom:1px solid var(--line);background:var(--panel);overflow-x:auto}
+.navGroup{display:contents}
+.navLabel{display:inline-flex;align-items:center;margin:0 4px 8px 0;padding-right:10px;border-right:1px solid var(--line);font-size:var(--fs-1);font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--dim);white-space:nowrap}
+.tab{background:none;border:1px solid transparent;padding:8px 12px;border-radius:var(--r);color:var(--dim);white-space:nowrap;font-size:var(--fs-3);margin-bottom:8px}.tab:hover{color:var(--ink);background:var(--hover)}.tab.on{color:var(--accent-ink);background:var(--accent-soft);font-weight:600}
+.shell{flex:1;display:grid;grid-template-columns:var(--nav) minmax(0,1fr);min-height:0}
+@media (min-width:840px){.tabs{display:block;padding:12px 8px;border-bottom:none;border-right:1px solid var(--line);overflow-x:hidden;overflow-y:auto}
+ .navGroup{display:block;margin-bottom:16px}.navGroup:last-child{margin-bottom:0}
+ .navLabel{display:block;margin:0;padding:0 10px 6px;border-right:0}
+ .tab{display:block;width:100%;text-align:left;margin-bottom:1px}}
+.main{flex:1;display:grid;grid-template-columns:minmax(300px,1.1fr) minmax(290px,1fr);min-height:0}@media (max-width:839px){.main{grid-template-columns:1fr}.detail{border-top:1px solid var(--line)}}
+.list{border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;background:var(--panel)}@media (max-width:839px){.list{border-right:none}}
+.filters{display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap;align-items:center;min-height:44px}.filters input{flex:1;min-width:140px}
+.chip{font-size:var(--fs-2);line-height:1.25;padding:4px 10px;border-radius:99px;border:1px solid var(--line);background:none;color:var(--dim)}.chip:hover{color:var(--ink);border-color:var(--neutral)}.chip.on{background:var(--accent-soft);color:var(--accent-ink);border-color:var(--accent-soft);font-weight:600}
+.rows{overflow-y:auto;flex:1}.row{display:grid;grid-template-columns:8px 1fr auto;gap:12px;align-items:center;padding:6px 14px;min-height:34px;border-bottom:1px solid var(--line);cursor:pointer;width:100%;text-align:left;background:none;border-left:0;border-right:0;border-top:0;color:var(--ink)}.row:hover{background:var(--hover)}.row.sel{background:var(--accent-soft);box-shadow:inset 1px 0 0 var(--accent)}.row.sel .n{color:var(--accent-ink);font-weight:600}.row.sel .w,.row.sel .p,.row.sel .c{color:var(--accent-ink)}.row.focus .n{color:var(--accent-ink);font-weight:600}
+.row.cols{grid-template-columns:8px minmax(0,1fr) minmax(0,116px) 62px;gap:10px}
+.row.stack{align-items:start;padding:8px 14px}.row .nn{display:flex;flex-direction:column;gap:1px;min-width:0}.row .sub{font-size:var(--fs-2);line-height:1.35;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.row .sub:empty{display:none}.row.stack .w{padding-top:1px}
+.dot{width:8px;height:8px;border-radius:50%;flex:none}.d-valid,.d-done,.d-ok,.d-complete{background:var(--moss)}.d-warnings,.d-working,.d-partial{background:var(--amber)}.d-invalid,.d-bad{background:var(--rust)}.d-document,.d-idle,.d-none,.d-unknown{background:var(--neutral)}
+.row .n{font-family:var(--mono);font-size:var(--fs-3);letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.row .w{color:var(--dim);font-size:var(--fs-2);white-space:nowrap}
+.row .p{color:var(--dim);font-size:var(--fs-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.row .c{color:var(--dim);font-size:var(--fs-2);text-align:right;white-space:nowrap}.approx{cursor:help}
+.grp{padding:6px 14px;border-bottom:1px solid var(--line);font-size:var(--fs-1);font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--dim);background:var(--bg);display:flex;justify-content:space-between;gap:10px;position:sticky;top:0;z-index:1}
+.empty{padding:28px 18px;color:var(--dim);font-size:var(--fs-3)}.foot{padding:8px 14px;border-top:1px solid var(--line);font-size:var(--fs-2);color:var(--dim);background:var(--panel)}
+.legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;padding:6px 14px;border-top:1px solid var(--line);font-size:var(--fs-1);color:var(--dim);background:var(--panel)}.legend i{display:inline-flex;align-items:center;gap:5px;font-style:normal}.legend:empty{display:none}
+.detail{padding:18px 20px;display:flex;flex-direction:column;gap:14px;overflow-y:auto}.detail .h{font-family:var(--mono);font-size:var(--fs-4);font-weight:600;letter-spacing:-.02em;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pill{font-size:var(--fs-1);line-height:1.4;padding:2px 8px;border-radius:99px;font-family:var(--sans);font-weight:500;white-space:nowrap}.p-valid,.p-ok,.p-complete{background:var(--moss-soft);color:var(--moss)}.p-warnings,.p-partial{background:var(--amber-soft);color:var(--amber)}.p-invalid,.p-bad{background:var(--rust-soft);color:var(--rust)}.p-document,.p-none{background:var(--line);color:var(--dim)}
+.meta{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 16px;font-size:var(--fs-2);color:var(--dim)}.meta b{min-width:0;color:var(--ink);font-weight:500;word-break:normal;overflow-wrap:normal}.meta b code{overflow-wrap:anywhere}
+.box{font-size:var(--fs-3);padding:10px 12px;border-radius:var(--r)}.box.warn{background:var(--amber-soft);color:var(--amber)}.box.bad{background:var(--rust-soft);color:var(--rust)}.box.info{background:var(--slate-soft);color:var(--slate)}.box ul{margin:4px 0 0 16px}
+.prose{font-size:var(--fs-3);line-height:1.55;max-width:72ch}.ev{display:flex;flex-direction:column;gap:8px}
+pre.lines{font-family:var(--mono);font-size:var(--fs-2);line-height:1.5;white-space:pre;overflow-x:auto;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);padding:8px 12px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:auto;padding-top:8px;align-items:center}.btn{font-size:var(--fs-3);padding:6px 12px;min-height:32px;border-radius:var(--r);border:1px solid var(--line);background:var(--panel);color:var(--ink)}.btn:hover{background:var(--hover);border-color:var(--neutral)}.btn.on{background:var(--accent-soft);color:var(--accent-ink);border-color:var(--accent-soft);font-weight:600;box-shadow:inset 1px 0 0 var(--accent)}.btn.on:hover{background:var(--accent-soft);border-color:var(--accent)}.btn.primary{background:var(--accent);color:var(--on-accent);border-color:var(--accent);font-weight:500}.btn.primary:hover{background:var(--accent-ink);border-color:var(--accent-ink)}.btn.danger{color:var(--rust)}.btn.danger:hover{background:var(--rust-soft);border-color:var(--rust-soft)}.btn[disabled]{opacity:.45;cursor:default}.btn[disabled]:hover{background:var(--panel);border-color:var(--line)}
+.muted{color:var(--dim);font-size:var(--fs-3)}.tl{font-size:var(--fs-1);padding:1px 6px;border-radius:5px;background:var(--slate-soft);color:var(--slate);font-family:var(--sans);margin-left:6px;vertical-align:middle}.tl.codex{background:var(--amber-soft);color:var(--amber)}.form{display:grid;gap:10px}.form label{display:grid;gap:4px;font-size:var(--fs-2);color:var(--dim)}.form .err{color:var(--rust);font-size:var(--fs-2);min-height:14px}
+.tilesGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px;margin-bottom:10px;max-height:30vh;overflow:auto}.tile{background:var(--bg);border:1px solid var(--line);border-radius:var(--r);padding:6px 10px;min-height:44px;display:flex;align-items:center;gap:8px}.tileName{font-weight:600;font-size:var(--fs-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}.tilesHead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+textarea{min-height:90px;resize:vertical;font-family:var(--mono);font-size:var(--fs-2)}textarea.editor{width:100%;min-height:52vh;line-height:1.5;tab-size:2}
+pre.doc,pre.preview{font-family:var(--mono);font-size:12.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;max-height:60vh;overflow:auto}
+pre.doc.full{max-height:none;overflow:visible}
 .dl-add{color:var(--moss)}.dl-del{color:var(--rust)}.dl-hunk{color:var(--dim)}
-.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 14px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw}.toast.show{opacity:1}@media (prefers-reduced-motion:reduce){.toast{transition:none}}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 14px;border-radius:var(--r);font-size:var(--fs-3);box-shadow:0 1px 3px rgba(0,0,0,.18);opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw}.toast.show{opacity:1}@media (prefers-reduced-motion:reduce){.toast{transition:none}}
+@media (max-width:839px){.shell{display:flex;flex-direction:column}.tab{padding:10px 12px;min-height:40px}.row{padding:9px 14px;min-height:40px}.btn{min-height:36px}
+ .top{gap:10px;padding:6px 12px;min-height:52px;flex-wrap:nowrap}.vt{font-size:var(--fs-4)}.stats{flex-wrap:nowrap;overflow-x:auto;justify-content:flex-start}
+ .row.cols{grid-template-columns:8px minmax(0,1fr) minmax(0,84px) 54px}}
+@media (max-width:839px){.tabs,.stats{scrollbar-width:none}.tabs::-webkit-scrollbar,.stats::-webkit-scrollbar{display:none}}
+@media (max-width:839px){.vt{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}}
 </style></head>
 <body>
-<header class="top"><div class="t">Cabina</div><div class="stats" id="stats"></div></header>
-<nav class="tabs" id="tabs"></nav>
-<main class="main"><section class="list"><div class="filters" id="filters"></div><div class="rows" id="rows"></div><div class="foot" id="foot"></div></section><section class="detail" id="detail"></section></main>
+<!--
+THESIS: an honest measurement console; refuses the decorated-template arrangement — hierarchy comes from type weight, spacing and status color used ONLY for state.
+OWN-WORLD: near-monochrome neutrals (paper white / near-black, cool grays), one working accent (blue) for interaction, moss/amber/rust reserved for measured state; system font stack + tabular numerals; hairline borders, 6px radii, no shadows heavier than 1dp.
+STORY: the operator sees at a glance what is healthy, digs into any row, reads evidence, acts via generated commands.
+FIRST VIEWPORT: slim top bar (product name, global stats, rescan); grouped sidebar nav (Estado: health/live/activity · Catálogo: agents/skills · Proyectos: projects/docs · Sistema: harness/mcp); list+detail two-pane content.
+FORM: category canon — the user's standing exit, chosen on the decision page (question d45111fd) after the seeded direction round (key cabina001; roll not persisted)
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+-->
+<header class="top"><div class="brand"><span class="t">Project-OS</span><h1 class="vt" id="viewTitle"></h1></div><div class="stats" id="stats"></div></header>
+<div class="shell">
+<nav class="tabs" id="tabs" aria-label="Project-OS"></nav>
+<main class="main"><section class="list"><div class="filters" id="filters"></div><div class="rows" id="rows"></div><div class="foot" id="foot"></div><div class="legend" id="legend"></div></section><section class="detail" id="detail"></section></main>
+</div>
 <div class="toast" id="toast"></div>
 <script>
 const TOKEN="__TOKEN__", LANG="__LANG__", HUB="__HUB__"==="1";
 const I18N={
 en:{tabs:{health:"Health",agents:"Agents",live:"Live",skills:"Skills",projects:"Projects",harness:"Harness",mcp:"MCP",docs:"Docs",activity:"Activity"},
+ navAria:"Sections",navStatus:"Status",navCatalog:"Catalog",navProjects:"Projects",navSystem:"System",
+ legendNeutral:"no state",approxT:"count shared with agents of the same name in other projects — not attributable to this one",approxNote:"≈ count shared with homonyms",
+ pickFinding:"Select a finding.",hEvidence:"Evidence",hFix:"Suggested command",
  recheck:"Re-check",checking:"checking…",ranAt:"last run: {t}",copy:"Copy",copied:"Copied",healthOk:"All clear.",sevCrit:"critical",sevWarn:"warnings",sevInfo:"info",
  healthActiveNow:"active now",healthNoActive:"Nothing running right now.",healthRecent:"recent",healthNoRecent:"No recent sessions.",
  pickSession:"Select a session.",noSessions:"No sessions in this window.",untitled:"(untitled)",
@@ -67,7 +103,7 @@ en:{tabs:{health:"Health",agents:"Agents",live:"Live",skills:"Skills",projects:"
  newAgent:"New agent",fName:"name (kebab-case)",fDesc:"description (when to invoke it)",fModel:"model",fTools:"tools (list, or * for all)",fBody:"instructions",review:"Review",
  eName:"lowercase, digits and dashes",eDesc:"too short: say when to use it",eReq:"required",eTools:"cannot be empty; use * for full access",eBody:"too short",
  shadows:"A global agent named “{name}” exists: this one will shadow it in {project}. <code>overrides: global</code> is added.",writeIn:"Write to {project}",
- liveHint:"Agents from {p}, refreshed every second. Click to focus the pane.",noLive:"No live provider. cabina works without one; install herdr for this tab.",noAgents:"No live agents.",inWs:"{n} agents in {w} workspaces",waitReview:"Waiting for review",noneDone:"Nothing finished awaiting review.",
+ liveHint:"Agents from {p}, refreshed every second. Click to focus the pane.",noLive:"No live provider. Project-OS works without one; install herdr for this tab.",noAgents:"No live agents.",inWs:"{n} agents in {w} workspaces",waitReview:"Waiting for review",noneDone:"Nothing finished awaiting review.",
  openFolder:"Open folder",linksTo:"links to",size:"size",lines:"lines",brokenLink:"The link points to something that no longer exists. Listed in the catalog, empty in practice.",noSkillMd:"Directory without SKILL.md: Claude Code ignores it.",skArch:"Move the whole directory to",skArchLink:"It is a link: the link moves, the real target is not touched.",skRefs:"<b>{n} file(s) mention it.</b> If any depends on this skill (e.g. an agent that says “apply the skill … rubric”), fix it first.",know:"I know what I am doing. Force.",
  skViewBody:"View SKILL.md",skTruncated:"Shown up to 1 MB; the file continues beyond this point.",skFiles:"Attached files",skBinary:"Binary file — no preview available.",skClose:"Close",skBackToBody:"Back to SKILL.md",skLoadError:"Could not load the skill content.",
  projHint:"Click a project. “Focus” filters the other tabs.",rescan:"Rescan",rescanT:"re-measure agents, skills, worktrees (slow)",focusOn:"Focus",focusOff:"Unfocus",focusChip:"focus: {p} ×",focused:"focus on {p}: other tabs are filtered",unfocused:"focus removed",inFocus:"in focus",
@@ -81,7 +117,7 @@ en:{tabs:{health:"Health",agents:"Agents",live:"Live",skills:"Skills",projects:"
  harHint:"Harness state per project. Below, the run log.",complete:"complete",partial:"partial",noHar:"no harness",problem:"problem(s)",runlog:"RUN LOG",runs:"runs",consq:"consq.",kPer:"{k}k/consq.",
  pieces:"pieces",hooks:"hooks",activeOf:"{a} active of {n}",none:"none",runlogL:"run log",yesRl:"yes, harness-runs.md",no:"no",
  hkBroken:"<b>{n} wired hook(s) that do not exist</b>: settings.json calls them on every event and they fail.",hkDead:"<b>{n} unwired hook(s)</b>: on disk but no settings.json calls them — they never run.",hkDeadFix:"Wire it in <code>.claude/settings.json</code> under the right event, or archive it.",hkActive:"Active hooks",helpers:"helpers (not wired):",missing:"Missing",noneMsg:"This project has no harness: no persistent memory and no automatic guards.",openClaude:"Open .claude",
- hkInstallTitle:"Cabina hooks",hkCmd:"command",hkCmdFound:"found at",hkCmdMissing:"not on PATH",hkForceHint:"Install anyway — Claude Code would run a command that does not exist, and the hook would always fail silently.",hkPreview:"Preview",hkPreviewHint:"A backup is kept next to settings.json; existing hooks are preserved (merge, never overwrite).",hkInstall:"Install hooks",hkConfirm:"This merges cabina's guard + brief hooks into settings.json:",hkBothIn:"Both hooks are already installed.",
+ hkInstallTitle:"Project-OS hooks",hkCmd:"command",hkCmdFound:"found at",hkCmdMissing:"not on PATH",hkForceHint:"Install anyway — Claude Code would run a command that does not exist, and the hook would always fail silently.",hkPreview:"Preview",hkPreviewHint:"A backup is kept next to settings.json; existing hooks are preserved (merge, never overwrite).",hkInstall:"Install hooks",hkConfirm:"This merges cabina's guard + brief hooks into settings.json:",hkBothIn:"Both hooks are already installed.",
  rlTitle:"Run log · {p}",runsN:"runs",consqL:"consequential",consqD:"(critical + high confirmed that ended in a change)",tokMeas:"tokens measured",inRuns:"{a}k in {b} of {c} runs",unmeasured:"· {n} unmeasured",cost:"cost",kPerL:"{k}k tokens per consequential finding",
  rlHint:"The metric from your harness rule: a harness is judged by findings that end in a commit, not by findings produced.",agentsL:"agents",tokNd:"· tokens n/a",funnel:"· funnel",openRl:"Open run log",
  docsHint:"documents",older:"> 30 days",memHar:"MEMORY / HARNESS",claudeMd:"CLAUDE.md",agentWorking:"● agent working · editing blocked",docsFoot:"{s} of {n} documents · {p} projects",oldFoot:"· {n} untouched for over 30 days",blockedFoot:"· {p}: editing blocked",
@@ -90,6 +126,9 @@ en:{tabs:{health:"Health",agents:"Agents",live:"Live",skills:"Skills",projects:"
  dvTitle:"Version history",dvAmbiguous:"This document's backup folder was shared with any same-named document in other folders of this project, before backups started mirroring subdirectories — this list may include versions of a different file.",dvNoDiff:"No differences from the current file.",dvNoCommand:"cabina could not build a safe command for this path.",dvLoadError:"Could not load the version history.",dvRestoreCmd:"To restore this version, review and run:",
  mcpTarget:"target",mcpNotChecked:"MCP servers have not been checked. Run <code>cabina scan --mcp</code>, or tick the “MCP” checkbox in the rescan dialog, to collect this.",mcpEmpty:"No MCP servers configured.",mcpSummary:"{n} servers · {need} need attention"},
 es:{tabs:{health:"Salud",agents:"Agentes",live:"En vivo",skills:"Skills",projects:"Proyectos",harness:"Harness",mcp:"MCP",docs:"Documentos",activity:"Actividad"},
+ navAria:"Secciones",navStatus:"Estado",navCatalog:"Catálogo",navProjects:"Proyectos",navSystem:"Sistema",
+ legendNeutral:"sin estado",approxT:"conteo compartido con agentes del mismo nombre en otros proyectos — no atribuible a este",approxNote:"≈ conteo compartido con homónimos",
+ pickFinding:"Seleccioná un hallazgo.",hEvidence:"Evidencia",hFix:"Comando sugerido",
  recheck:"Volver a chequear",checking:"comprobando…",ranAt:"última corrida: {t}",copy:"Copiar",copied:"Copiado",healthOk:"Todo en orden.",sevCrit:"críticos",sevWarn:"avisos",sevInfo:"info",
  healthActiveNow:"activo ahora",healthNoActive:"Nada corriendo en este momento.",healthRecent:"reciente",healthNoRecent:"Sin sesiones recientes.",
  pickSession:"Seleccioná una sesión.",noSessions:"No hay sesiones en esta ventana.",
@@ -115,7 +154,7 @@ es:{tabs:{health:"Salud",agents:"Agentes",live:"En vivo",skills:"Skills",project
  newAgent:"Nuevo agente",fName:"name (kebab-case)",fDesc:"description (cuándo invocarlo)",fModel:"model",fTools:"tools (lista, o * para todo)",fBody:"instrucciones",review:"Revisar",
  eName:"minúsculas, números y guiones",eDesc:"muy corta: decí cuándo usarlo",eReq:"obligatorio",eTools:"no puede quedar vacío; poné * si querés acceso total",eBody:"muy corto",
  shadows:"Existe un agente global «{name}»: este lo tapará en {project}. Se agrega <code>overrides: global</code>.",writeIn:"Escribir en {project}",
- liveHint:"Agentes de {p}, actualizado cada segundo. Clic salta al panel.",noLive:"Sin proveedor en vivo. Cabina funciona igual; instalá herdr para esta pestaña.",noAgents:"Sin agentes en vivo.",inWs:"{n} agentes en {w} workspaces",waitReview:"Esperan revisión",noneDone:"Nada terminado esperando revisión.",
+ liveHint:"Agentes de {p}, actualizado cada segundo. Clic salta al panel.",noLive:"Sin proveedor en vivo. Project-OS funciona igual; instalá herdr para esta pestaña.",noAgents:"Sin agentes en vivo.",inWs:"{n} agentes en {w} workspaces",waitReview:"Esperan revisión",noneDone:"Nada terminado esperando revisión.",
  openFolder:"Abrir carpeta",linksTo:"enlaza a",size:"tamaño",lines:"líneas",brokenLink:"El enlace apunta a algo que ya no existe. Aparece en el catálogo pero no tiene contenido.",noSkillMd:"Directorio sin SKILL.md: Claude Code lo ignora.",skArch:"Se mueve el directorio completo a",skArchLink:"Es un enlace: se mueve el enlace, el destino real no se toca.",skRefs:"<b>{n} archivo(s) lo mencionan.</b> Si alguno depende de este skill (p. ej. un agente que dice «aplicá la rúbrica de la skill …»), arreglalo primero.",know:"Sé lo que hago. Forzar.",
  skViewBody:"Ver SKILL.md",skTruncated:"Se muestra hasta 1 MB; el archivo continúa más allá de este punto.",skFiles:"Archivos anexos",skBinary:"Archivo binario — sin vista previa disponible.",skClose:"Cerrar",skBackToBody:"Volver a SKILL.md",skLoadError:"No se pudo cargar el contenido del skill.",
  projHint:"Clic en un proyecto. «Enfocar» filtra las demás pestañas.",rescan:"Reescanear",rescanT:"vuelve a medir agentes, skills, worktrees (lento)",focusOn:"Enfocar",focusOff:"Quitar foco",focusChip:"foco: {p} ×",focused:"foco en {p}: las otras pestañas se filtran",unfocused:"foco quitado",inFocus:"en foco",
@@ -129,7 +168,7 @@ es:{tabs:{health:"Salud",agents:"Agentes",live:"En vivo",skills:"Skills",project
  harHint:"Estado del harness por proyecto. Abajo, la bitácora de corridas.",complete:"completo",partial:"parcial",noHar:"sin harness",problem:"problema(s)",runlog:"BITÁCORA DE CORRIDAS",runs:"corridas",consq:"consec.",kPer:"{k}k/consec.",
  pieces:"piezas",hooks:"hooks",activeOf:"{a} activos de {n}",none:"ninguno",runlogL:"bitácora",yesRl:"sí, harness-runs.md",no:"no",
  hkBroken:"<b>{n} hook(s) cableados que no existen</b>: settings.json los llama en cada evento y fallan.",hkDead:"<b>{n} hook(s) sin cablear</b>: existen en disco pero ningún settings.json los llama — nunca se ejecutan.",hkDeadFix:"Cablearlo en <code>.claude/settings.json</code> bajo el evento que corresponda, o archivarlo.",hkActive:"Hooks activos",helpers:"helpers (no se cablean):",missing:"Falta",noneMsg:"Este proyecto no tiene harness: no hay memoria persistente ni guardas automáticas.",openClaude:"Abrir .claude",
- hkInstallTitle:"Hooks de cabina",hkCmd:"comando",hkCmdFound:"encontrado en",hkCmdMissing:"no está en el PATH",hkForceHint:"Instalar igual — Claude Code intentaría correr un comando que no existe, y el hook fallaría siempre en silencio.",hkPreview:"Vista previa",hkPreviewHint:"Se guarda un respaldo junto a settings.json; los hooks existentes se preservan (mezcla, nunca sobrescritura).",hkInstall:"Instalar hooks",hkConfirm:"Esto mezcla los hooks guard + brief de cabina en settings.json:",hkBothIn:"Los dos hooks ya están instalados.",
+ hkInstallTitle:"Hooks de Project-OS",hkCmd:"comando",hkCmdFound:"encontrado en",hkCmdMissing:"no está en el PATH",hkForceHint:"Instalar igual — Claude Code intentaría correr un comando que no existe, y el hook fallaría siempre en silencio.",hkPreview:"Vista previa",hkPreviewHint:"Se guarda un respaldo junto a settings.json; los hooks existentes se preservan (mezcla, nunca sobrescritura).",hkInstall:"Instalar hooks",hkConfirm:"Esto mezcla los hooks guard + brief de cabina en settings.json:",hkBothIn:"Los dos hooks ya están instalados.",
  rlTitle:"Bitácora · {p}",runsN:"corridas",consqL:"consecuentes",consqD:"(critical + high confirmados que terminaron en cambio)",tokMeas:"tokens medidos",inRuns:"{a}k en {b} de {c} corridas",unmeasured:"· {n} sin medir",cost:"costo",kPerL:"{k}k tokens por hallazgo consecuente",
  rlHint:"La métrica de tu regla de harness: un harness se juzga por hallazgos que terminan en commit, no por hallazgos producidos.",agentsL:"agentes",tokNd:"· tokens n/d",funnel:"· embudo",openRl:"Abrir bitácora",
  docsHint:"documentos",older:"> 30 días",memHar:"MEMORY / HARNESS",claudeMd:"CLAUDE.md",agentWorking:"● agente trabajando · edición bloqueada",docsFoot:"{s} de {n} documentos · {p} proyectos",oldFoot:"· {n} sin tocar en más de 30 días",blockedFoot:"· {p}: edición bloqueada",
@@ -141,6 +180,19 @@ const T=(k,v)=>{let s=(I18N[LANG]||I18N.en)[k]??I18N.en[k]??k; if(typeof s==="ob
 const S={view:HUB?"agents":"health",data:null,live:null,skills:null,projs:null,har:null,docs:null,doc:null,activity:null,hub:null,health:null,healthChecking:false,editing:false,sel:null,q:"",chips:new Set(),mode:null,focus:null,loaded:new Set(),
  hooks:null,hooksCmd:"",hooksForce:false,hooksPreview:false,tiles:null,healthHistory:null,mcp:null,docVersions:null,docVersionSel:null,docVersionDetail:null,skillBody:null,skillFile:null};
 const $=id=>document.getElementById(id);const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+// wbr() and evidenceHtml() both take ALREADY-ESCAPED text and only add markup of their own; they
+// are always called as wbr(esc(x)) / evidenceHtml(esc(x)) so escaping still happens at the sink.
+// wbr: paths break after a separator instead of mid-token ("documentati/on-updater.md").
+const wbr=s=>String(s).replace(/\//g,"/<wbr>");
+// evidenceHtml: a finding's detail mixes prose sentences with measured lines (paths, sizes, days).
+// Prose reads as prose (--sans); only the measured lines stay monospaced, and they scroll sideways
+// instead of wrapping. Monospace is for measurement here, never a costume for "technical".
+const isMeasuredLine=t=>!!t&&(t.includes("/")||!/\s/.test(t)||/\d+(\.\d+)?\s*(B|KB|MB|GB|k|%|d|days|d[ií]as|lines|l[ií]neas)\b/.test(t));
+function evidenceHtml(escaped){const lines=String(escaped).split("\n");const out=[];let buf=[],mode=null;
+ const flush=()=>{if(!buf.length)return;out.push(mode==="m"?`<pre class="lines">${buf.join("\n")}</pre>`:`<div class="prose">${buf.join("<br>")}</div>`);buf=[];};
+ for(const l of lines){const t=l.trim();if(!t){flush();mode=null;continue;}
+  const m=isMeasuredLine(t)?"m":"p";if(m!==mode){flush();mode=m;}buf.push(l);}
+ flush();return `<div class="ev">${out.join("")}</div>`;}
 const AGENT_CLASSES={valid:"valid",warnings:"warnings",invalid:"invalid",document:"document"};
 const HARNESS_CLASSES={complete:"complete",partial:"partial",none:"none"};
 const agentClass=v=>AGENT_CLASSES[v]||"document";
@@ -148,7 +200,12 @@ const harnessClass=v=>HARNESS_CLASSES[v]||"none";
 async function GET(u){return (await fetch(u)).json();}async function POST(u,b){return (await fetch(u,{method:"POST",headers:{"Content-Type":"application/json","X-Cabina-Token":TOKEN},body:JSON.stringify(b)})).json();}
 let tt;function toast(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(tt);tt=setTimeout(()=>t.classList.remove("show"),2600);}
 const VIEWS=HUB?["agents","skills","projects","harness","activity"]:["health","agents","live","skills","projects","harness","mcp","docs","activity"];
-$("tabs").innerHTML=VIEWS.map(v=>`<button class="tab" data-v="${v}">${esc(T("tabs")[v])}</button>`).join("");
+// nav groups are a presentation layer over VIEWS: a view absent from VIEWS (hub mode) is filtered
+// out here, and an empty group renders nothing — no hub route is added by grouping.
+const NAV_GROUPS=[["navStatus",["health","live","activity"]],["navCatalog",["agents","skills"]],["navProjects",["projects","docs"]],["navSystem",["harness","mcp"]]];
+$("tabs").setAttribute("aria-label",T("navAria"));
+$("tabs").innerHTML=NAV_GROUPS.map(([g,vs])=>{const items=vs.filter(v=>VIEWS.includes(v));
+ return items.length?`<div class="navGroup"><div class="navLabel">${esc(T(g))}</div>`+items.map(v=>`<button class="tab" data-v="${v}">${esc(T("tabs")[v])}</button>`).join("")+`</div>`:"";}).join("");
 const LOADERS={health:()=>{loadHealth();ensureLoaded("activity");},skills:()=>loadSkills(),projects:()=>{loadProjs();loadTiles();loadHealthHistory();},harness:()=>loadHar(),mcp:()=>loadMcp(),activity:()=>loadActivity(),docs:()=>loadDocs()};
 function ensureLoaded(v){if(S.loaded.has(v))return;const f=LOADERS[v];if(!f)return;S.loaded.add(v);f();}
 document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{S.view=t.dataset.v;S.mode=null;S.sel=null;S.q="";S.chips.clear();S.skillBody=null;S.skillFile=null;ensureLoaded(S.view);render();});
@@ -163,7 +220,7 @@ async function loadActivity(){S.activity=await GET("/api/activity?days=30");if(S
 async function loadMcp(){S.mcp=await GET("/api/mcp");if(S.view==="mcp")render();}
 async function loadHub(){if(!HUB)return;S.hub=await GET("/api/hub");renderHubBanner();}
 function renderHubBanner(){if(!HUB||!S.hub)return;let el=$("hubBanner");if(!el){el=document.createElement("div");el.id="hubBanner";
- el.style.cssText="padding:8px 18px;background:var(--slate-soft);color:var(--slate);font-size:12px;border-bottom:1px solid var(--line)";
+ el.style.cssText="padding:8px 18px;background:var(--slate-soft);color:var(--slate);font-size:var(--fs-2);border-bottom:1px solid var(--line)";
  document.querySelector(".top").after(el);}
  el.innerHTML=S.hub.files.map(f=>`<span>${esc(f.name)} (${esc(f.machine||"?")}) · ${esc(f.status)}</span>`).join("  ·  ");}
 async function loadLive(){S.live=await GET("/api/live");renderStats();if(S.view==="live")renderLive();if(S.view==="health")renderHealth();}
@@ -174,65 +231,93 @@ function renderStats(){const a=S.data?.agents||[],l=S.live?.agents||[];const n=k
  let scanStat="";if(!HUB&&S.scanStatus){if(S.scanStatus.scanning)scanStat=`<span class="stat" id="scanStat">${esc(T("scanning"))}</span>`;
   else{const rt=relTime(S.scanStatus.scanned_at);if(rt)scanStat=`<span class="stat" id="scanStat">${esc(T("scanAgo",{t:rt}))}</span>`;}}
  $("stats").innerHTML=`<span class="stat"><b>${w}</b> ${T("working")}</span>`+(d?`<span class="stat warn"><b>${d}</b> ${T("done")}</span>`:"")+`<span class="stat ok"><b>${n("valid")}</b> ${T("ok")}</span>`+(n("warnings")?`<span class="stat warn"><b>${n("warnings")}</b> ${T("warnings")}</span>`:"")+(n("invalid")?`<span class="stat bad"><b>${n("invalid")}</b> ${T("invalid")}</span>`:"")+scanStat;}
-function render(){document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("on",t.dataset.v===S.view));renderStats();({health:renderHealth,agents:renderAgents,skills:renderSkills,projects:renderProjects,harness:renderHarness,mcp:renderMcp,docs:renderDocs,live:renderLive,activity:renderActivity})[S.view]();}
-async function commitBox(id, path){const r=await GET("/api/in-repo?path="+encodeURIComponent(path));const el=$(id);if(!el)return;el.innerHTML=r.in_repo?`<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--dim)"><input type="checkbox" id="${id}-cb"> ${T("commitToo")}</label>`:`<span class="muted">${T("notRepo2")}</span>`;}
+// The status dots are the densest signal on the screen and were undecodable without clicking a
+// row; the legend spells out what this view's colours mean, next to the same view's footer counts.
+function legendItems(){switch(S.view){
+ case "health":return [["bad",T("sevCrit")],["warnings",T("sevWarn")],["document",T("sevInfo")]];
+ case "live":return [["working",T("working")],["done",T("done")],["idle",T("idle")]];
+ case "harness":return [["complete",T("complete")],["partial",T("partial")],["none",T("noHar")]];
+ case "docs":return [["valid",T("ok")],["warnings",T("older")]];
+ case "activity":return [["working",T("healthActiveNow")],["valid",T("ok")]];
+ default:return [["valid",T("ok")],["warnings",T("warnings")],["invalid",T("invalid")],["document",T("legendNeutral")]];}}
+function renderLegend(){$("legend").innerHTML=legendItems().map(([c,l])=>`<i><span class="dot d-${c}"></span>${esc(l)}</i>`).join("")+(S.view==="agents"?`<i>${esc(T("approxNote"))}</i>`:"");}
+function render(){document.querySelectorAll(".tab").forEach(t=>{const on=t.dataset.v===S.view;t.classList.toggle("on",on);if(on)t.setAttribute("aria-current","page");else t.removeAttribute("aria-current");});
+ $("viewTitle").textContent=T("tabs")[S.view]||"";renderStats();renderLegend();({health:renderHealth,agents:renderAgents,skills:renderSkills,projects:renderProjects,harness:renderHarness,mcp:renderMcp,docs:renderDocs,live:renderLive,activity:renderActivity})[S.view]();}
+async function commitBox(id, path){const r=await GET("/api/in-repo?path="+encodeURIComponent(path));const el=$(id);if(!el)return;el.innerHTML=r.in_repo?`<label style="display:flex;gap:8px;align-items:center;font-size:var(--fs-2);color:var(--dim)"><input type="checkbox" id="${id}-cb"> ${T("commitToo")}</label>`:`<span class="muted">${T("notRepo2")}</span>`;}
 async function maybeCommit(id, path, message){const cb=$(id+"-cb");if(!cb||!cb.checked)return;const r=await POST("/api/commit",{path,message});toast(r.ok?`${T("committed")} · ${r.message}`:T("commitFail",{m:r.message}));}
 function chipFocus(){return S.focus?`<button class="chip on" id="chipFocus">${esc(T("focusChip",{p:S.focus}))}</button>`:"";}function bindFocus(){const c=$("chipFocus");if(c)c.onclick=()=>{S.focus=null;render();};}
 function mchip(x){return x.machine?` <span class="tl">${esc(x.machine)}</span>`:"";}
 // ---------- HEALTH ----------
 async function loadHealth(){S.health=await GET("/api/health");if(S.view==="health")renderHealth();}
-function healthSevClass(sev){return sev==="crit"?"bad":sev==="warn"?"warn":"info";}
 function healthSevPill(sev){return sev==="crit"?"invalid":sev==="warn"?"warnings":"document";}
 function healthSevLabel(sev){return sev==="crit"?T("sevCrit"):sev==="warn"?T("sevWarn"):T("sevInfo");}
 function healthStrip(){const live=S.live,active=(live&&live.ok?live.agents.filter(a=>a.status==="working"):[]).slice(0,5);
  const activeHtml=(!live||!live.ok)?`<span class="muted">${T("noLive")}</span>`:active.length?active.map(a=>`<b>${esc(a.agent)}</b> <span class="muted">${esc(a.workspace)}</span>`).join(" · "):`<span class="muted">${T("healthNoActive")}</span>`;
- let html=`<div class="box info" style="margin-bottom:10px" id="healthStrip"><div><b>${T("healthActiveNow")}</b> ${activeHtml}</div>`;
+ let html=`<div class="box info" style="margin-bottom:8px;padding:8px 10px;font-size:var(--fs-2)" id="healthStrip"><div><b>${T("healthActiveNow")}</b> ${activeHtml}</div>`;
  if(S.activity){const recent=(S.activity.sessions||[]).slice().sort((p,r)=>(r.mtime||0)-(p.mtime||0)).slice(0,3);
   const recentHtml=recent.length?recent.map(x=>`<b>${esc(x.project||"—")}</b> ${esc(x.title||T("untitled"))}`).join(" · "):`<span class="muted">${T("healthNoRecent")}</span>`;
   html+=`<div style="margin-top:4px"><b>${T("healthRecent")}</b> ${recentHtml}</div>`;}
  return html+"</div>";}
+// The finding list should inform without a click: one dim line of the finding's own evidence.
+const subOf=d=>{const l=String(d||"").split("\n").map(t=>t.trim()).find(Boolean)||"";return l.length>90?l.slice(0,90)+"\u2026":l;};
 function renderHealth(){if(!S.health){$("filters").innerHTML="";$("rows").innerHTML=`<div class="empty">${T("loading")}</div>`;$("detail").innerHTML="";return;}
  const H=S.health,ord={crit:0,warn:1,info:2};const fs=(H.findings||[]).slice().sort((p,r)=>(ord[p.sev]??9)-(ord[r.sev]??9));
  const n={crit:0,warn:0,info:0};fs.forEach(f=>{if(f.sev in n)n[f.sev]++;});
- $("filters").innerHTML=`<span class="stat bad"><b>${n.crit}</b> ${T("sevCrit")}</span><span class="stat warn"><b>${n.warn}</b> ${T("sevWarn")}</span><span class="stat"><b>${n.info}</b> ${T("sevInfo")}</span><span class="muted">${T("ranAt",{t:esc(H.ran_at||"—")})}</span><button class="btn primary" id="bRecheck" style="margin-left:auto" ${S.healthChecking?"disabled":""}>${S.healthChecking?T("checking"):T("recheck")}</button>`;
+ $("filters").innerHTML=`<span class="stat bad"><b>${n.crit}</b> ${T("sevCrit")}</span><span class="stat warn"><b>${n.warn}</b> ${T("sevWarn")}</span><span class="stat"><b>${n.info}</b> ${T("sevInfo")}</span><span class="muted">${T("ranAt",{t:esc(H.ran_at||"—")})}</span><button class="btn" id="bRecheck" style="margin-left:auto" ${S.healthChecking?"disabled":""}>${S.healthChecking?T("checking"):T("recheck")}</button>`;
  $("bRecheck").onclick=async()=>{S.healthChecking=true;renderHealth();await loadHealth();S.healthChecking=false;renderHealth();};
+ // Two panes, like every other view: the list carries clickable headlines, the detail pane carries
+ // the evidence and the command. Findings used to be stacked whole into #rows with #detail empty,
+ // which wasted the right half of the default screen.
+ if(fs.length&&!fs.some((f,i)=>S.sel==="h"+i))S.sel="h0";
  let body=H.error?`<div class="box bad">${esc(H.error)}</div>`:"";
- body+=fs.length?fs.map((f,i)=>`<div class="box ${healthSevClass(f.sev)}" style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center"><b>${esc(f.title)}</b><span class="pill p-${healthSevPill(f.sev)}">${healthSevLabel(f.sev)}</span></div>`+(f.detail?`<pre class="doc" style="margin-top:6px">${esc(f.detail)}</pre>`:"")+(f.fix?`<div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><code id="hfix${i}">${esc(f.fix)}</code><button class="btn" data-copy="${i}">${T("copy")}</button></div>`:"")+`</div>`).join(""):(H.error?"":`<div class="empty">${T("healthOk")}</div>`);
- $("rows").innerHTML=healthStrip()+body;$("detail").innerHTML="";
- document.querySelectorAll("[data-copy]").forEach(b=>b.onclick=async()=>{const i=b.dataset.copy,el=$("hfix"+i),txt=fs[+i].fix;
+ body+=fs.length?fs.map((f,i)=>`<button class="row stack ${S.sel==="h"+i?"sel":""}" data-k="h${i}"><span class="dot d-${healthSevPill(f.sev)}"></span><span class="nn"><span class="n" style="font-family:var(--sans)">${esc(f.title)}</span><span class="sub">${esc(subOf(f.detail))}</span></span><span class="w">${healthSevLabel(f.sev)}</span></button>`).join(""):(H.error?"":`<div class="empty">${T("healthOk")}</div>`);
+ $("rows").innerHTML=healthStrip()+body;
+ $("foot").textContent=`${fs.length} · ${n.crit} ${T("sevCrit")} · ${n.warn} ${T("sevWarn")} · ${n.info} ${T("sevInfo")}`;
+ document.querySelectorAll(".row[data-k]").forEach(r=>r.onclick=()=>{S.sel=r.dataset.k;renderHealth();});
+ renderHealthDetail(fs);}
+function renderHealthDetail(fs){const i=S.sel&&S.sel[0]==="h"?+S.sel.slice(1):-1,f=fs[i];
+ if(!f){$("detail").innerHTML=`<div class="muted">${T(fs.length?"pickFinding":"healthOk")}</div>`;return;}
+ let h=`<div class="h" style="font-family:var(--sans)">${esc(f.title)} <span class="pill p-${healthSevPill(f.sev)}">${healthSevLabel(f.sev)}</span></div>`;
+ if(f.detail)h+=`<div><div class="grp" style="position:static;border:0;padding:0 0 6px">${T("hEvidence")}</div>${evidenceHtml(esc(f.detail))}</div>`;
+ if(f.fix)h+=`<div><div class="grp" style="position:static;border:0;padding:0 0 6px">${T("hFix")}</div><pre class="lines" id="hfix${i}">${esc(f.fix)}</pre><div class="actions"><button class="btn primary" data-copy="${i}">${T("copy")}</button></div></div>`;
+ $("detail").innerHTML=h;
+ $("detail").querySelectorAll("[data-copy]").forEach(b=>b.onclick=async()=>{const j=b.dataset.copy,el=$("hfix"+j),txt=fs[+j].fix;
   try{await navigator.clipboard.writeText(txt);toast(T("copied"));}
   catch(e){const rg=document.createRange();rg.selectNodeContents(el);const s=window.getSelection();s.removeAllRanges();s.addRange(rg);}});}
 // ---------- AGENTS ----------
 function renderAgents(){if(!S.data){$("rows").innerHTML=`<div class="empty">${T("loading")}</div>`;return;}const a=S.data.agents;
  const chips=[["global",T("global")],["project",T("project")],["problems",T("problems")],["unused",T("unused")],["docs",T("documents")]].concat(S.data.codex_present?[["codex","codex"]]:[]);
- $("filters").innerHTML=`<input id="q" placeholder="${T("search")}" value="${esc(S.q)}">`+chips.map(([k,l])=>`<button class="chip ${S.chips.has(k)?"on":""}" data-c="${k}">${l}</button>`).join("")+chipFocus()+(HUB?"":`<button class="btn primary" id="btnCreate" style="margin-left:auto">${T("create")}</button>`);
+ $("filters").innerHTML=`<input id="q" placeholder="${T("search")}" value="${esc(S.q)}">`+chips.map(([k,l])=>`<button class="chip ${S.chips.has(k)?"on":""}" data-c="${k}">${l}</button>`).join("")+chipFocus()+(HUB?"":`<button class="btn${S.mode==="create"?"":" primary"}" id="btnCreate" style="margin-left:auto">${T("create")}</button>`);
  bindFocus();$("q").oninput=e=>{S.q=e.target.value;renderAgents();};document.querySelectorAll(".chip[data-c]").forEach(c=>c.onclick=()=>{const k=c.dataset.c;S.chips.has(k)?S.chips.delete(k):S.chips.add(k);renderAgents();});
  if(!HUB)$("btnCreate").onclick=()=>{S.mode="create";S.sel=null;renderAgents();renderCreate();};
  const q=S.q.toLowerCase();let sel=a.filter(x=>{if(S.focus&&x.project!==S.focus)return false;if(q&&!(x.name+" "+x.project+" "+x.description).toLowerCase().includes(q))return false;
   if(S.chips.has("global")&&x.project!=="global")return false;if(S.chips.has("project")&&x.project==="global")return false;if(S.chips.has("problems")&&!["invalid","warnings"].includes(x.category))return false;
   if(S.chips.has("unused")&&(x.uses>0||!x.is_agent||x.tool==="codex"))return false;if(S.chips.has("docs")&&x.category!=="document")return false;if(!S.chips.has("docs")&&x.category==="document")return false;if(S.chips.has("codex")&&x.tool!=="codex")return false;return true;});
  const ord={invalid:0,warnings:1,valid:2,document:3};sel.sort((p,r)=>(ord[p.category]-ord[r.category])||(r.uses-p.uses)||p.name.localeCompare(r.name));
-  $("rows").innerHTML=sel.length?sel.map(x=>{const key=x.tool+":"+x.project+"/"+x.name;const u=x.is_agent&&x.tool==="claude"?` · ${fmtNum(x.attributed&&x.uses_here!=null?x.uses_here:x.uses)}${x.homonyms>1&&!(x.attributed&&x.uses_here!=null)?"≈":""}`:"";
-  return `<button class="row ${S.sel===key?"sel":""}" data-k="${esc(key)}"><span class="dot d-${agentClass(x.category)}"></span><span class="n">${esc(x.name)}${x.tool==="codex"?'<span class="tl codex">codex</span>':""}</span><span class="w">${esc(x.project)}${u}${mchip(x)}</span></button>`;}).join(""):`<div class="empty">${T("nothing")}</div>`;
+  // Own columns for project and count: five same-named agents differ by their project, and the
+  // counts only stack under tabular-nums when they share one right-aligned column.
+  $("rows").innerHTML=sel.length?sel.map(x=>{const key=x.tool+":"+x.project+"/"+x.name;const approx=x.homonyms>1&&!(x.attributed&&x.uses_here!=null);
+  const u=x.is_agent&&x.tool==="claude"?`${fmtNum(x.attributed&&x.uses_here!=null?x.uses_here:x.uses)}${approx?`<span class="approx" title="${esc(T("approxT"))}">≈</span>`:""}`:"—";
+  return `<button class="row cols ${S.sel===key?"sel":""}" data-k="${esc(key)}"><span class="dot d-${agentClass(x.category)}"></span><span class="n">${esc(x.name)}${x.tool==="codex"?'<span class="tl codex">codex</span>':""}</span><span class="p">${esc(x.project)}${mchip(x)}</span><span class="c">${u}</span></button>`;}).join(""):`<div class="empty">${T("nothing")}</div>`;
  document.querySelectorAll(".row").forEach(r=>r.onclick=()=>{S.sel=r.dataset.k;S.mode=null;renderAgents();renderAgentDetail();});
  const ag=a.filter(x=>x.is_agent);const inv=ag.filter(x=>x.category==="invalid").length,av=ag.filter(x=>x.category==="warnings").length,su=ag.filter(x=>x.uses===0).length,dc=a.filter(x=>x.category==="document").length;
  $("foot").textContent=`${sel.filter(x=>x.is_agent).length} / ${ag.length}`+(inv?` · ${inv} ${T("invalid")}`:"")+(av?` · ${av} ${T("warnings")}`:"")+(su?` · ${su} ${T("unused")}`:"")+(dc?` · ${dc} ${T("documents")}`:"")+(S.data.window?` · ${S.data.window} →`:"");
  if(!S.mode&&!S.sel)$("detail").innerHTML=`<div class="muted">${T("pickAgent")}</div>`;}
 function renderAgentDetail(){const x=(S.data?.agents||[]).find(y=>y.tool+":"+y.project+"/"+y.name===S.sel);if(!x){$("detail").innerHTML=`<div class="muted">${T("pickAgent")}</div>`;return;}
  const et={valid:T("ok"),warnings:T("warnings"),invalid:T("invalid"),document:T("documents")}[agentClass(x.category)];
- let h=`<div class="h">${esc(x.name)} <span class="pill p-${agentClass(x.category)}">${et}</span>${x.tool==="codex"?'<span class="tl codex">codex</span>':'<span class="tl">claude</span>'}</div><div class="meta"><span>${T("where")}</span><b>${esc(x.project)}</b>`+((!HUB&&x.path)?`<span>${T("file")}</span><b><code>${esc(x.path)}</code></b>`:"")+
+ let h=`<div class="h">${esc(x.name)} <span class="pill p-${agentClass(x.category)}">${et}</span>${x.tool==="codex"?'<span class="tl codex">codex</span>':'<span class="tl">claude</span>'}</div><div class="meta"><span>${T("where")}</span><b>${esc(x.project)}</b>`+((!HUB&&x.path)?`<span>${T("file")}</span><b><code>${wbr(esc(x.path))}</code></b>`:"")+
    (x.is_agent?`<span>${T("model")}</span><b>${esc(x.model||"—")}</b><span>${T("tools")}</span><b>${esc(x.tools||"—")}</b><span>${T("lastUse")}</span><b>${x.tool==="codex"?`<span class="muted">${T("codexUses")}</span>`:x.last?esc(x.last)+" · "+(x.attributed&&x.uses_here!=null?`${fmtNum(x.uses_here)} ${T("here")} · ${fmtNum(x.uses)} total`:`${fmtNum(x.uses)} ${T("invocations")}`):T("never")}${x.homonyms>1&&!(x.attributed&&x.uses_here!=null)?` <span class="muted">(${T("shared",{n:x.homonyms-1})})</span>`:""}</b>`:"")+`</div>`;
  if(x.description||x.desc)h+=`<div class="muted">${esc(x.description||x.desc)}</div>`;if(x.category==="document")h+=`<div class="box info">${T("isDoc")}</div>`;
  if((x.critical||[]).length)h+=`<div class="box bad"><b>${T("notMet")}</b><ul>${(x.critical||[]).map(c=>`<li>${esc(c)}</li>`).join("")}</ul></div>`;if((x.warnings||[]).length)h+=`<div class="box warn"><b>${T("warnT")}</b><ul>${(x.warnings||[]).map(c=>`<li>${esc(c)}</li>`).join("")}</ul></div>`;
- h+=`<div id="refs"></div><div class="actions">`+(HUB?"":`<button class="btn primary" id="bOpen">${T("openFile")}</button><button class="btn" id="bRefs">${T("refs")}</button><button class="btn danger" id="bArch">${T("archive")}</button>`)+`</div>`;
+ h+=`<div id="refs"></div><div class="actions">`+(HUB?"":`<button class="btn" id="bOpen">${T("openFile")}</button><button class="btn" id="bRefs">${T("refs")}</button><button class="btn danger" id="bArch">${T("archive")}</button>`)+`</div>`;
  $("detail").innerHTML=h;
  if(!HUB){$("bOpen").onclick=async()=>{toast((await POST("/api/open",{path:x.path})).message);};
-  $("bRefs").onclick=async()=>{$("refs").innerHTML=`<div class="muted">${T("searching")}</div>`;const r=await GET("/api/references?name="+encodeURIComponent(x.name));$("refs").innerHTML=r.references.length?`<div class="box warn"><b>${T("refsFound",{n:r.references.length,name:esc(x.name)})}</b><ul>${r.references.map(f=>`<li><code>${esc(f)}</code></li>`).join("")}</ul></div>`:`<div class="box info">${T("refsNone")}</div>`;};
+  $("bRefs").onclick=async()=>{$("refs").innerHTML=`<div class="muted">${T("searching")}</div>`;const r=await GET("/api/references?name="+encodeURIComponent(x.name));$("refs").innerHTML=r.references.length?`<div class="box warn"><b>${T("refsFound",{n:r.references.length,name:esc(x.name)})}</b><ul>${r.references.map(f=>`<li><code>${wbr(esc(f))}</code></li>`).join("")}</ul></div>`:`<div class="box info">${T("refsNone")}</div>`;};
   $("bArch").onclick=()=>renderArchive(x,"/api/archive",{name:x.name,project:x.project,tool:x.tool},"agents/"+x.project,renderAgentDetail,loadAgents);}}
 function renderArchive(x,url,body,sub,back,reload,extra){$("detail").innerHTML=`<div class="h">${T("archTitle",{name:esc(x.name)})}</div><div class="muted">${extra||T("archInfo",{p:"_archive/&lt;today&gt;/"+sub+"/"})}</div><div id="archRefs" class="muted">${T("checkingRefs")}</div><div id="cbArch"></div><div class="actions"><button class="btn danger" id="bOk" disabled>${T("archiveBtn")}</button><button class="btn" id="bNo">${T("cancel")}</button></div>`;
  $("bNo").onclick=back;commitBox("cbArch",x.path);GET("/api/references?name="+encodeURIComponent(x.name)).then(r=>{const refs=r.references;const go=async(force)=>{$("bOk").disabled=true;$("bOk").textContent=T("archiving");const rr=await POST(url,{...body,force});toast(rr.message);if(rr.ok){await maybeCommit("cbArch",x.path,`cabina: archive ${x.name} (${x.project})`);S.sel=null;$("detail").innerHTML=`<div class="box info">${esc(rr.message)}<br><span class="muted">${T("updating")}</span></div>`;await reload();}else back();};
   if(!refs.length){$("archRefs").innerHTML=`<div class="box info">${T("refsNone")}</div>`;$("bOk").disabled=false;$("bOk").onclick=()=>go(false);}
-  else{$("archRefs").innerHTML=`<div class="box warn">${T("archRefs",{n:refs.length,project:esc(x.project)})}<ul>${refs.map(f=>`<li><code>${esc(f)}</code></li>`).join("")}</ul><label style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="force"> ${T("force")}</label></div>`;$("force").onchange=e=>{$("bOk").disabled=!e.target.checked;};$("bOk").onclick=()=>go(true);}});}
+  else{$("archRefs").innerHTML=`<div class="box warn">${T("archRefs",{n:refs.length,project:esc(x.project)})}<ul>${refs.map(f=>`<li><code>${wbr(esc(f))}</code></li>`).join("")}</ul><label style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="force"> ${T("force")}</label></div>`;$("force").onchange=e=>{$("bOk").disabled=!e.target.checked;};$("bOk").onclick=()=>go(true);}});}
 function renderCreate(){const proys=S.data?.projects||["global"];const models=["sonnet","opus","haiku"];
  $("detail").innerHTML=`<div class="h">${T("newAgent")}</div><div class="form"><label>${T("where")} <select id="fProj">${proys.map(p=>`<option ${p==="global"?"selected":""}>${esc(p)}</option>`).join("")}</select></label>
  <label>${T("fName")} <input id="fName" placeholder="tax-reviewer"><span class="err" id="eName"></span></label><label>${T("fDesc")} <input id="fDesc"><span class="err" id="eDesc"></span></label>
@@ -242,7 +327,7 @@ function renderCreate(){const proys=S.data?.projects||["global"];const models=["
  $("bCancel").onclick=()=>{S.mode=null;renderAgents();};$("bPrev").onclick=()=>{const v={project:$("fProj").value,name:$("fName").value.trim(),description:$("fDesc").value.trim(),model:$("fModel").value.trim(),tools:$("fTools").value.trim(),body:$("fBody").value.trim()};let ok=true;const e=(id,c,m)=>{$(id).textContent=c?"":m;if(!c)ok=false;};
   e("eName",/^[a-z0-9]+(-[a-z0-9]+)*$/.test(v.name),T("eName"));e("eDesc",v.description.length>=10,T("eDesc"));e("eModel",!!v.model,T("eReq"));e("eTools",v.tools.length>0,T("eTools"));e("eBody",v.body.length>=10,T("eBody"));if(!ok)return;
   const shadows=v.project!=="global"&&(S.data.agents||[]).some(a=>a.project==="global"&&a.name===v.name);const fm=[`name: ${v.name}`,`description: ${v.description}`,`model: ${v.model}`,`tools: ${v.tools==="*"?'"*"':v.tools}`].concat(shadows?["overrides: global"]:[]);
-  $("prev").innerHTML=(shadows?`<div class="box warn">${T("shadows",{name:esc(v.name),project:esc(v.project)})}</div>`:"")+`<pre class="preview">---\n${esc(fm.join("\n"))}\n---\n\n${esc(v.body)}</pre><div class="actions"><button class="btn primary" id="bGo">${T("writeIn",{project:esc(v.project)})}</button></div>`;
+  $("prev").innerHTML=(shadows?`<div class="box warn">${T("shadows",{name:esc(v.name),project:esc(v.project)})}</div>`:"")+`<pre class="preview">---\n${esc(fm.join("\n"))}\n---\n\n${esc(v.body)}</pre><div class="actions"><button class="btn primary" id="bGo">${T("writeIn",{project:esc(v.project)})}</button></div>`;$("bPrev").classList.remove("primary");
   $("bGo").onclick=async()=>{$("bGo").disabled=true;const r=await POST("/api/create",v);toast(r.message);if(r.ok){S.mode=null;S.sel=v.project+"/"+v.name;await loadAgents();}else $("bGo").disabled=false;};};}
 // ---------- SKILLS ----------
 function renderSkills(){if(!S.skills){$("rows").innerHTML=`<div class="empty">${T("loading")}</div>`;$("filters").innerHTML="";return;}const a=S.skills.skills;
@@ -251,18 +336,18 @@ function renderSkills(){if(!S.skills){$("rows").innerHTML=`<div class="empty">${
  $("q").oninput=e=>{S.q=e.target.value;renderSkills();};document.querySelectorAll(".chip[data-c]").forEach(c=>c.onclick=()=>{const k=c.dataset.c;S.chips.has(k)?S.chips.delete(k):S.chips.add(k);renderSkills();});
  const q=S.q.toLowerCase();let sel=a.filter(x=>{if(S.focus&&x.project!==S.focus)return false;if(q&&!(x.name+" "+x.project+" "+x.desc).toLowerCase().includes(q))return false;if(S.chips.has("global")&&x.project!=="global")return false;if(S.chips.has("project")&&x.project==="global")return false;if(S.chips.has("symlink")&&!x.symlink)return false;if(S.chips.has("unused")&&x.uses>0)return false;if(S.chips.has("problems")&&x.state==="ok")return false;return true;});
  sel.sort((p,r)=>(p.state==="ok")-(r.state==="ok")||(r.uses-p.uses)||p.name.localeCompare(r.name));const est=x=>x.state==="ok"?"valid":(x.state==="broken-link"||x.state==="no-skill-md")?"invalid":"warnings";
-  $("rows").innerHTML=sel.length?sel.map(x=>{const key=(x.tool||"claude")+":"+x.project+"/"+x.name;return `<button class="row ${S.sel===key?"sel":""}" data-k="${esc(key)}"><span class="dot d-${agentClass(est(x))}"></span><span class="n">${esc(x.name)}${x.symlink?' <span class="muted">↗</span>':""}${x.tool==="codex"?'<span class="tl codex">codex</span>':""}</span><span class="w">${esc(x.project)} · ${fmtNum(x.uses_here!=null?x.uses_here:x.uses)}</span></button>`;}).join(""):`<div class="empty">${T("nothing")}</div>`;
+  $("rows").innerHTML=sel.length?sel.map(x=>{const key=(x.tool||"claude")+":"+x.project+"/"+x.name;return `<button class="row cols ${S.sel===key?"sel":""}" data-k="${esc(key)}"><span class="dot d-${agentClass(est(x))}"></span><span class="n">${esc(x.name)}${x.symlink?' <span class="muted">↗</span>':""}${x.tool==="codex"?'<span class="tl codex">codex</span>':""}</span><span class="p">${esc(x.project)}</span><span class="c">${fmtNum(x.uses_here!=null?x.uses_here:x.uses)}</span></button>`;}).join(""):`<div class="empty">${T("nothing")}</div>`;
   document.querySelectorAll(".row").forEach(r=>r.onclick=()=>{S.sel=r.dataset.k;S.skillBody=null;S.skillFile=null;renderSkills();renderSkillDetail();});
  const ng=a.filter(x=>x.project==="global").length,prob=a.filter(x=>x.state!=="ok").length,su=a.filter(x=>x.uses===0).length;$("foot").textContent=`${sel.length} / ${a.length} · ${ng} ${T("global")} · ${a.length-ng} ${T("project")}`+(prob?` · ${prob} ${T("problems")}`:"")+` · ${su} ${T("unused")}`;
  if(!S.sel)$("detail").innerHTML=`<div class="muted">${T("pickSkill")}</div>`;}
 function renderSkillDetail(){const x=(S.skills?.skills||[]).find(y=>(y.tool||"claude")+":"+y.project+"/"+y.name===S.sel);if(!x)return;const et={ok:["valid",T("ok")],"no-frontmatter":["warnings","no frontmatter"],"no-skill-md":["invalid","no SKILL.md"],"broken-link":["invalid","broken link"]}[x.state];
-  let h=`<div class="h">${esc(x.name)} <span class="pill p-${agentClass(et[0])}">${et[1]}</span></div><div class="meta"><span>${T("where")}</span><b>${esc(x.project)}</b><span>${T("path")}</span><b><code>${esc(x.path)}</code></b>`+(x.symlink?`<span>${T("linksTo")}</span><b><code>${esc(x.target)}</code></b>`:"")+`<span>${T("size")}</span><b>${fmtNum(x.lines)} ${T("lines")}</b><span>${T("lastUse")}</span><b>${x.last?esc(x.last)+" · "+fmtNum(x.uses)+" "+T("invocations"):T("never")}</b></div>`;
+  let h=`<div class="h">${esc(x.name)} <span class="pill p-${agentClass(et[0])}">${et[1]}</span></div><div class="meta"><span>${T("where")}</span><b>${esc(x.project)}</b><span>${T("path")}</span><b><code>${wbr(esc(x.path))}</code></b>`+(x.symlink?`<span>${T("linksTo")}</span><b><code>${wbr(esc(x.target))}</code></b>`:"")+`<span>${T("size")}</span><b>${fmtNum(x.lines)} ${T("lines")}</b><span>${T("lastUse")}</span><b>${x.last?esc(x.last)+" · "+fmtNum(x.uses)+" "+T("invocations"):T("never")}</b></div>`;
  if(x.desc)h+=`<div class="muted">${esc(x.desc)}</div>`;if(x.state==="broken-link")h+=`<div class="box bad">${T("brokenLink")}</div>`;if(x.state==="no-skill-md")h+=`<div class="box bad">${T("noSkillMd")}</div>`;
  const canViewBody=!HUB&&(x.state==="ok"||x.state==="no-frontmatter");
- h+=`<div id="refs"></div>`+(HUB?"":`<div class="actions"><button class="btn primary" id="bOpen">${T("openFolder")}</button>`+(canViewBody?`<button class="btn" id="bViewBody">${T("skViewBody")}</button>`:"")+`<button class="btn" id="bRefs">${T("refs")}</button><button class="btn danger" id="bArch">${T("archive")}</button></div>`);$("detail").innerHTML=h;
+ h+=`<div id="refs"></div>`+(HUB?"":`<div class="actions"><button class="btn" id="bOpen">${T("openFolder")}</button>`+(canViewBody?`<button class="btn" id="bViewBody">${T("skViewBody")}</button>`:"")+`<button class="btn" id="bRefs">${T("refs")}</button><button class="btn danger" id="bArch">${T("archive")}</button></div>`);$("detail").innerHTML=h;
  if(!HUB){$("bOpen").onclick=async()=>{toast((await POST("/api/open",{path:x.path})).message);};
   if(canViewBody)$("bViewBody").onclick=()=>loadSkillBody(x);
-  $("bRefs").onclick=async()=>{$("refs").innerHTML=`<div class="muted">${T("searching")}</div>`;const r=await GET("/api/references?name="+encodeURIComponent(x.name));$("refs").innerHTML=r.references.length?`<div class="box warn"><b>${T("refsFound",{n:r.references.length,name:esc(x.name)})}</b><ul>${r.references.map(f=>`<li><code>${esc(f)}</code></li>`).join("")}</ul></div>`:`<div class="box info">${T("refsNone")}</div>`;};
+  $("bRefs").onclick=async()=>{$("refs").innerHTML=`<div class="muted">${T("searching")}</div>`;const r=await GET("/api/references?name="+encodeURIComponent(x.name));$("refs").innerHTML=r.references.length?`<div class="box warn"><b>${T("refsFound",{n:r.references.length,name:esc(x.name)})}</b><ul>${r.references.map(f=>`<li><code>${wbr(esc(f))}</code></li>`).join("")}</ul></div>`:`<div class="box info">${T("refsNone")}</div>`;};
   $("bArch").onclick=()=>renderArchive(x,"/api/archive-skill",{name:x.name,project:x.project,path:x.path},"skills/"+x.project,renderSkillDetail,loadSkills,x.symlink?T("skArchLink"):T("skArch")+` <code>_archive/&lt;today&gt;/skills/${esc(x.project)}/</code>.`);}}
 function fmtBytesSk(n){n=Number(n)||0;if(n<1024)return n+" B";if(n<1024*1024)return (n/1024).toFixed(1)+" KB";return (n/1024/1024).toFixed(1)+" MB";}
 async function loadSkillBody(x){const key=S.sel;const tool=x.tool||"claude",project=x.project,name=x.name;S.skillBody={loading:true,error:null,data:null};S.skillFile=null;renderSkillBodyView(x);
@@ -278,7 +363,7 @@ function renderSkillBodyView(x){const sb=S.skillBody;if(!sb)return;
  if(sb.error){$("detail").innerHTML=h+`<div class="box bad">${esc(sb.error)}</div><div class="actions"><button class="btn" id="bSkClose">${T("skClose")}</button></div>`;$("bSkClose").onclick=()=>renderSkillDetail();return;}
  const d=sb.data;
  if(d.truncated)h+=`<div class="box warn">${T("skTruncated")}</div>`;
- h+=`<pre class="doc">${esc(d.content)}</pre>`;
+ h+=`<pre class="doc full">${esc(d.content)}</pre>`;
  const others=(d.files||[]).filter(f=>f.path!=="SKILL.md");
  if(others.length)h+=`<div class="muted" style="margin-top:6px">${T("skFiles")}</div><div style="display:flex;flex-direction:column;gap:4px;margin-top:4px">`+
   others.map(f=>`<button class="btn" data-p="${esc(f.path)}" style="text-align:left">${esc(f.path)} · ${fmtBytesSk(f.size)}</button>`).join("")+`</div>`;
@@ -298,7 +383,7 @@ function renderSkillFileView(x){const sf=S.skillFile;if(!sf)return;
  if(sf.loading){$("detail").innerHTML=h+`<div class="muted">${T("loading")}</div>`;return;}
  if(sf.error){$("detail").innerHTML=h+`<div class="box bad">${esc(sf.error)}</div><div class="actions"><button class="btn" id="bSkBack">${T("skBackToBody")}</button></div>`;$("bSkBack").onclick=()=>renderSkillBodyView(x);return;}
  const d=sf.data;
- h+=d.binary?`<div class="box info">${T("skBinary")}</div>`:`<pre class="doc">${esc(d.content||"")}</pre>`;
+ h+=d.binary?`<div class="box info">${T("skBinary")}</div>`:`<pre class="doc full">${esc(d.content||"")}</pre>`;
  h+=`<div class="muted">${fmtBytesSk(d.size)}</div><div class="actions"><button class="btn" id="bSkBack">${T("skBackToBody")}</button></div>`;
  $("detail").innerHTML=h;$("bSkBack").onclick=()=>renderSkillBodyView(x);}
 // ---------- ACTIVITY ----------
@@ -387,7 +472,7 @@ function healthPills(health){const parts=[];
 function renderProjectTiles(){if(HUB||!S.tiles)return "";const tiles=S.tiles.tiles||[];
  const spark=S.healthHistory?healthSparkline(S.healthHistory.series):"";
  const cells=tiles.map(t=>{const since=relSince(t.last_session);
-  return `<div class="tile"><span class="tileName">${esc(t.project)}</span><span class="pill ${t.active?"p-valid":"p-document"}">${t.active?esc(T("tileActive")):esc(T("tileIdle"))}</span><span class="muted" style="font-size:11px">${since!==null?esc(since):esc(T("tileNever"))}</span><span style="margin-left:auto">${healthPills(t.health)}</span></div>`;}).join("");
+  return `<div class="tile"><span class="tileName">${esc(t.project)}</span><span class="pill ${t.active?"p-valid":"p-document"}">${t.active?esc(T("tileActive")):esc(T("tileIdle"))}</span><span class="muted" style="font-size:var(--fs-1)">${since!==null?esc(since):esc(T("tileNever"))}</span><span style="margin-left:auto">${healthPills(t.health)}</span></div>`;}).join("");
  return `<div class="tilesHead"><span class="muted">${T("tilesTitle")}</span>${healthPills(S.tiles.health)}${spark}</div><div class="tilesGrid">${cells}</div>`;}
 function renderProjects(){if(!S.projs){$("rows").innerHTML=`<div class="empty">${T("loading")}</div>`;$("filters").innerHTML="";return;}const a=S.projs.projects;
  $("filters").innerHTML=`<span class="muted">${T("projHint")}</span>`+chipFocus()+(HUB?"":`<button class="btn" id="bRescan" style="margin-left:auto" title="${T("rescanT")}">${T("rescan")}</button><button class="btn" id="bExport" title="${T("exportT")}">${T("exportBtn")}</button><button class="btn" id="bCompare" title="${T("compareT")}">${T("compareBtn")}</button>`);bindFocus();
@@ -400,7 +485,7 @@ function renderProjects(){if(!S.projs){$("rows").innerHTML=`<div class="empty">$
  $("foot").textContent=`${a.length} · ${a.reduce((s,x)=>s+x.agents,0)} ${T("agentsN")} · ${a.reduce((s,x)=>s+x.skills,0)} ${T("skillsN")} · ${a.reduce((s,x)=>s+x.worktrees,0)} worktrees`+(wtProjects.length?` (${wtMeasured?wtG.toFixed(1)+" GB":"? GB"})`:"");
  if(!S.sel)$("detail").innerHTML=`<div class="muted">${T("pickProject")}</div>`;}
 function renderProjDetail(){const x=(S.projs?.projects||[]).find(y=>projKey(y)===S.sel);if(!x)return;const doc=k=>`<span class="pill ${x.docs[k]?"p-valid":"p-document"}">${k}</span>`;
- let h=`<div class="h">${esc(x.name)}${mchip(x)}${S.focus===x.name?` <span class="pill p-valid">${T("inFocus")}</span>`:""}</div><div class="meta"><span>${T("path")}</span><b><code>${esc(x.path)}</code></b><span>${T("git")}</span><b>${x.git?esc(x.branch||"—")+(x.dirty?` · <span style="color:var(--amber)">${T("uncommitted",{n:x.dirty})}</span>`:" · "+T("clean")):T("notRepo")}</b><span>${T("lastCommit")}</span><b>${esc(x.last_commit||"—")}</b>
+ let h=`<div class="h">${esc(x.name)}${mchip(x)}${S.focus===x.name?` <span class="pill p-valid">${T("inFocus")}</span>`:""}</div><div class="meta"><span>${T("path")}</span><b><code>${wbr(esc(x.path))}</code></b><span>${T("git")}</span><b>${x.git?esc(x.branch||"—")+(x.dirty?` · <span style="color:var(--amber)">${T("uncommitted",{n:x.dirty})}</span>`:" · "+T("clean")):T("notRepo")}</b><span>${T("lastCommit")}</span><b>${esc(x.last_commit||"—")}</b>
   <span>${T("assets")}</span><b>${x.agents} ${T("agentsN")} · ${x.skills} ${T("skillsN")} · ${x.commands} ${T("commandsN")} · ${x.rules} ${T("rulesN")}</b><span>${T("harness")}</span><b>${x.hooks} ${T("hooksN")} · ${x.workflows} ${T("wfN")}</b><span>${T("docsN")}</span><b>${["CLAUDE.md","HARNESS.md","MEMORY.md","PROGRESS.md"].map(doc).join(" ")}</b>`+
   (x.memory_days!==null?`<span>${T("memDays")}</span><b>${x.memory_days===0?T("today"):T("daysUntouched",{n:x.memory_days})}${x.memory_days>30?` <span style="color:var(--amber)">${T("maybeDead")}</span>`:""}</b>`:"")+`</div>`;
  h+=(!HUB&&x.worktrees?`<div id="wtPanel" class="box info">${esc(T("loading"))}</div>`:"");
@@ -497,16 +582,16 @@ function renderHarDetail(){if(!S.sel)return;const tipo=S.sel.slice(0,1),name=S.s
   if(dr.skills.length)h+=`<div class="box ${dr.skills.some(x=>x.status==="diverged")?"warn":"info"}"><b>${T("skillsD")}</b>: ${dr.skills.map(x=>`${esc(x.name)} <span class="pill p-${st(x.status)}">${esc(x.status)}</span>`).join(" ")}</div>`;
   $("detail").innerHTML=h;return;}
  if(tipo==="e"){const e=S.har.states.find(x=>harKey(x)===name);if(!e)return;const lvl={complete:T("complete"),partial:T("partial"),none:T("noHar")};
-  const cls=harnessClass(e.level);let h=`<div class="h">${esc(e.name)} <span class="pill p-${cls}">${lvl[cls]}</span></div><div class="meta"><span>${T("path")}</span><b><code>${esc(e.path)}</code></b><span>${T("pieces")}</span><b>${["CLAUDE.md","HARNESS.md","MEMORY.md","hooks","rules","workflows"].map(k=>`<span class="pill ${(e.has||{})[k]?"p-valid":"p-document"}">${k}</span>`).join(" ")}</b><span>${T("hooks")}</span><b>${(e.hooks||[]).length?T("activeOf",{a:(e.hooks_active||[]).length,n:(e.hooks||[]).length}):T("none")}</b><span>rules</span><b>${e.rules}</b><span>workflows</span><b>${e.workflows}</b>`+
+  const cls=harnessClass(e.level);let h=`<div class="h">${esc(e.name)} <span class="pill p-${cls}">${lvl[cls]}</span></div><div class="meta"><span>${T("path")}</span><b><code>${wbr(esc(e.path))}</code></b><span>${T("pieces")}</span><b>${["CLAUDE.md","HARNESS.md","MEMORY.md","hooks","rules","workflows"].map(k=>`<span class="pill ${(e.has||{})[k]?"p-valid":"p-document"}">${k}</span>`).join(" ")}</b><span>${T("hooks")}</span><b>${(e.hooks||[]).length?T("activeOf",{a:(e.hooks_active||[]).length,n:(e.hooks||[]).length}):T("none")}</b><span>rules</span><b>${e.rules}</b><span>workflows</span><b>${e.workflows}</b>`+
    (e.memory_days!==null?`<span>MEMORY.md</span><b>${e.memory_days===0?T("today"):T("daysUntouched",{n:e.memory_days})}${e.memory_days>30?` <span style="color:var(--amber)">${T("maybeDead")}</span>`:""}</b>`:"")+`<span>${T("runlogL")}</span><b>${e.runlog?T("yesRl"):T("no")}</b></div>`;
-  if((e.hooks_broken||[]).length)h+=`<div class="box bad">${T("hkBroken",{n:e.hooks_broken.length})}<ul>${e.hooks_broken.map(x=>`<li><code>${esc(x)}</code></li>`).join("")}</ul></div>`;
-  if((e.hooks_dead||[]).length)h+=`<div class="box warn">${T("hkDead",{n:e.hooks_dead.length})}<ul>${e.hooks_dead.map(x=>`<li><code>${esc(x)}</code></li>`).join("")}</ul><div class="muted" style="margin-top:6px">${T("hkDeadFix")}</div></div>`;
-  if((e.hooks_active||[]).length)h+=`<div class="box info"><b>${T("hkActive")}</b><ul>${e.hooks_active.map(x=>`<li><code>${esc(x)}</code></li>`).join("")}</ul>${e.hooks_helpers?.length?`<div class="muted">${T("helpers")} ${e.hooks_helpers.map(esc).join(", ")}</div>`:""}</div>`;
+  if((e.hooks_broken||[]).length)h+=`<div class="box bad">${T("hkBroken",{n:e.hooks_broken.length})}<ul>${e.hooks_broken.map(x=>`<li><code>${wbr(esc(x))}</code></li>`).join("")}</ul></div>`;
+  if((e.hooks_dead||[]).length)h+=`<div class="box warn">${T("hkDead",{n:e.hooks_dead.length})}<ul>${e.hooks_dead.map(x=>`<li><code>${wbr(esc(x))}</code></li>`).join("")}</ul><div class="muted" style="margin-top:6px">${T("hkDeadFix")}</div></div>`;
+  if((e.hooks_active||[]).length)h+=`<div class="box info"><b>${T("hkActive")}</b><ul>${e.hooks_active.map(x=>`<li><code>${wbr(esc(x))}</code></li>`).join("")}</ul>${e.hooks_helpers?.length?`<div class="muted">${T("helpers")} ${e.hooks_helpers.map(esc).join(", ")}</div>`:""}</div>`;
   if((e.missing||[]).length)h+=`<div class="box warn"><b>${T("missing")}</b>: ${e.missing.map(esc).join(", ")}. ${e.level==="none"?T("noneMsg"):""}</div>`;
-  h+=`<div class="actions"><button class="btn primary" id="bFolder">${T("openClaude")}</button></div>`;$("detail").innerHTML=h;$("bFolder").onclick=async()=>{toast((await POST("/api/open",{path:e.path+"/.claude"})).message);};}
+  h+=`<div class="actions"><button class="btn" id="bFolder">${T("openClaude")}</button></div>`;$("detail").innerHTML=h;$("bFolder").onclick=async()=>{toast((await POST("/api/open",{path:e.path+"/.claude"})).message);};}
  else{const b=S.har.runlogs.find(x=>x.project===name);if(!b)return;const r=b.summary;
-  let h=`<div class="h">${T("rlTitle",{p:esc(b.project)})}</div><div class="meta"><span>${T("file")}</span><b><code>${esc(b.path)}</code></b><span>${T("runsN")}</span><b>${r.runs}</b><span>${T("consqL")}</span><b>${r.consequential} <span class="muted">${T("consqD")}</span></b><span>${T("tokMeas")}</span><b>${T("inRuns",{a:r.tokens_k_measured,b:r.runs_with_tokens,c:r.runs})}${r.runs_with_tokens<r.runs?` <span class="muted">${T("unmeasured",{n:r.runs-r.runs_with_tokens})}</span>`:""}</b><span>${T("cost")}</span><b>${r.k_per_consequential?T("kPerL",{k:r.k_per_consequential}):"—"}</b></div><div class="muted">${T("rlHint")}</div><div style="display:flex;flex-direction:column;gap:8px">`+
-   b.rows.map(f=>`<div class="box info" style="color:var(--ink)"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><b>${esc(f.date)}</b><span class="muted">${esc(f.vehicle)}</span></div><div>${esc(f.task)}</div><div class="muted" style="margin-top:4px;font-size:12px">${T("agentsL")}: ${esc(f.agents)}${f.tokens_k?` · ${f.tokens_k}k`:" "+T("tokNd")}${f.funnel?` ${T("funnel")} ${f.funnel.join(" → ")}`:""} · <b style="color:${f.consequential?"var(--moss)":"var(--dim)"}">${f.consequential} ${T("consqL")}</b></div></div>`).join("")+`</div><div class="actions"><button class="btn primary" id="bOpen">${T("openRl")}</button></div>`;
+  let h=`<div class="h">${T("rlTitle",{p:esc(b.project)})}</div><div class="meta"><span>${T("file")}</span><b><code>${wbr(esc(b.path))}</code></b><span>${T("runsN")}</span><b>${r.runs}</b><span>${T("consqL")}</span><b>${r.consequential} <span class="muted">${T("consqD")}</span></b><span>${T("tokMeas")}</span><b>${T("inRuns",{a:r.tokens_k_measured,b:r.runs_with_tokens,c:r.runs})}${r.runs_with_tokens<r.runs?` <span class="muted">${T("unmeasured",{n:r.runs-r.runs_with_tokens})}</span>`:""}</b><span>${T("cost")}</span><b>${r.k_per_consequential?T("kPerL",{k:r.k_per_consequential}):"—"}</b></div><div class="muted">${T("rlHint")}</div><div style="display:flex;flex-direction:column;gap:8px">`+
+   b.rows.map(f=>`<div class="box info" style="color:var(--ink)"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><b>${esc(f.date)}</b><span class="muted">${esc(f.vehicle)}</span></div><div>${esc(f.task)}</div><div class="muted" style="margin-top:4px;font-size:var(--fs-2)">${T("agentsL")}: ${esc(f.agents)}${f.tokens_k?` · ${f.tokens_k}k`:" "+T("tokNd")}${f.funnel?` ${T("funnel")} ${f.funnel.join(" → ")}`:""} · <b style="color:${f.consequential?"var(--moss)":"var(--dim)"}">${f.consequential} ${T("consqL")}</b></div></div>`).join("")+`</div><div class="actions"><button class="btn" id="bOpen">${T("openRl")}</button></div>`;
   $("detail").innerHTML=h;$("bOpen").onclick=async()=>{toast((await POST("/api/open",{path:b.path})).message);};}}
 // ---------- HOOKS ----------
 function renderHooksPanel(){const s=S.hooks;
@@ -514,10 +599,10 @@ function renderHooksPanel(){const s=S.hooks;
  const bothIn=s.guard_installed&&s.brief_installed;
  const disabled=bothIn||(!s.cmd_resolves&&!S.hooksForce);
  const resolveTxt=s.cmd_resolves?`${T("hkCmdFound")} <code>${esc(s.cmd_path||"")}</code>`:`<span style="color:var(--rust)">${T("hkCmdMissing")}</span>`;
- let h=`<div class="box info" id="hooksPanel" style="margin-bottom:10px"><b>${T("hkInstallTitle")}</b><div class="muted"><code>${esc(s.settings_path)}</code></div>`;
+ let h=`<div class="box info" id="hooksPanel" style="margin-bottom:10px"><b>${T("hkInstallTitle")}</b><div class="muted"><code>${wbr(esc(s.settings_path))}</code></div>`;
  h+=`<div style="margin-top:4px"><span class="pill p-${s.guard_installed?"valid":"document"}">${s.guard_installed?"✓":"–"}</span> guard &nbsp; <span class="pill p-${s.brief_installed?"valid":"document"}">${s.brief_installed?"✓":"–"}</span> brief</div>`;
- h+=`<div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap"><label class="muted">${T("hkCmd")}</label><input id="hkCmdInput" value="${esc(S.hooksCmd||"cabina")}" style="width:140px"><span style="font-size:12px">${resolveTxt}</span></div>`;
- if(!s.cmd_resolves)h+=`<label style="display:flex;gap:6px;align-items:center;font-size:12px;margin-top:6px"><input type="checkbox" id="hkForce" ${S.hooksForce?"checked":""}> ${T("hkForceHint")}</label>`;
+ h+=`<div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap"><label class="muted">${T("hkCmd")}</label><input id="hkCmdInput" value="${esc(S.hooksCmd||"cabina")}" style="width:140px"><span style="font-size:var(--fs-2)">${resolveTxt}</span></div>`;
+ if(!s.cmd_resolves)h+=`<label style="display:flex;gap:6px;align-items:center;font-size:var(--fs-2);margin-top:6px"><input type="checkbox" id="hkForce" ${S.hooksForce?"checked":""}> ${T("hkForceHint")}</label>`;
  if(bothIn)h+=`<div class="muted" style="margin-top:6px">${T("hkBothIn")}</div>`;
  h+=`<div id="hkPreview"></div>`;
  h+=`<div class="actions" style="margin-top:8px"><button class="btn" id="bHkPreview">${T("hkPreview")}</button><button class="btn primary" id="bHkInstall" ${disabled?"disabled":""}>${T("hkInstall")}</button></div>`;
@@ -530,7 +615,7 @@ function bindHooksPanel(){const s=S.hooks;if(!s)return;
  const bi=$("bHkInstall");if(bi)bi.onclick=()=>{const panel=$("hooksPanel");if(!panel)return;
   const div=document.createElement("div");div.className="box warn";div.id="hkConfirm";div.style.marginTop="8px";
   div.innerHTML=`<div>${T("hkConfirm")}</div><pre class="doc">${esc(JSON.stringify(s.snippet,null,2))}</pre><div class="muted" style="margin-top:4px">${T("hkPreviewHint")}</div><div class="actions" style="margin-top:8px"><button class="btn primary" id="bHkOk">${T("hkInstall")}</button><button class="btn" id="bHkNo">${T("cancel")}</button></div>`;
-  panel.appendChild(div);
+  panel.appendChild(div);bi.classList.remove("primary");
   $("bHkNo").onclick=()=>div.remove();
   $("bHkOk").onclick=async()=>{$("bHkOk").disabled=true;
    const j=await POST("/api/hooks-install",{cmd:S.hooksCmd||"cabina",force:!!S.hooksForce});
@@ -549,7 +634,7 @@ function renderMcp(){if(!S.mcp){$("filters").innerHTML="";$("rows").innerHTML=`<
  document.querySelectorAll(".row").forEach(r=>r.onclick=()=>{S.sel=r.dataset.k;renderMcp();});
  const cur=d.servers.find(y=>y.name===S.sel);
  if(!cur){$("detail").innerHTML=`<div class="muted">${T("pickMcp")}</div>`;return;}
- $("detail").innerHTML=`<div class="h">${esc(cur.name)} <span class="pill p-${cls[cur.status]||"document"}">${esc(cur.status)}</span></div><div class="meta"><span>${T("mcpTarget")}</span><b><code>${esc(cur.target)}</code></b></div><div class="box info" style="margin-top:6px">${esc(cur.detail)}</div>`;}
+ $("detail").innerHTML=`<div class="h">${esc(cur.name)} <span class="pill p-${cls[cur.status]||"document"}">${esc(cur.status)}</span></div><div class="meta"><span>${T("mcpTarget")}</span><b><code>${wbr(esc(cur.target))}</code></b></div><div class="box info" style="margin-top:6px">${esc(cur.detail)}</div>`;}
 // ---------- DOCS ----------
 function renderDocs(){if(!S.docs){$("rows").innerHTML=`<div class="empty">${T("loading")}</div>`;$("filters").innerHTML="";return;}const a=S.docs.docs,work=new Set(S.docs.working);
  const chips=[["old",T("older")],["mem",T("memHar")],["claude",T("claudeMd")]];$("filters").innerHTML=`<input id="q" placeholder="${T("search")}" value="${esc(S.q)}">`+chips.map(([k,l])=>`<button class="chip ${S.chips.has(k)?"on":""}" data-c="${k}">${l}</button>`).join("")+chipFocus();bindFocus();
@@ -562,7 +647,7 @@ function renderDocs(){if(!S.docs){$("rows").innerHTML=`<div class="empty">${T("l
  if(!S.sel)$("detail").innerHTML=`<div class="muted">${T("pickDoc")}</div>`;}
 async function openDoc(key){if(S.editing&&!confirm(T("discard")))return;S.editing=false;S.sel=key;renderDocs();const [project,rel]=key.split("::");$("detail").innerHTML=`<div class="muted">${T("loading")}</div>`;
  const r=await GET(`/api/doc?project=${encodeURIComponent(project)}&rel=${encodeURIComponent(rel)}`);if(!r.ok){$("detail").innerHTML=`<div class="box bad">${esc(r.message)}</div>`;return;}S.doc={project,rel,...r};S.docVersions=null;S.docVersionSel=null;S.docVersionDetail=null;renderDocRead();}
-function renderDocRead(){const d=S.doc;if(!d)return;$("detail").innerHTML=`<div class="h">${esc(d.rel.split("/").pop())} <span class="pill p-document">${esc(d.project)}</span></div><div class="meta"><span>${T("path")}</span><b><code>${esc(d.path)}</code></b><span>${T("modified")}</span><b>${esc(d.mtime)} · ${d.days===0?T("today"):d.days+" "+T("days")}${d.days>30?` <span style="color:var(--amber)">${T("maybeStale")}</span>`:""}</b><span>${T("size")}</span><b>${d.content.split("\n").length} ${T("lines")}</b></div>`+
+function renderDocRead(){const d=S.doc;if(!d)return;$("detail").innerHTML=`<div class="h">${esc(d.rel.split("/").pop())} <span class="pill p-document">${esc(d.project)}</span></div><div class="meta"><span>${T("path")}</span><b><code>${wbr(esc(d.path))}</code></b><span>${T("modified")}</span><b>${esc(d.mtime)} · ${d.days===0?T("today"):d.days+" "+T("days")}${d.days>30?` <span style="color:var(--amber)">${T("maybeStale")}</span>`:""}</b><span>${T("size")}</span><b>${d.content.split("\n").length} ${T("lines")}</b></div>`+
  (d.blocked?`<div class="box warn">${T("blockedMsg",{p:esc(d.project)})}</div>`:"")+`<pre class="doc">${esc(d.content)}</pre><div class="actions"><button class="btn primary" id="bEdit" ${d.blocked?"disabled":""}>${T("edit")}</button><button class="btn" id="bExt">${T("openExt")}</button><button class="btn" id="bReload">${T("reload")}</button></div>`+
  (!HUB?`<div id="vPanel" class="muted">${esc(T("loading"))}</div>`:"");
  $("bEdit").onclick=()=>renderDocEdit();$("bExt").onclick=async()=>{toast((await POST("/api/open",{path:d.path})).message);};$("bReload").onclick=()=>openDoc(S.sel);
@@ -580,7 +665,7 @@ function renderVPanel(){const el=$("vPanel");if(!el)return;const vs=S.docVersion
  const ambiguous=vs.some(x=>x.ambiguous);
  let html=(ambiguous?`<div class="box warn" style="margin-bottom:8px">${esc(T("dvAmbiguous"))}</div>`:"")+
   `<b>${esc(T("dvTitle"))}</b><div style="display:flex;flex-direction:column;gap:4px;margin-top:6px">`+
-  vs.map(x=>`<button class="btn ${S.docVersionSel===x.stamp?"primary":""}" data-stamp="${esc(x.stamp)}" style="text-align:left">${esc(fmtDT(x.iso))} · ${x.size} B</button>`).join("")+`</div>`;
+  vs.map(x=>`<button class="btn ${S.docVersionSel===x.stamp?"on":""}" data-stamp="${esc(x.stamp)}" style="text-align:left">${esc(fmtDT(x.iso))} · ${x.size} B</button>`).join("")+`</div>`;
  if(S.docVersionSel){const dd=S.docVersionDetail;
   if(!dd)html+=`<div class="muted" style="margin-top:8px">${esc(T("loading"))}</div>`;
   else if(!dd.ok)html+=`<div class="box bad" style="margin-top:8px">${esc(dd.message)}</div>`;

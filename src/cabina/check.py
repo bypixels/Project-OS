@@ -152,9 +152,12 @@ def run(cfg, quick=False):
                 else:
                     mb += w["mb"]
     if stale:
-        gb = f"{mb/1024:.1f}" if all_measured else "?"
         top = "\n    ".join(f"{a}/{b}  {c if c is not None else '?'} MB  {d} d" for a, b, c, d in sorted(stale, key=lambda x: -(x[2] or 0))[:6])
-        add("warn", t(L, "check.stale_worktrees", n=len(stale), days=days, gb=gb), t(L, "check.stale_worktrees.d") + "\n    " + top, t(L, "fix.worktree"), projects=[a for a, b, c, d in stale])
+        if all_measured:
+            title = t(L, "check.stale_worktrees", n=len(stale), days=days, gb=f"{mb/1024:.1f}")
+        else:
+            title = t(L, "check.stale_worktrees.nogb", n=len(stale), days=days)
+        add("warn", title, t(L, "check.stale_worktrees.d") + "\n    " + top, t(L, "fix.worktree"), projects=[a for a, b, c, d in stale])
 
     # 7. MCP (only if the scan checked it)
     if data and data.get("mcp", {}).get("checked"):
