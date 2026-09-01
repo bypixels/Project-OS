@@ -1,7 +1,7 @@
 """`cabina` (UI) — local HTTP server on 127.0.0.1 with a per-session CSRF token.
 Reads through the modules; writes only via: create/archive agent, archive skill,
 save doc (guarded), open path, rescan cache, install hooks (guarded)."""
-import os, sys, json, copy, re, secrets, threading, webbrowser, time
+import os, sys, json, copy, re, secrets, threading, webbrowser, time, difflib, ipaddress
 from datetime import datetime
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
@@ -13,7 +13,39 @@ from .i18n import STRINGS
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 _activity_refresh_lock = threading.Lock()   # non-blocking: skip a refresh already in flight, never queue one behind the request thread
 MAX_POST_BODY = 5 * 1024 * 1024   # S3-C: /api/compare accepts an arbitrary export from another machine
-_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+_LOOPBACK_HOSTS = {"localhost"}
+
+
+def _loopback_only(hostname):
+    """Return True only for localhost or an IP address marked loopback by ipaddress."""
+    if not isinstance(hostname, str):
+        return False
+    value = hostname.strip().lower().rstrip(".")
+    if value == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(value).is_loopback
+    except ValueError:
+        return False
+
+
+def _header_hostname(value):
+    """Extract a Host header hostname without ever treating a non-IP as trusted."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    raw = value.strip()
+    if raw.startswith("["):
+        end = raw.find("]")
+        if end < 0:
+            return None
+        raw = raw[1:end]
+    else:
+        try:
+            ipaddress.ip_address(raw)
+        except ValueError:
+            raw = raw.split(":", 1)[0]
+    raw = raw.strip().lower()
+    return raw or None
 
 
 def host_allowed(host_header, bind_host):
@@ -24,23 +56,7 @@ def host_allowed(host_header, bind_host):
     page's own Host header, which this rejects. Any error extracting a hostname is a refusal."""
     if not host_header or not isinstance(host_header, str):
         return False
-    h = host_header.strip()
-    if not h:
-        return False
-    if h.startswith("["):
-        end = h.find("]")
-        if end == -1:
-            return False
-        hostname = h[1:end]
-    else:
-        hostname = h.split(":", 1)[0]
-    hostname = hostname.strip().lower()
-    if not hostname:
-        return False
-    allowed = set(_LOOPBACK_HOSTS)
-    if bind_host:
-        allowed.add(str(bind_host).strip().lower())
-    return hostname in allowed
+    return _loopback_only(_header_hostname(host_header))
 
 
 def _origin_hostname(origin):
@@ -54,18 +70,12 @@ def _origin_hostname(origin):
 
 
 def origin_allowed(origin, bind_host):
-    """POST-only CSRF guard: True if `origin`'s hostname is loopback or exactly the configured
-    bind host (case-insensitive) -- the same trust boundary `host_allowed` uses for the Host
-    header. `server.host` is user-configurable (a LAN IP is a supported bind, per config.py's
-    DEFAULTS/example): without accepting it here too, the UI's own same-origin POSTs would be
-    refused as "bad origin" on any non-loopback bind, while a truly foreign Origin is still
-    refused either way."""
+    """POST-only CSRF guard: True only when `origin` names localhost or a loopback IP.
+    The configured bind host is intentionally not an additional trust source."""
     oh = _origin_hostname(origin)
     if not oh:
         return False
-    if oh in _LOOPBACK_HOSTS:
-        return True
-    return bool(bind_host) and oh == str(bind_host).strip().lower()
+    return _loopback_only(oh)
 
 
 def _open_allowed(path, allowed_roots):
@@ -153,12 +163,7 @@ class App:
         ~/.claude/projects, so a request thread must not pay that cost on every GET."""
         with self.lock:
             if fresh or self._skills is None or time.time() - self._skills_t > 30:
-                rows = SK.load(self.cfg, self.data)
-                for r in rows: r["tool"] = "claude"
-                cx = self.data.get("codex", {})
-                if cx.get("present"):
-                    for r in SK.scan_dir(os.path.join(cx["home"], "skills"), "global"):
-                        r["tool"] = "codex"; rows.append(r)
+                rows = self._skill_catalog()
                 p = os.path.join(self.cfg["state_dir"], "usage-skills.json")
                 items, meta = usage.refresh(p, os.path.join(self.cfg["claude_home"], "projects"), "skills",
                                             {k: v for k, v in self.roots().items() if k != "global"})
@@ -166,6 +171,18 @@ class App:
                     u = usage.for_agent(items, r["name"], r["project"]); r["uses"] = u["total"]; r["last"] = u["last"]; r["uses_here"] = u["here"]
                 self._skills = (rows, meta); self._skills_t = time.time()
             return self._skills
+
+    def _skill_catalog(self):
+        """Read the current filesystem catalog without refreshing usage metrics."""
+        rows = SK.load(self.cfg, self.data)
+        for r in rows:
+            r["tool"] = "claude"
+        cx = self.data.get("codex", {})
+        if cx.get("present"):
+            for r in SK.scan_dir(os.path.join(cx["home"], "skills"), "global"):
+                r["tool"] = "codex"
+                rows.append(r)
+        return rows
 
     def roots(self):
         return scan.project_roots(self.cfg, self.data)
@@ -215,6 +232,39 @@ class App:
         r = self.docs().read(proj, rel)
         if r.get("ok"):
             r["blocked"] = proj in self.working()
+        return r
+    def api_doc_versions(self, q):
+        """Read-only: newest-first backup history for one doc. Empty list on anything
+        unresolvable -- see Docs.versions()."""
+        proj = q.get("project", [""])[0]; rel = q.get("rel", [""])[0]
+        return {"versions": self.docs().versions(proj, rel)}
+    def api_doc_version(self, q):
+        """Read-only: one backed-up version's text (Docs.version_text -- validates the stamp
+        and confines the file), plus a unified diff to the CURRENT on-disk content (read through
+        Docs.read(), so the same allowlist applies) and a `command` the user could paste to
+        restore it -- generated, never run, same discipline as worktrees.py's script(). `command`
+        is null with a `command_reason` when either path is unsafe to embed in a shell argument
+        (WT._is_unsafe, reused rather than reimplemented)."""
+        proj = q.get("project", [""])[0]; rel = q.get("rel", [""])[0]; stamp = q.get("stamp", [""])[0]
+        docs = self.docs()
+        r = docs.version_text(proj, rel, stamp)
+        if not r.get("ok"):
+            return r
+        cur = docs.read(proj, rel)
+        current_text = cur.get("content", "") if cur.get("ok") else ""
+        r["diff"] = "".join(difflib.unified_diff(
+            r["content"].splitlines(keepends=True), current_text.splitlines(keepends=True),
+            fromfile=f"{rel}@{stamp}", tofile=f"{rel} (current)"))
+        doc_path = cur.get("path") if cur.get("ok") else None
+        bd, base, err = docs._backup_loc(proj, rel)
+        if err or not doc_path:
+            r["command"] = None; r["command_reason"] = "document path unavailable"
+            return r
+        backup_path = os.path.join(bd, f"{base}.{stamp}.md")
+        if WT._is_unsafe(backup_path) or WT._is_unsafe(doc_path):
+            r["command"] = None; r["command_reason"] = "path has characters unsafe to paste into a shell"
+            return r
+        r["command"] = (f'copy /Y "{backup_path}" "{doc_path}"' if os.name == "nt" else f'cp "{backup_path}" "{doc_path}"')
         return r
     def api_references(self, q):
         R, _, _ = self.roster()
@@ -277,6 +327,18 @@ class App:
             out["error"] = error
         return out
 
+    def api_mcp(self):
+        """MCP tab: reads ONLY the cached scan data -- never triggers a scan or shells out to
+        the `claude` CLI (that only happens in scan.py's mcp_servers(), gated behind --mcp)."""
+        m = self.data.get("mcp") or {}
+        servers = list(m.get("servers") or [])
+        order = {"failed": 0, "auth": 1, "unverified": 2, "ok": 3}
+        servers.sort(key=lambda s: (order.get(s.get("status"), 9), s.get("name", "")))
+        counts = {"ok": 0, "auth": 0, "unverified": 0, "failed": 0, "total": len(servers)}
+        for s in servers:
+            if s.get("status") in counts: counts[s["status"]] += 1
+        return {"checked": bool(m.get("checked")), "servers": servers, "counts": counts}
+
     def api_worktrees(self, q):
         """W3: worktree cleanup summary/rows/script for the Projects tab panel, optionally
         scoped to one project. Reads the cached scan data via worktrees.py -- never re-scans."""
@@ -311,12 +373,52 @@ class App:
         ok, msg, path = R.create(b["project"], b["name"], b["description"], b["model"], b["tools"], b.get("body", ""))
         if ok: self.roster(fresh=True)
         return {"ok": ok, "message": msg, "path": path}
+    def _find_skill(self, q):
+        """Resolve one skill row from query params through the same catalog api_skills reads --
+        NEVER accept a filesystem path directly from the client."""
+        tool = (q.get("tool") or ["claude"])[0]
+        project = (q.get("project") or [""])[0]
+        name = (q.get("name") or [""])[0]
+        rows, _ = self.skills()
+        matches = [r for r in rows if (r.get("tool") or "claude") == tool and r.get("project") == project and r.get("name") == name]
+        return matches[0] if len(matches) == 1 else None
+
+    def api_skill_body(self, q):
+        """Read-only: the skill's SKILL.md body plus a listing of its own directory."""
+        row = self._find_skill(q)
+        if not row or not isinstance(row.get("path"), str) or not row["path"]:
+            return {"ok": False, "message": "unknown or ambiguous skill identity"}
+        r = SK.read_body(row["path"])
+        if not r.get("ok"):
+            return r
+        return {**r, "name": row["name"], "project": row["project"], "tool": row.get("tool") or "claude", "path": row["path"]}
+
+    def api_skill_file(self, q):
+        """Read-only preview of one attachment inside a skill's own directory."""
+        row = self._find_skill(q)
+        if not row or not isinstance(row.get("path"), str) or not row["path"]:
+            return {"ok": False, "message": "unknown or ambiguous skill identity"}
+        rel = (q.get("path") or [""])[0]
+        r = SK.read_file(row["path"], rel)
+        if not r.get("ok"):
+            return r
+        return {**r, "name": row["name"], "project": row["project"], "tool": row.get("tool") or "claude", "path": row["path"]}
+
     def api_archive_skill(self, b):
-        R, _, _ = self.roster()
+        # References only need the roster's filesystem roots; avoid loading agent usage here.
+        R = self._roster or Roster(self.cfg, self.data)
         refs = R.references(b["name"])
         if refs and not b.get("force"):
             return {"ok": False, "message": f"{len(refs)} file(s) reference {b['name']!r}", "references": refs}
-        ok, msg = SK.archive_path(b["path"], b["project"], os.path.join(self.cfg["claude_home"], "_archive"))
+        rows = self._skill_catalog()
+        matches = [r for r in rows if r.get("name") == b["name"] and r.get("project") == b["project"]]
+        if len(matches) != 1:
+            return {"ok": False, "message": "unknown or ambiguous skill identity", "references": refs}
+        canonical = matches[0].get("path")
+        if not isinstance(canonical, str) or not canonical:
+            return {"ok": False, "message": "skill path unavailable", "references": refs}
+        ok, msg = SK.archive_path(canonical, b["project"], os.path.join(self.cfg["claude_home"], "_archive"),
+                                  allowed_root=os.path.dirname(canonical))
         if ok: self.skills(fresh=True)
         return {"ok": ok, "message": msg, "references": refs}
     def api_save_doc(self, b):
@@ -458,10 +560,12 @@ def make_handler(app):
     GETS = {"/api/agents": lambda q: app.api_agents(), "/api/skills": lambda q: app.api_skills(),
             "/api/projects": lambda q: app.api_projects(), "/api/harness": lambda q: app.api_harness(),
             "/api/live": lambda q: app.api_live(), "/api/docs": lambda q: app.api_docs(),
-            "/api/doc": app.api_doc, "/api/references": app.api_references, "/api/in-repo": app.api_in_repo,
+            "/api/doc": app.api_doc, "/api/doc-versions": app.api_doc_versions, "/api/doc-version": app.api_doc_version,
+            "/api/references": app.api_references, "/api/in-repo": app.api_in_repo,
             "/api/activity": app.api_activity, "/api/health": lambda q: app.api_health(), "/api/hooks": app.api_hooks,
             "/api/scan-status": lambda q: app.api_scan_status(), "/api/health-history": app.api_health_history,
-            "/api/tiles": lambda q: app.api_tiles(), "/api/worktrees": app.api_worktrees}
+            "/api/tiles": lambda q: app.api_tiles(), "/api/worktrees": app.api_worktrees,
+            "/api/mcp": lambda q: app.api_mcp(), "/api/skill-body": app.api_skill_body, "/api/skill-file": app.api_skill_file}
     POSTS = {"/api/archive": app.api_archive, "/api/create": app.api_create, "/api/archive-skill": app.api_archive_skill,
              "/api/save-doc": app.api_save_doc, "/api/open": app.api_open, "/api/open-terminal": app.api_open_terminal, "/api/focus": app.api_focus, "/api/rescan": app.api_rescan, "/api/commit": app.api_commit,
              "/api/hooks-install": app.api_hooks_install, "/api/compare": app.api_compare}
@@ -525,8 +629,10 @@ def make_handler(app):
 
 
 def serve(cfg, port=None, open_browser=True):
-    app = App(cfg)
     host_ = cfg["server"]["host"]; port = port or cfg["server"]["port"]
+    if not _loopback_only(host_):
+        raise ValueError("cabina server is local-only: server.host must be localhost or a loopback IP")
+    app = App(cfg)
     srv = ThreadingHTTPServer((host_, port), make_handler(app))
     url = f"http://{host_}:{srv.server_address[1]}/"
     print(f"cabina at {url}  (Ctrl-C to stop)")

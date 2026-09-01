@@ -37,9 +37,26 @@ class TestServer(unittest.TestCase):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
         self.assertNotIn("__HUB__", html)
         self.assertIn('HUB="0"==="1"', html)
+    def _views_parts(self, html):
+        # (hub_part, nonhub_part) of the `const VIEWS=HUB?[...]:[...]` line -- asserting against
+        # this line specifically (not the whole document) is what makes these tests able to go
+        # red: a tab id also appears in i18n/LOADERS/render()/the fetch call even when missing
+        # from VIEWS itself, so a bare `assertIn(id, html)` never catches a tab dropped from VIEWS.
+        start = html.index("const VIEWS=")
+        end = html.index(";", start)
+        hub_part, nonhub_part = html[start:end].split(":", 1)
+        return hub_part, nonhub_part
     def test_index_has_activity_tab(self):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
-        self.assertIn('"activity"', html); self.assertIn("/api/activity", html)
+        hub_part, nonhub_part = self._views_parts(html)
+        self.assertIn('"activity"', hub_part); self.assertIn('"activity"', nonhub_part)   # in BOTH arrays
+        self.assertIn("/api/activity", html)
+    def test_index_has_mcp_tab(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        hub_part, nonhub_part = self._views_parts(html)
+        self.assertIn('"mcp"', nonhub_part)          # full mode: has the tab
+        self.assertNotIn('"mcp"', hub_part)          # hub mode: local-only by omission
+        self.assertIn("/api/mcp", html)
     def test_agents_with_attribution(self):
         d = self.get("/api/agents"); by = {(a["project"], a["name"]): a for a in d["agents"]}
         self.assertEqual(by[("alpha", "reviewer")]["uses_here"], 2)      # cwd attribution
@@ -248,6 +265,36 @@ class TestServer(unittest.TestCase):
         self.assertEqual({x["project"]: x["status"] for x in h["drift"]["rules"]}, {"alpha": "diverged"})
         d = self.get("/api/docs"); self.assertTrue(any(x["rel"] == ".claude/MEMORY.md" for x in d["docs"]))
         l = self.get("/api/live"); self.assertFalse(l["ok"]); self.assertEqual(l["provider"], "none")
+    def test_skill_body_endpoint(self):
+        d = self.get("/api/skill-body?tool=claude&project=alpha&name=deploy")
+        self.assertTrue(d["ok"], d)
+        self.assertIn("name: deploy", d["content"])
+        self.assertTrue(any(f["path"] == "SKILL.md" for f in d["files"]))
+    def test_skill_body_unknown_skill(self):
+        d = self.get("/api/skill-body?tool=claude&project=alpha&name=does-not-exist")
+        self.assertFalse(d["ok"])
+    def test_skill_file_rejects_traversal(self):
+        # The escape target must actually EXIST as a sibling of the skill dir -- otherwise
+        # "not a file" would also produce ok:False even with the confinement guard deleted,
+        # and the test could never go red.
+        outside = os.path.join(self.env.alpha, ".claude", "skills", "outside.txt")
+        open(outside, "w").write("secret")
+        try:
+            d = self.get("/api/skill-file?tool=claude&project=alpha&name=deploy&path=../outside.txt")
+            self.assertFalse(d["ok"])
+            self.assertEqual(d["message"], "path outside the skill")
+        finally:
+            os.remove(outside)
+    def test_skill_file_null_byte_returns_ok_false_not_500(self):
+        d = self.get("/api/skill-file?tool=claude&project=alpha&name=deploy&path=%00")
+        self.assertFalse(d["ok"])
+    def test_find_skill_returns_none_when_ambiguous(self):
+        from unittest import mock
+        rows = [{"tool": "claude", "project": "alpha", "name": "dup", "path": "/a"},
+                {"tool": "claude", "project": "alpha", "name": "dup", "path": "/b"}]
+        with mock.patch.object(self.app, "skills", return_value=(rows, {})):
+            row = self.app._find_skill({"tool": ["claude"], "project": ["alpha"], "name": ["dup"]})
+        self.assertIsNone(row)
     def test_activity_endpoint_serves_cache(self):
         from cabina import sessions as SESS
         SESS.refresh(self.env.cfg)                      # populate the cache once, synchronously, for the test
@@ -316,11 +363,9 @@ class TestServer(unittest.TestCase):
         self.assertEqual(code, 200)
         self.assertTrue(json.loads(body)["ok"])
     def test_post_origin_matching_configured_bind_host_allowed(self):
-        # server.host is user-configurable (config.py DEFAULTS / example config): a user may
-        # bind to a LAN IP, not just loopback. The Origin check must accept loopback OR the
-        # exact configured bind host -- otherwise the UI's own POSTs from a non-loopback bind
-        # would be refused as "bad origin", a functional regression. The TEST server still
-        # binds 127.0.0.1 (so this suite can talk to it); only cfg["server"]["host"] differs.
+        # Local-only is the trust boundary: a LAN bind/origin is never accepted, even when it
+        # matches the configured value. The TEST server still binds 127.0.0.1 so this suite can
+        # talk to it; only cfg["server"]["host"] differs.
         import copy, http.client, threading
         from http.server import ThreadingHTTPServer
         from unittest import mock
@@ -338,8 +383,7 @@ class TestServer(unittest.TestCase):
                            "Content-Type": "application/json", "X-Cabina-Token": app2.token}
                 conn.request("POST", "/api/open", body=json.dumps({"path": app2.cfg["claude_home"]}).encode(), headers=headers)
                 r = conn.getresponse(); code = r.status; body = json.loads(r.read()); conn.close()
-            self.assertEqual(code, 200, body)          # bind host as Origin: allowed
-            self.assertTrue(body["ok"], body)
+            self.assertEqual(code, 403, body)          # non-loopback Origin: refused
             conn = http.client.HTTPConnection("127.0.0.1", port2)
             headers2 = {"Host": f"127.0.0.1:{port2}", "Origin": "http://evil.example",
                         "Content-Type": "application/json", "X-Cabina-Token": app2.token}
@@ -348,6 +392,21 @@ class TestServer(unittest.TestCase):
             self.assertEqual(code2, 403)               # still refuses a genuinely foreign origin
         finally:
             srv2.shutdown(); srv2.server_close()
+
+    def test_non_loopback_host_and_origin_are_never_allowed(self):
+        self.assertFalse(server.host_allowed("10.0.0.5:8930", "10.0.0.5"))
+        self.assertFalse(server.host_allowed("[2001:db8::5]:8930", "2001:db8::5"))
+        self.assertFalse(server.origin_allowed("http://10.0.0.5:8930", "10.0.0.5"))
+
+    def test_serve_rejects_non_loopback_before_constructing_server(self):
+        from unittest import mock
+        cfg = copy.deepcopy(self.env.cfg)
+        cfg["server"]["host"] = "10.0.0.5"
+        with mock.patch.object(server, "App") as app, mock.patch.object(server, "ThreadingHTTPServer") as http:
+            with self.assertRaises(ValueError):
+                server.serve(cfg, port=0, open_browser=False)
+        app.assert_not_called()
+        http.assert_not_called()
     # ---------- /api/open path confinement ----------
     def test_open_outside_roots_refused_and_never_calls_host_open_path(self):
         from unittest import mock
@@ -362,6 +421,37 @@ class TestServer(unittest.TestCase):
             code, r = self.post("/api/open", {"path": os.path.join(self.env.alpha, "CLAUDE.md")})
         self.assertTrue(r["ok"], r)
         m.assert_called_once()
+
+    def test_archive_skill_uses_fresh_canonical_identity_not_body_path(self):
+        from unittest import mock
+        import shutil
+        victim = os.path.join(self.env.tmp.name, "victim.txt")
+        open(victim, "w").write("do not touch")
+        name = "archive-canonical-only"
+        skill = os.path.join(self.env.alpha, ".claude", "skills", name)
+        os.makedirs(skill)
+        open(os.path.join(skill, "SKILL.md"), "w").write(f"---\nname: {name}\ndescription: temporary\n---\n")
+        try:
+            # Deliberately poison the in-memory catalog: the archive identity must be resolved
+            # from the current filesystem catalog, never from this stale path or the POST body.
+            self.app._skills = ([{"name": name, "project": "alpha", "path": victim,
+                                  "state": "ok"}], {"stale": True})
+            self.app._skills_t = time.time()
+            with mock.patch.object(server.SK, "archive_path", wraps=server.SK.archive_path) as archive:
+                code, r = self.post("/api/archive-skill", {"name": name, "project": "alpha", "path": victim})
+            self.assertTrue(r["ok"], r)
+            self.assertEqual(open(victim).read(), "do not touch")
+            archive.assert_called_once()
+            self.assertEqual(os.path.realpath(archive.call_args.args[0]), os.path.realpath(skill))
+        finally:
+            shutil.rmtree(skill, ignore_errors=True)
+
+    def test_archive_skill_rejects_unknown_identity_and_does_not_use_body_path(self):
+        victim = os.path.join(self.env.tmp.name, "victim-unknown.txt")
+        open(victim, "w").write("keep")
+        r = self.app.api_archive_skill({"name": "does-not-exist", "project": "alpha", "path": victim})
+        self.assertFalse(r["ok"])
+        self.assertEqual(open(victim).read(), "keep")
     # ---------- W3: /api/worktrees ----------
     def test_worktrees_endpoint_shape_and_project_filter(self):
         orig_data = self.app.data
@@ -407,8 +497,11 @@ class TestServer(unittest.TestCase):
         self.assertTrue(r["ok"], r)
         m.assert_called_once()
     def test_open_terminal_requires_token(self):
-        code, _ = self.post("/api/open-terminal", {"path": self.env.alpha}, token="wrong")
+        from unittest import mock
+        with mock.patch("cabina.server.host.open_terminal") as launcher:
+            code, _ = self.post("/api/open-terminal", {"path": self.env.alpha}, token="wrong")
         self.assertEqual(code, 403)
+        launcher.assert_not_called()
     # ---------- W3: Projects tab worktree panel (UI) ----------
     def test_worktree_panel_hub_gated_source_guards(self):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
@@ -474,6 +567,56 @@ class TestServer(unittest.TestCase):
         # the red/amber dot must never trigger the size condition on an unmeasured project
         self.assertIn("x.worktrees_mb_measured&&x.worktrees_mb>5000", body)
         self.assertNotIn('x.worktrees_mb>5000?"invalid"', body)   # the old, ungated heuristic
+    # ---------- MCP tab: /api/mcp ----------
+    def test_mcp_endpoint_shape_ordering_and_counts(self):
+        orig_data = self.app.data
+        try:
+            self.app.data = copy.deepcopy(orig_data)
+            self.app.data["mcp"] = {"checked": True, "servers": [
+                {"name": "z-ok", "target": "https://ok.example/mcp", "status": "ok", "detail": "Connected"},
+                {"name": "a-failed", "target": "https://failed.example/mcp", "status": "failed", "detail": "Refused"},
+                {"name": "m-unverified", "target": "https://unv.example/mcp", "status": "unverified", "detail": "Unverified"},
+                {"name": "b-auth", "target": "https://auth.example/mcp", "status": "auth", "detail": "Needs authentication"},
+            ]}
+            d = self.get("/api/mcp")
+            self.assertTrue(d["checked"])
+            self.assertEqual([s["status"] for s in d["servers"]], ["failed", "auth", "unverified", "ok"])
+            self.assertEqual(d["counts"], {"ok": 1, "auth": 1, "unverified": 1, "failed": 1, "total": 4})
+            self.assertEqual({s["name"] for s in d["servers"]}, {"z-ok", "a-failed", "m-unverified", "b-auth"})
+        finally:
+            self.app.data = orig_data
+    def test_mcp_endpoint_unchecked_returns_false_and_zeroed_counts_never_raises(self):
+        orig_data = self.app.data
+        try:
+            self.app.data = copy.deepcopy(orig_data)
+            self.app.data["mcp"] = {"checked": False, "servers": []}
+            d = self.get("/api/mcp")
+            self.assertFalse(d["checked"])
+            self.assertEqual(d["servers"], [])
+            self.assertEqual(d["counts"], {"ok": 0, "auth": 0, "unverified": 0, "failed": 0, "total": 0})
+            del self.app.data["mcp"]                     # missing key entirely: still no KeyError
+            d2 = self.get("/api/mcp")
+            self.assertFalse(d2["checked"])
+            self.assertEqual(d2["counts"]["total"], 0)
+        finally:
+            self.app.data = orig_data
+    def test_mcp_block_fields_always_escaped(self):
+        # name/target/detail are raw text: every interpolation of them must go through esc().
+        # status is additionally used as a CSS-class lookup key (`cls[x.status]`, mirroring the
+        # Health tab's healthSevClass(f.sev) precedent) -- that's a safe, enum-constrained lookup,
+        # not a text interpolation, so it's checked separately below rather than by the blanket regex.
+        import re
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        start = html.index("// ---------- MCP ----------")
+        end = html.index("// ---------- DOCS ----------")
+        body = html[start:end]
+        pattern = re.compile(r"\$\{([^{}]*\bx\.(?:name|target|detail)\b[^{}]*)\}")
+        hits = list(pattern.finditer(body))
+        self.assertGreater(len(hits), 0)
+        for m in hits:
+            self.assertIn("esc(", m.group(1), f"unescaped interpolation: ${{{m.group(1)}}}")
+        self.assertIn("esc(x.status)", body)          # the visible status label is escaped too
+        self.assertIn("cls[x.status]", body)           # the class suffix comes from a lookup table, never x.status raw
     def test_create_then_archive_agent(self):
         code, r = self.post("/api/create", {"project": "alpha", "name": "new-one", "description": "Does new things well", "model": "sonnet", "tools": "Read", "body": "You are new."})
         self.assertTrue(r["ok"], r); self.assertTrue(os.path.isfile(os.path.join(self.env.alpha, ".claude", "agents", "new-one.md")))
@@ -486,6 +629,54 @@ class TestServer(unittest.TestCase):
         code, r = self.post("/api/save-doc", {"project": "alpha", "rel": "CLAUDE.md", "content": "# alpha 2\n", "hash": d["hash"]}); self.assertTrue(r["ok"], r)
         code, r = self.post("/api/save-doc", {"project": "alpha", "rel": "CLAUDE.md", "content": "# stale\n", "hash": d["hash"]}); self.assertFalse(r["ok"]); self.assertTrue(r["conflict"])
         code, r = self.post("/api/save-doc", {"project": "alpha", "rel": "../../x.md", "content": "x", "hash": "0" * 16}); self.assertFalse(r["ok"])
+    # ---------- doc versions: /api/doc-versions, /api/doc-version ----------
+    def test_doc_versions_endpoint_shape_and_unknown_doc_returns_empty_list(self):
+        d = self.get("/api/doc?project=alpha&rel=CLAUDE.md"); self.assertTrue(d["ok"])
+        code, r = self.post("/api/save-doc", {"project": "alpha", "rel": "CLAUDE.md",
+                                               "content": d["content"] + "\nversions-test\n", "hash": d["hash"]})
+        self.assertTrue(r["ok"], r)
+        vs = self.get("/api/doc-versions?project=alpha&rel=CLAUDE.md")
+        self.assertIn("versions", vs); self.assertTrue(vs["versions"])
+        v0 = vs["versions"][0]
+        for k in ("stamp", "iso", "size", "ambiguous"): self.assertIn(k, v0)
+        self.assertTrue(v0["ambiguous"])   # CLAUDE.md is root-level: the flat backup dir is shared
+        missing = self.get("/api/doc-versions?project=alpha&rel=NOPE.md")
+        self.assertEqual(missing["versions"], [])   # unknown doc: empty list, never an error
+    def test_doc_version_endpoint_bad_stamp_rejected(self):
+        bad = self.get("/api/doc-version?project=alpha&rel=CLAUDE.md&stamp=not-a-stamp")
+        self.assertFalse(bad["ok"])
+        self.assertIn("message", bad)
+        blank = self.get("/api/doc-version?project=alpha&rel=CLAUDE.md&stamp=")
+        self.assertFalse(blank["ok"])
+    def test_doc_version_endpoint_diff_and_command_present(self):
+        d = self.get("/api/doc?project=alpha&rel=CLAUDE.md"); self.assertTrue(d["ok"])
+        code, r = self.post("/api/save-doc", {"project": "alpha", "rel": "CLAUDE.md",
+                                               "content": d["content"] + "\ndiff-test\n", "hash": d["hash"]})
+        self.assertTrue(r["ok"], r)
+        vs = self.get("/api/doc-versions?project=alpha&rel=CLAUDE.md")
+        stamp = vs["versions"][0]["stamp"]
+        good = self.get(f"/api/doc-version?project=alpha&rel=CLAUDE.md&stamp={stamp}")
+        self.assertTrue(good["ok"], good)
+        self.assertIn("diff", good)
+        self.assertTrue(good["diff"].strip())          # non-empty: stored version differs from current
+        self.assertIn("command", good)
+        self.assertIsNotNone(good["command"])          # normal temp-dir paths are safe to embed
+        self.assertIn("CLAUDE.md", good["command"])
+    def test_doc_version_endpoint_unsafe_path_never_emits_a_command(self):
+        # W3-style guard, mirrored for docs: a path containing a shell metacharacter must never
+        # be handed to the user as a pasteable command.
+        from unittest import mock
+        with mock.patch("cabina.server.WT._is_unsafe", return_value=True):
+            d = self.get("/api/doc?project=alpha&rel=CLAUDE.md"); self.assertTrue(d["ok"])
+            code, r = self.post("/api/save-doc", {"project": "alpha", "rel": "CLAUDE.md",
+                                                   "content": d["content"] + "\nunsafe-test\n", "hash": d["hash"]})
+            self.assertTrue(r["ok"], r)
+            vs = self.get("/api/doc-versions?project=alpha&rel=CLAUDE.md")
+            stamp = vs["versions"][0]["stamp"]
+            got = self.get(f"/api/doc-version?project=alpha&rel=CLAUDE.md&stamp={stamp}")
+        self.assertTrue(got["ok"], got)
+        self.assertIsNone(got["command"])
+        self.assertIn("command_reason", got)
     def test_commit_endpoint_requires_repo_and_only_that_path(self):
         import subprocess
         a = self.env.alpha
@@ -535,6 +726,61 @@ class TestServer(unittest.TestCase):
         self.assertGreater(len(hits), 0)                    # sanity: the section actually interpolates these fields
         for m in hits:
             self.assertIn("esc(", m.group(1), f"unescaped interpolation: ${{{m.group(1)}}}")
+        for field in ('esc(x.started||"—")', r'(x.files_touched||[]).map(esc).join("\n")'):
+            self.assertIn(field, body, f"activity field sink changed: {field}")
+    def test_activity_entrypoint_fields_always_escaped(self):
+        # New in this unit: entrypoint is raw data straight from a transcript file (sessions.py),
+        # surfaced as a filter-chip label/attribute (built from the map key `v`) and a per-row
+        # column (`x.entrypoint`). The field list in test_activity_and_hub_fields_always_escaped
+        # above predates this field, so it is checked separately here. Scoped tightly to the
+        # epChips.map(...) statement for `v` (a single-letter name reused harmlessly elsewhere in
+        # this file, e.g. the timeline sparkline and the unrelated tool_calls map, so a bare
+        # \bv\b scan over the whole ACTIVITY section would false-positive on those).
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        import re
+        start = html.index("// ---------- ACTIVITY ----------")
+        end = html.index("// ---------- PROJECTS ----------")
+        body = html[start:end]
+        chip_start = body.index("epChips.map(([v,n])")
+        chip_end = body.index(";", body.index("chipFocus()", chip_start))
+        chip_snippet = body[chip_start:chip_end]
+        # the chip's "on"/"off" class only ever resolves to one of those two fixed literals — v
+        # itself is never written into HTML there, so it is not an escaping concern. Whitelisted
+        # by exact substring (same idiom as the git-message whitelist above) so any other change
+        # to this line is still caught.
+        on_off_ternary = 'S.chips.has("ep:"+v)?"on":""'
+        self.assertIn(on_off_ternary, chip_snippet, "chip on/off ternary moved; update whitelist")
+        chip_snippet = chip_snippet.replace(on_off_ternary, "")
+        chip_pattern = re.compile(r"\$\{([^{}]*\bv\b[^{}]*)\}")
+        chip_hits = list(chip_pattern.finditer(chip_snippet))
+        self.assertGreater(len(chip_hits), 0)                # sanity: the chip line actually interpolates v
+        for m in chip_hits:
+            self.assertIn("esc(", m.group(1), f"unescaped interpolation: ${{{m.group(1)}}}")
+        row_pattern = re.compile(r"\$\{([^{}]*\bx\.entrypoint\b[^{}]*)\}")
+        row_hits = list(row_pattern.finditer(body))
+        self.assertGreater(len(row_hits), 0)                 # sanity: the row actually interpolates x.entrypoint
+        for m in row_hits:
+            self.assertIn("esc(", m.group(1), f"unescaped interpolation: ${{{m.group(1)}}}")
+    def test_session_detail_reasoning_unknown_guard(self):
+        # Defends the "unknown, not zero" rule: tokens.thinking_lines did not exist before
+        # 2026-08-12, and hub-detail exports never carry thinking/thinking_lines at all
+        # (snapshot._detail_row is a whitelist that omits them). thinking_lines===0 must mean
+        # "this file cannot tell us", never "no reasoning happened" — rendering a bare 0 there
+        # would be a fabricated measurement. Asserts the actual conditional guard is present, not
+        # merely the word "thinking" (which also appears in the tokReasoning i18n key), so
+        # replacing the guard with an unconditional fmtNum(tThink) makes this go red.
+        # Uses the dedicated tokNa key ("n/a"/"n/d"), not tokNd (whose value is the inline suffix
+        # "· tokens n/a" used elsewhere in the harness run log) -- tokNd in a label/value meta grid
+        # rendered as "reasoning  · tokens n/a", a value starting with a stray bullet.
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        self.assertIn('tLines>0?fmtNum(tThink):T("tokNa")', html)
+        self.assertNotIn('tLines>0?fmtNum(tThink):T("tokNd")', html)
+    def test_session_detail_cache_rate_divide_by_zero_guard(self):
+        # Defends: cache_read/(in+cache_read+cache_write) must never divide by zero (a session
+        # with no token usage recorded at all, in+cache_read+cache_write===0) — asserts the guard
+        # expression itself, not just that a "cache rate" label exists somewhere on the page.
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        self.assertIn('denom>0?Math.round(tCR/denom*100)+"%":"—"', html)
     def test_agents_skills_block_fields_always_escaped(self):
         # F1: the ACTIVITY-only scan above never reaches renderAgents / renderAgentDetail /
         # renderSkillDetail (all defined before the ACTIVITY marker), and its field list omits
@@ -556,6 +802,15 @@ class TestServer(unittest.TestCase):
         self.assertGreater(len(hits), 0)                    # sanity: the section actually interpolates these fields
         for m in hits:
             self.assertIn("esc(", m.group(1), f"unescaped interpolation: ${{{m.group(1)}}}")
+        for field in ('esc(x.model||"—")', 'esc(x.tools||"—")',
+                      '(x.critical||[]).map(c=>`<li>${esc(c)}</li>`)',
+                      '(x.warnings||[]).map(c=>`<li>${esc(c)}</li>'):
+            self.assertIn(field, body, f"agent field sink changed: {field}")
+        agent_detail = html[html.index("function renderAgentDetail"):html.index("function renderArchive")]
+        skill_detail = html[html.index("function renderSkillDetail"):html.index("// ---------- ACTIVITY ----------")]
+        self.assertIn("esc(x.path)", agent_detail, "agent path sink changed")
+        self.assertIn("esc(x.path)", skill_detail, "skill path sink changed")
+        self.assertIn("esc(x.target)", skill_detail, "skill target sink changed")
     def test_hub_banner_and_projects_fields_always_escaped(self):
         # Orchestrator amendment to Tarea 38: the ACTIVITY-only scan above misses renderHubBanner
         # and mchip() (both defined before the ACTIVITY marker) and renderProjects (defined after
@@ -570,11 +825,31 @@ class TestServer(unittest.TestCase):
         mchip = html[html.index("function mchip"):html.index("// ---------- AGENTS ----------")]
         projects = html[html.index("// ---------- PROJECTS ----------"):html.index("// ---------- HARNESS ----------")]
         body = hub_banner + mchip + projects
-        pattern = re.compile(r"\$\{([^{}]*\b(?:x\.(?:title|project|machine|branch)|f\.(?:name|machine|status))\b[^{}]*)\}")
+        # x.name is only compared to select the fixed CSS class/text; it never enters the output
+        # in these two ternaries. Keep this exact whitelist so field sinks remain covered.
+        focus_ternary = '${S.focus===x.name?"focus":""}'
+        self.assertIn(focus_ternary, body, "focus ternary moved; update whitelist")
+        body = body.replace(focus_ternary, "")
+        focus_button = '${S.focus===x.name?T("focusOff"):T("focusOn")}'
+        self.assertIn(focus_button, body, "focus button ternary moved; update whitelist")
+        body = body.replace(focus_button, "")
+        pattern = re.compile(r"\$\{([^{}]*\b(?:x\.(?:title|project|machine|branch|name|last_commit)|f\.(?:name|machine|status))\b[^{}]*)\}")
         hits = list(pattern.finditer(body))
         self.assertGreater(len(hits), 0)
         for m in hits:
             self.assertIn("esc(", m.group(1), f"unescaped interpolation: ${{{m.group(1)}}}")
+        self.assertIn('esc(x.last_commit||"—")', body)
+
+    def test_harness_export_fields_always_escaped(self):
+        # Harness export names, paths and runlog labels are data, while level is a CSS enum.
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        start = html.index("// ---------- HARNESS ----------")
+        end = html.index("// ---------- HOOKS ----------")
+        body = html[start:end]
+        for field in ("esc(e.name)", "esc(e.path)", "harnessClass(e.level)",
+                      "esc(b.project)", "esc(b.path)", "esc(f.date)",
+                      "esc(f.vehicle)", "esc(f.task)", "esc(f.agents)"):
+            self.assertIn(field, body, f"harness field sink changed: {field}")
     def test_agent_detail_tolerates_missing_critical_and_warnings(self):
         # E1: hub export rows carry no critical/warnings key the way a live scan's rows do (they
         # do now, but renderAgentDetail must never assume it) — a bare x.critical.length threw
@@ -850,6 +1125,196 @@ class TestServer(unittest.TestCase):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
         self.assertIn('HUB?"":renderHooksPanel()', html)
 
+    # ---------- Doc version history panel (UI) ----------
+    def test_doc_versions_i18n_keys_present_in_both_languages(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        start = html.index("const I18N={")
+        end = html.index("const T=(k,v)=>")
+        block = html[start:end]
+        split = block.index("\nes:{")
+        en_block, es_block = block[:split], block[split:]
+        for key in ("dvTitle", "dvAmbiguous", "dvNoDiff", "dvNoCommand", "dvLoadError", "dvRestoreCmd"):
+            self.assertIn(key + ":", en_block, key)
+            self.assertIn(key + ":", es_block, key)
+    def test_doc_version_panel_fields_always_escaped(self):
+        import re
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        start = html.index("// ---------- DOCS ----------")
+        end = html.index("// ---------- LIVE ----------")
+        body = html[start:end]
+        # x.stamp is also used as a CSS-class lookup key (S.docVersionSel===x.stamp?"primary":"")
+        # -- a safe ternary comparison, not a text interpolation, mirroring the cls[x.status]
+        # precedent in test_mcp_block_fields_always_escaped. Whitelisted by exact substring so
+        # any OTHER change to that line is still caught; checked separately below.
+        stamp_ternary = 'S.docVersionSel===x.stamp?"primary":""'
+        self.assertIn(stamp_ternary, body, "stamp ternary moved; update whitelist")
+        self.assertIn('data-stamp="${esc(x.stamp)}"', body)   # the value itself IS escaped
+        body_scan = body.replace(stamp_ternary, "")
+        pattern = re.compile(r"\$\{([^{}]*\b(?:dd\.(?:diff|message|command|command_reason)|x\.iso)\b[^{}]*)\}")
+        hits = list(pattern.finditer(body_scan))
+        self.assertGreater(len(hits), 0)
+        for m in hits:
+            self.assertIn("esc(", m.group(1), f"unescaped interpolation: ${{{m.group(1)}}}")
+    def test_doc_version_ambiguous_warning_rendered(self):
+        # Defends the ambiguous-backup-folder warning: goes RED if renderVPanel stops checking
+        # `x.ambiguous` or drops the dvAmbiguous string, not just if the word "ambiguous"
+        # disappears anywhere in the document (it also lives in docs.py/test names).
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        start = html.index("function renderVPanel")
+        end = html.index("async function selectDocVersion")
+        body = html[start:end]
+        self.assertIn("vs.some(x=>x.ambiguous)", body)
+        self.assertIn('T("dvAmbiguous")', body)
+    def test_doc_version_list_renders_human_readable_local_datetime_not_raw_iso(self):
+        # Defends: the version list used to render x.iso verbatim
+        # ("2026-08-15T14:30:12-06:00"), unreadable at a glance. fmtDT() must format it into a
+        # local date+time string (still down to the second, so the exact instant a user would
+        # need to pick the right version to restore stays unambiguous) using the same plain
+        # "YYYY-MM-DD ..." style as the rest of the file (relSince/docs mtime), not a second
+        # date convention. Asserts the actual construct, not just that "fmtDT" appears somewhere.
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        self.assertIn("function fmtDT(iso)", html)
+        fn_start = html.index("function fmtDT(iso)")
+        fn_end = html.index("\n", fn_start)
+        fn_body = html[fn_start:fn_end]
+        for part in ("getFullYear()", "getMonth()", "getDate()", "getHours()", "getMinutes()", "getSeconds()"):
+            self.assertIn(part, fn_body)
+        start = html.index("function renderVPanel")
+        end = html.index("async function selectDocVersion")
+        body = html[start:end]
+        self.assertIn("${esc(fmtDT(x.iso))}", body)
+        self.assertNotIn("${esc(x.iso)}", body)
+    def test_diff_lines_are_classified_added_removed_hunk(self):
+        # Defends the diff coloring: +/-/@@ lines must be wrapped in dedicated classes built off
+        # the EXISTING --moss/--rust/--dim variables (no new colours), and "+++"/"---" file
+        # headers (which also start with +/-) must not be misclassified as content lines.
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        self.assertIn(".dl-add{color:var(--moss)}", html)
+        self.assertIn(".dl-del{color:var(--rust)}", html)
+        self.assertIn(".dl-hunk{color:var(--dim)}", html)
+        start = html.index("function diffLineHtml(diff)")
+        end = html.index("\n", start)
+        fn = html[start:end]
+        self.assertIn('l.startsWith("+")&&!l.startsWith("+++")?"dl-add"', fn)
+        self.assertIn('l.startsWith("-")&&!l.startsWith("---")?"dl-del"', fn)
+        self.assertIn('l.startsWith("@@")?"dl-hunk"', fn)
+        start = html.index("function renderVPanel")
+        end = html.index("async function selectDocVersion")
+        body = html[start:end]
+        self.assertIn("dd.diff?diffLineHtml(dd.diff):esc(T(\"dvNoDiff\"))", body)
+    def test_diff_line_rendering_escapes_content_before_styling(self):
+        # The diff body is raw file content -- the highest-risk interpolation in this feature.
+        # diffLineHtml must escape each line BEFORE it is ever wrapped in a <span>, so a line
+        # like "+<script>" cannot break out of the <pre>. Breaking this (using the raw `l`
+        # instead of the escaped `el` when building the span) is exactly the regression this
+        # guards against.
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        start = html.index("function diffLineHtml(diff)")
+        end = html.index("\n", start)
+        fn = html[start:end]
+        self.assertIn("const el=esc(l)", fn)
+        self.assertIn('`<span class="${cls}">${el}</span>`', fn)   # styled branch uses the escaped var
+        self.assertNotIn("${l}", fn)                                # the raw line is never interpolated
+    # ---------- Nested scroll containers (item 6): only .rows/.detail scroll independently ----------
+    def test_only_two_pane_scroll_containers_plus_the_one_primary_content_cap(self):
+        # F6 measurement: 4+ elements declaring their own max-height+overflow:auto at once, two
+        # of which (list pane + detail pane) are the correct app-shell scroll regions and must
+        # stay; everything else nested INSIDE the detail pane must flow with it instead of
+        # opening its own inner scrollbar ("I scroll and the wrong thing moves").
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        # the two pane-level scrollers: kept, untouched
+        self.assertIn(".rows{overflow-y:auto;flex:1}", html)
+        self.assertIn('.detail{padding:18px 20px;display:flex;flex-direction:column;gap:14px;overflow-y:auto}', html)
+        # the ONE primary-content cap inside .detail: kept (pre.doc/pre.preview, the document
+        # preview itself -- without this cap the Edit/Open/Reload buttons below it would require
+        # scrolling past an entire file first)
+        self.assertIn("pre.doc,pre.preview{", html)
+        self.assertIn("max-height:60vh;overflow:auto}", html)
+        # small-screen tab strip fallback: kept, does not trigger at normal widths
+        self.assertIn(".tabs{display:flex;gap:2px;padding:8px 14px 0;border-bottom:1px solid var(--line);background:var(--panel);overflow-x:auto}", html)
+        # secondary blocks NESTED INSIDE the already-scrolling .detail pane must no longer pair
+        # a max-height with overflow:auto -- they flow with the pane instead of opening their
+        # own inner scrollbar. Checked as three independent constructs, not a blanket string
+        # search, so any ONE of them silently regaining its own cap goes red on its own.
+        self.assertIn('id="wtScript" style="margin-top:8px;max-height:none;overflow:visible"', html)
+        self.assertNotIn('id="wtScript" style="margin-top:8px;max-height:200px"', html)
+        self.assertIn('<pre class="doc" style="margin-top:6px;max-height:none;overflow:visible">${esc(x.diff)}</pre>', html)
+        self.assertNotIn('<pre class="doc" style="margin-top:6px;max-height:200px">${esc(x.diff)}</pre>', html)
+        self.assertIn('id="vDiff" style="margin-top:8px;max-height:none;overflow:visible"', html)
+        # the version-history button list: no longer capped at 160px with its own scrollbar
+        start = html.index("function renderVPanel")
+        end = html.index("async function selectDocVersion")
+        vpanel = html[start:end]
+        self.assertIn('style="display:flex;flex-direction:column;gap:4px;margin-top:6px">', vpanel)
+        self.assertNotIn("max-height:160px", vpanel)
+        self.assertNotIn("overflow:auto", vpanel)
+    def test_tiles_grid_scroll_cap_deliberately_kept_project_list_would_go_off_screen(self):
+        # NOT a violation, checked rather than guessed: .tilesGrid is injected as content of
+        # #rows itself (renderProjectTiles() is prepended into $("rows").innerHTML in
+        # renderProjects()), i.e. nested inside the list pane that already scrolls -- same shape
+        # as the blocks removed above. But this cap predates this unit (test_project_tiles_grid_
+        # is_compact_and_height_capped) and its own code comment says why: with 21 real projects
+        # the uncapped tile grid took 5 rows and pushed the actual project row list out of view.
+        # Removing the cap here would reintroduce that regression, so it stays -- unlike the other
+        # nested blocks, there is no primary content below it competing for the same scrollbar.
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        self.assertIn(".tilesGrid{", html)
+        self.assertIn("max-height:30vh;overflow:auto}", html)
+        self.assertIn('$("rows").innerHTML=renderProjectTiles()+a.map(', html)   # confirms: nested in #rows, not a sibling
+    # ---------- MCP tab: two-pane selection ----------
+    def test_mcp_three_ui_states_still_render(self):
+        # Do not weaken: the not-checked / empty / list branches from before this unit's
+        # two-pane rework must all still be reachable.
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        start = html.index("// ---------- MCP ----------")
+        end = html.index("// ---------- DOCS ----------")
+        body = html[start:end]
+        self.assertIn("!d.checked", body); self.assertIn('T("mcpNotChecked")', body)
+        self.assertIn("!d.servers.length", body); self.assertIn('T("mcpEmpty")', body)
+        self.assertIn("d.servers.map(x=>", body)
+    def test_mcp_detail_pane_shows_selected_server_fields_escaped(self):
+        # The right-hand pane used to stay empty forever (F5). Selecting a row must populate it
+        # with name/status/target/detail, following the S.sel + row/sel idiom used by the other
+        # tabs, and a "pick a server" placeholder when nothing is selected yet.
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        start = html.index("// ---------- MCP ----------")
+        end = html.index("// ---------- DOCS ----------")
+        body = html[start:end]
+        self.assertIn("const cur=d.servers.find(y=>y.name===S.sel)", body)
+        self.assertIn('T("pickMcp")', body)
+        self.assertIn('S.sel=r.dataset.k', body)                # row click wires selection
+        for field in ("esc(cur.name)", "esc(cur.status)", "esc(cur.target)", "esc(cur.detail)"):
+            self.assertIn(field, body)
+        self.assertIn('T("mcpTarget")', body)
+    # ---------- Health tab: strip above the findings ----------
+    def test_health_strip_reuses_live_and_activity_state_no_new_endpoint(self):
+        # The owner rejected a separate Overview tab; Health gets a compact strip instead. Must
+        # reuse S.live/S.activity and the existing loadLive/loadActivity loaders -- no new
+        # /api route, and no re-fetch of what ensureLoaded already cached.
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        self.assertIn("function healthStrip()", html)
+        start = html.index("function healthStrip()")
+        end = html.index("\n", html.index("return html", start))
+        fn = html[start:end]
+        self.assertIn("S.live", fn); self.assertIn("S.activity", fn)
+        self.assertIn('T("healthActiveNow")', fn); self.assertIn('T("healthRecent")', fn)
+        # findings themselves are never duplicated into the strip
+        self.assertNotIn("f.title", fn); self.assertNotIn("f.detail", fn)
+        self.assertIn("healthStrip()+body", html)
+        self.assertIn('health:()=>{loadHealth();ensureLoaded("activity");}', html)
+        self.assertIn('if(S.view==="health")renderHealth();', html)   # loadLive/loadActivity refresh it
+        self.assertNotIn("/api/health-strip", html)                   # no new endpoint
+    def test_health_strip_shows_quiet_line_for_nothing_active_and_omits_recent_before_loaded(self):
+        # Never an empty box: no live provider or nobody working -> one quiet noLive/healthNoActive
+        # line, never a blank <div>. And the recent-sessions half must be gated on S.activity being
+        # loaded already (no skeleton flashed while ensureLoaded's fetch is still in flight).
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        start = html.index("function healthStrip()")
+        end = html.index("\n", html.index("return html", start))
+        fn = html[start:end]
+        self.assertIn('(!live||!live.ok)?', fn)
+        self.assertIn('T("healthNoActive")', fn)
+        self.assertIn("if(S.activity){", fn)                          # recent half only once loaded
     def test_health_i18n_keys_present_in_both_languages(self):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
         start = html.index("const I18N={")

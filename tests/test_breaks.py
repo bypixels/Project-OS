@@ -1,10 +1,10 @@
 """Permanent break-tests: each test removes ONE guard in memory and asserts a canary
 test would notice. If a guard is ever deleted from the code, these go red first."""
-import os, tempfile, unittest
+import copy, http.client, json, os, re, tempfile, threading, time, unittest
 from datetime import datetime, timedelta
 from unittest import mock
 import _helpers  # noqa
-from cabina import contract as C, docs as D, guard as G, harness as H, healthlog as HL, server as SRV, sessions as SESS, usage as U, worktrees as WT
+from cabina import contract as C, docs as D, guard as G, harness as H, healthlog as HL, server as SRV, sessions as SESS, skills as SK, usage as U, worktrees as WT
 from _env import Env
 
 class TestBreaks(unittest.TestCase):
@@ -31,6 +31,27 @@ class TestBreaks(unittest.TestCase):
             self.assertFalse(d.read("p", "../x.md")["ok"])
             with mock.patch.object(D.Docs, "_resolve", lambda self, p, rel: (os.path.join(t, rel), None)):
                 self.assertNotIn("outside", d.read("p", "../x.md").get("message", ""))
+    def test_skills_read_file_confinement_guard(self):
+        # GET /api/skill-file must refuse any rel path that resolves outside the skill's own
+        # directory -- the only thing stopping "../x" from reading an arbitrary file.
+        with tempfile.TemporaryDirectory() as d:
+            outside = os.path.join(d, "secret.txt"); open(outside, "w").write("nope")
+            skill = os.path.join(d, "s"); os.makedirs(skill)
+            open(os.path.join(skill, "SKILL.md"), "w").write("---\nname: s\ndescription: d\n---\n")
+            self.assertFalse(SK.read_file(skill, "../secret.txt")["ok"])          # guard present: rejected
+            with mock.patch.object(SK, "_confined", return_value=True):           # guard disabled
+                r = SK.read_file(skill, "../secret.txt")
+            self.assertTrue(r["ok"])                                              # canary red: escapes
+            self.assertEqual(r["content"], "nope")
+            # Same guard also governs the recursive DIRECTORY LISTING: a symlink inside the
+            # skill dir pointing outside must not be listed either -- read_file's guard alone
+            # would not catch a deleted/weakened check in _list_files (skills.py:94-100).
+            os.symlink(outside, os.path.join(skill, "link.txt"))
+            names = {f["path"] for f in SK.read_body(skill)["files"]}
+            self.assertNotIn("link.txt", names)                                   # guard present: not listed
+            with mock.patch.object(SK, "_confined", return_value=True):           # guard disabled
+                names2 = {f["path"] for f in SK.read_body(skill)["files"]}
+            self.assertIn("link.txt", names2)                                     # canary red: listed
     def test_docs_working_guard(self):
         with tempfile.TemporaryDirectory() as t, tempfile.TemporaryDirectory() as b:
             open(os.path.join(t, "A.md"), "w").write("v1"); d = D.Docs({"p": t}, b); h = d.read("p", "A.md")["hash"]
@@ -41,6 +62,57 @@ class TestBreaks(unittest.TestCase):
             open(os.path.join(t, "A.md"), "w").write("v1"); d = D.Docs({"p": t}, b); h = d.read("p", "A.md")["hash"]
             d.save("p", "A.md", "v2", h)
             self.assertEqual(sum(len(fn) for _, _, fn in os.walk(b)), 1)
+    def test_docs_backup_confinement_guard(self):
+        # _backup_loc mirrors rel's dirname under <backups>/<project>/; _confined is the only
+        # thing stopping that mirrored dir from escaping <backups>/<project>/ when rel carries
+        # a directory-traversal dirname (which _resolve would normally have already refused --
+        # mock it away here to isolate this guard on its own, same idiom as test_docs_allowlist_guard).
+        with tempfile.TemporaryDirectory() as t, tempfile.TemporaryDirectory() as b:
+            d = D.Docs({"p": t}, b)
+            bp = os.path.realpath(os.path.join(b, "p"))
+            with mock.patch.object(D.Docs, "_resolve", lambda self, proj, rel: (os.path.join(t, "x.md"), None)):
+                bd, base, err = d._backup_loc("p", "../../escape/x.md")
+                self.assertIsNone(bd)                                          # guard present: rejected
+                with mock.patch.object(D, "_confined", return_value=True):     # guard disabled
+                    bd2, base2, err2 = d._backup_loc("p", "../../escape/x.md")
+            self.assertIsNotNone(bd2)                                         # canary red: escapes
+            self.assertFalse(bd2 == bp or bd2.startswith(bp + os.sep))
+
+    def test_docs_version_stamp_regex_guard(self):
+        # The stamp regex (`^\d{8}-\d{6}$`) is what keeps version_text's resolved file a direct
+        # child of the document's own mirrored backup dir -- disabling it lets a crafted stamp
+        # walk out of that dir (while staying inside the project's overall backups dir, so the
+        # separate fp-vs-bp containment check does not also catch it) and read an unrelated file.
+        with tempfile.TemporaryDirectory() as t, tempfile.TemporaryDirectory() as b:
+            os.makedirs(os.path.join(t, "sub"))
+            open(os.path.join(t, "sub/X.md"), "w").write("v1")
+            d = D.Docs({"p": t}, b)
+            bp = os.path.join(b, "p")
+            os.makedirs(bp, exist_ok=True)
+            open(os.path.join(bp, "secret.md"), "w").write("LEAKED")
+            malicious = "x/../../secret"
+            self.assertFalse(d.version_text("p", "sub/X.md", malicious)["ok"])   # guard present: rejected
+            with mock.patch.object(D, "_STAMP_RE", re.compile(r".*")):           # guard disabled
+                res = d.version_text("p", "sub/X.md", malicious)
+            self.assertTrue(res.get("ok"))                                      # canary red: reads outside bd
+            self.assertEqual(res["content"], "LEAKED")
+
+    def test_docs_prune_pattern_guard(self):
+        # _prune must only ever remove files matching the backup naming pattern; disabling that
+        # filter lets it delete any unrelated old file that happens to sit in the backups tree.
+        with tempfile.TemporaryDirectory() as t, tempfile.TemporaryDirectory() as b:
+            d = D.Docs({"p": t}, b, retention_days=1)
+            bp = os.path.join(b, "p"); os.makedirs(bp)
+            unrelated = os.path.join(bp, "notes.txt")
+            open(unrelated, "w").write("keep me")
+            old = time.time() - 999999
+            os.utime(unrelated, (old, old))
+            d._prune(bp)
+            self.assertTrue(os.path.isfile(unrelated))                         # guard present: untouched
+            with mock.patch.object(D, "_is_backup_file", return_value=True):    # guard disabled
+                d._prune(bp)
+            self.assertFalse(os.path.isfile(unrelated))                        # canary red: unrelated file deleted
+
     def test_harness_dead_hook_guard(self):
         with tempfile.TemporaryDirectory() as t:
             c = os.path.join(t, ".claude"); os.makedirs(os.path.join(c, "hooks")); open(os.path.join(c, "hooks", "x.sh"), "w").write("#")
@@ -197,6 +269,19 @@ class TestBreaks(unittest.TestCase):
         # as long as it is within retention (no os.path.exists check anywhere in here)
         fresh_reg = {"/no/such/file/deleted.jsonl": {"summary": {"ended": now_local.isoformat()}}}
         self.assertIn("/no/such/file/deleted.jsonl", SESS._prune_by_retention(fresh_reg, 365, now_local))
+
+    def test_sessions_backfill_head_line_bound_guard(self):
+        # _HEAD_LINES bounds _backfill_entrypoint's head read -- without it, a cached-but-
+        # unmigrated record with no entrypoint would force a FULL re-read of every such
+        # transcript on every refresh(), the exact perf regression Fase 4 exists to prevent.
+        entrypoint_line_idx = SESS._HEAD_LINES
+        content = "".join('{"n":%d}\n' % i for i in range(entrypoint_line_idx)) + '{"entrypoint":"sdk-py"}\n'
+        with tempfile.TemporaryDirectory() as d:
+            fp = os.path.join(d, "far.jsonl")
+            open(fp, "w").write(content)
+            self.assertIsNone(SESS._backfill_entrypoint(fp))                          # guard present: line past the bound, not found
+            with mock.patch.object(SESS, "_HEAD_LINES", entrypoint_line_idx + 1):     # guard disabled: read one line further
+                self.assertEqual(SESS._backfill_entrypoint(fp), "sdk-py")             # canary red: bound was the only thing stopping the read
 
     def test_transcript_activity_blocks_the_real_save_path(self):
         env = Env()
@@ -373,12 +458,36 @@ class TestBreaks(unittest.TestCase):
         finally:
             env.cleanup()
 
-    def test_server_origin_guard_accepts_bind_host_but_rejects_foreign_origin(self):
-        # POST CSRF guard: origin_allowed() must accept loopback OR the configured bind host
-        # (server.host can be a LAN IP -- config.py DEFAULTS/example), and still refuse a
-        # genuinely foreign Origin. Disable it in memory and show a forged Origin from
-        # evil.example would be accepted before restoring the guard.
-        import copy, http.client, threading
+    def test_server_local_only_guard_canary(self):
+        # If serve() ever stops calling the isolated loopback guard, this canary turns green
+        # under the disabled guard and therefore fails the test.
+        cfg = __import__("copy").deepcopy(SRV.config.DEFAULTS) if hasattr(SRV, "config") else None
+        if cfg is None:
+            env = Env(); cfg = env.cfg
+        else:
+            env = None
+        try:
+            cfg["server"]["host"] = "10.0.0.5"
+            fake = mock.Mock(); fake.server_address = ("10.0.0.5", 9999)
+            with mock.patch.object(SRV, "_loopback_only", return_value=True), \
+                 mock.patch.object(SRV, "App"), \
+                 mock.patch.object(SRV, "ThreadingHTTPServer", return_value=fake) as ctor:
+                SRV.serve(cfg, port=0, open_browser=False)
+            ctor.assert_called_once()
+        finally:
+            if env:
+                env.cleanup()
+
+    def test_snapshot_token_whitelist_canary(self):
+        row = {"project": "p", "tokens": {"in": 1, "out": 2, "thinking": 3}}
+        self.assertNotIn("thinking", SRV.SNAP._detail_row(row, False)["tokens"])
+        with mock.patch.object(SRV.SNAP, "_DETAIL_TOKEN_FIELDS", ("in", "out", "cache_read", "cache_write", "thinking")):
+            self.assertIn("thinking", SRV.SNAP._detail_row(row, False)["tokens"])
+
+    def test_server_origin_guard_rejects_lan_and_foreign_origin(self):
+        # POST CSRF guard: only loopback origins are accepted, regardless of configured bind host.
+        # LAN and foreign origins are refused, even when the configured bind host is non-loopback.
+        # The route remains protected by the loopback-only origin guard.
         from http.server import ThreadingHTTPServer
         env = Env()
         try:
@@ -393,16 +502,21 @@ class TestBreaks(unittest.TestCase):
                 try:
                     headers = {"Host": f"127.0.0.1:{port}", "Origin": origin,
                                "Content-Type": "application/json", "X-Cabina-Token": app.token}
-                    conn.request("POST", "/api/open", body=b'{"path": "/tmp"}', headers=headers)
+                    conn.request("POST", "/api/open", body=json.dumps({"path": env.alpha + "/CLAUDE.md"}).encode(), headers=headers)
                     r = conn.getresponse(); code = r.status; r.read()
                     return code
                 finally:
                     conn.close()
             try:
-                self.assertEqual(post_with_origin("http://10.0.0.5:1234"), 200)   # bind host: allowed (not 403)
-                self.assertEqual(post_with_origin("http://evil.example"), 403)    # foreign origin: refused
-                with mock.patch.object(SRV, "origin_allowed", return_value=True):   # guard disabled
-                    self.assertNotEqual(post_with_origin("http://evil.example"), 403)   # canary red
+                expected_path = os.path.realpath(os.path.join(env.alpha, "CLAUDE.md"))
+                with mock.patch.object(SRV.host, "open_path", return_value=(True, "opened")) as opener:
+                    self.assertEqual(post_with_origin("http://10.0.0.5:1234"), 403)   # LAN origin: refused
+                    self.assertEqual(post_with_origin("http://evil.example"), 403)    # foreign origin: refused
+                    opener.assert_not_called()                                          # neither rejection reaches the route
+                    opener.reset_mock()
+                    with mock.patch.object(SRV, "origin_allowed", return_value=True):   # guard disabled
+                        self.assertNotEqual(post_with_origin("http://evil.example"), 403)   # canary red
+                    opener.assert_called_once_with(expected_path)                       # only the neutralized guard reaches open
             finally:
                 srv.shutdown(); srv.server_close()
         finally:
@@ -560,4 +674,30 @@ class TestBreaks(unittest.TestCase):
             m.assert_called_once()
         finally:
             env.cleanup()
+
+    def test_doc_version_command_unsafe_path_guard(self):
+        # Doc-versions follow-up: /api/doc-version must never hand the user a restore command
+        # for a path containing shell metacharacters -- reuses WT._is_unsafe (same guard
+        # test_worktree_script_unsafe_path_guard above defends) rather than reimplementing it.
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as backups:
+            evil = os.path.join(root, "$(whoami)")
+            os.makedirs(evil)
+            open(os.path.join(evil, "CLAUDE.md"), "w").write("v1")
+            d = D.Docs({"evil": evil}, backups)
+            h = d.read("evil", "CLAUDE.md")["hash"]
+            self.assertTrue(d.save("evil", "CLAUDE.md", "v2", h)["ok"])
+            stamp = d.versions("evil", "CLAUDE.md")[0]["stamp"]
+            env = Env()
+            try:
+                app = SRV.App(env.cfg)
+                app.docs = lambda: d          # a Docs instance rooted at the unsafe path, in place of the real one
+                r = app.api_doc_version({"project": ["evil"], "rel": ["CLAUDE.md"], "stamp": [stamp]})
+                self.assertTrue(r["ok"], r)
+                self.assertIsNone(r["command"])                        # guard present: withheld
+                with mock.patch.object(WT, "_is_unsafe", return_value=False):   # guard disabled
+                    r2 = app.api_doc_version({"project": ["evil"], "rel": ["CLAUDE.md"], "stamp": [stamp]})
+                self.assertIsNotNone(r2["command"])
+                self.assertIn("$(whoami)", r2["command"])              # canary red: unsafe path now emitted
+            finally:
+                env.cleanup()
 if __name__ == "__main__": unittest.main()

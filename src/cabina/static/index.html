@@ -31,6 +31,7 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .tilesGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px;margin-bottom:10px;max-height:30vh;overflow:auto}.tile{background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:6px 10px;min-height:48px;display:flex;align-items:center;gap:8px}.tileName{font-weight:600;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}.tilesHead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
 textarea{min-height:90px;resize:vertical;font-family:var(--mono);font-size:12.5px}textarea.editor{width:100%;min-height:52vh;line-height:1.5;tab-size:2}
 pre.doc,pre.preview{font-family:var(--mono);font-size:12.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px 14px;max-height:60vh;overflow:auto}
+.dl-add{color:var(--moss)}.dl-del{color:var(--rust)}.dl-hunk{color:var(--dim)}
 .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 14px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw}.toast.show{opacity:1}@media (prefers-reduced-motion:reduce){.toast{transition:none}}
 </style></head>
 <body>
@@ -41,14 +42,16 @@ pre.doc,pre.preview{font-family:var(--mono);font-size:12.5px;line-height:1.5;whi
 <script>
 const TOKEN="__TOKEN__", LANG="__LANG__", HUB="__HUB__"==="1";
 const I18N={
-en:{tabs:{health:"Health",agents:"Agents",live:"Live",skills:"Skills",projects:"Projects",harness:"Harness",docs:"Docs",activity:"Activity"},
+en:{tabs:{health:"Health",agents:"Agents",live:"Live",skills:"Skills",projects:"Projects",harness:"Harness",mcp:"MCP",docs:"Docs",activity:"Activity"},
  recheck:"Re-check",checking:"checking…",ranAt:"last run: {t}",copy:"Copy",copied:"Copied",healthOk:"All clear.",sevCrit:"critical",sevWarn:"warnings",sevInfo:"info",
+ healthActiveNow:"active now",healthNoActive:"Nothing running right now.",healthRecent:"recent",healthNoRecent:"No recent sessions.",
  pickSession:"Select a session.",noSessions:"No sessions in this window.",untitled:"(untitled)",
  sessStarted:"started",sessDuration:"duration",sessTurns:"turns",sessFiles:"files touched",
  sessAgents:"agents used",sessSkills:"skills used",sessCommits:"commits",sessSubagents:"subagents",
- sessTokens:"tokens (in/out)",sessBranch:"branch",sessionsFoot:"{n} sessions",activeNow:"active {n}s ago",aggRowSessions:"— {n} sessions, {h}h",
+ sessTokens:"tokens (in/out)",sessBranch:"branch",tokIn:"in",tokCacheRead:"cache read",tokCacheWrite:"cache write",tokOut:"out",tokReasoning:"reasoning",tokCacheRate:"cache rate",tokNa:"n/a",
+ sessionsFoot:"{n} sessions",activeNow:"active {n}s ago",aggRowSessions:"— {n} sessions, {h}h",
  working:"working",done:"done",ok:"ok",warnings:"warnings",invalid:"invalid",idle:"idle",loading:"loading…",nothing:"Nothing to show.",
- pick:"Select an item.",pickAgent:"Select an agent.",pickSkill:"Select a skill.",pickProject:"Select a project.",pickHar:"Select a project or a run log.",pickDoc:"Select a document. It opens read-only; “Edit” asks before saving.",
+ pick:"Select an item.",pickAgent:"Select an agent.",pickSkill:"Select a skill.",pickProject:"Select a project.",pickHar:"Select a project or a run log.",pickDoc:"Select a document. It opens read-only; “Edit” asks before saving.",pickMcp:"Select a server.",
  search:"search…",global:"global",project:"project",problems:"problems",unused:"unused",documents:"documents",symlink:"symlink",create:"+ Create",tool:"tool",
  commitToo:"and commit this change (only this path, with a message)",committed:"committed",commitFail:"commit failed: {m}",notRepo2:"(not in a git repository)",
  drift:"DRIFT · CLAUDE CODE ↔ CODEX",twins:"twin agents",twinsD:"{s} same · {d} diverged",rulesD:"CLAUDE.md ↔ AGENTS.md",rulesS:{linked:"linked",copy:"copy",bridge:"bridge",diverged:"diverged","broken-link":"broken link","only-agents":"only AGENTS.md"},
@@ -66,6 +69,7 @@ en:{tabs:{health:"Health",agents:"Agents",live:"Live",skills:"Skills",projects:"
  shadows:"A global agent named “{name}” exists: this one will shadow it in {project}. <code>overrides: global</code> is added.",writeIn:"Write to {project}",
  liveHint:"Agents from {p}, refreshed every second. Click to focus the pane.",noLive:"No live provider. cabina works without one; install herdr for this tab.",noAgents:"No live agents.",inWs:"{n} agents in {w} workspaces",waitReview:"Waiting for review",noneDone:"Nothing finished awaiting review.",
  openFolder:"Open folder",linksTo:"links to",size:"size",lines:"lines",brokenLink:"The link points to something that no longer exists. Listed in the catalog, empty in practice.",noSkillMd:"Directory without SKILL.md: Claude Code ignores it.",skArch:"Move the whole directory to",skArchLink:"It is a link: the link moves, the real target is not touched.",skRefs:"<b>{n} file(s) mention it.</b> If any depends on this skill (e.g. an agent that says “apply the skill … rubric”), fix it first.",know:"I know what I am doing. Force.",
+ skViewBody:"View SKILL.md",skTruncated:"Shown up to 1 MB; the file continues beyond this point.",skFiles:"Attached files",skBinary:"Binary file — no preview available.",skClose:"Close",skBackToBody:"Back to SKILL.md",skLoadError:"Could not load the skill content.",
  projHint:"Click a project. “Focus” filters the other tabs.",rescan:"Rescan",rescanT:"re-measure agents, skills, worktrees (slow)",focusOn:"Focus",focusOff:"Unfocus",focusChip:"focus: {p} ×",focused:"focus on {p}: other tabs are filtered",unfocused:"focus removed",inFocus:"in focus",
  scanning:"scanning…",scanAgo:"scan: {t} ago",scanDone:"scan finished",scanFailed:"scan failed: {m}",
  rescanHint:"Re-measure agents, skills and (optionally) worktrees. The options below can make it slow.",rescanMcpLabel:"also check MCP servers (needs the claude CLI; slow)",rescanWtLabel:"also measure worktree sizes (~2 s each)",
@@ -82,16 +86,20 @@ en:{tabs:{health:"Health",agents:"Agents",live:"Live",skills:"Skills",projects:"
  rlHint:"The metric from your harness rule: a harness is judged by findings that end in a commit, not by findings produced.",agentsL:"agents",tokNd:"· tokens n/a",funnel:"· funnel",openRl:"Open run log",
  docsHint:"documents",older:"> 30 days",memHar:"MEMORY / HARNESS",claudeMd:"CLAUDE.md",agentWorking:"● agent working · editing blocked",docsFoot:"{s} of {n} documents · {p} projects",oldFoot:"· {n} untouched for over 30 days",blockedFoot:"· {p}: editing blocked",
  modified:"modified",days:"days",maybeStale:"· possibly stale",blockedMsg:"An agent is working in <b>{p}</b> right now. You can read, but editing is blocked until it finishes — editing now could overwrite its work.",edit:"Edit",openExt:"Open in editor",reload:"Reload",editing:"editing",
- editHint:"Before saving, cabina checks nobody touched the file while you edited, and keeps a copy of the previous version.",save:"Save",noChanges:"no changes",saving:"saving…",seeCurrent:"See current version",loseEdit:"You will lose your current edit. Reload?",discard:"You are editing another document. Discard the changes?"},
-es:{tabs:{health:"Salud",agents:"Agentes",live:"En vivo",skills:"Skills",projects:"Proyectos",harness:"Harness",docs:"Documentos",activity:"Actividad"},
+ editHint:"Before saving, cabina checks nobody touched the file while you edited, and keeps a copy of the previous version.",save:"Save",noChanges:"no changes",saving:"saving…",seeCurrent:"See current version",loseEdit:"You will lose your current edit. Reload?",discard:"You are editing another document. Discard the changes?",
+ dvTitle:"Version history",dvAmbiguous:"This document's backup folder was shared with any same-named document in other folders of this project, before backups started mirroring subdirectories — this list may include versions of a different file.",dvNoDiff:"No differences from the current file.",dvNoCommand:"cabina could not build a safe command for this path.",dvLoadError:"Could not load the version history.",dvRestoreCmd:"To restore this version, review and run:",
+ mcpTarget:"target",mcpNotChecked:"MCP servers have not been checked. Run <code>cabina scan --mcp</code>, or tick the “MCP” checkbox in the rescan dialog, to collect this.",mcpEmpty:"No MCP servers configured.",mcpSummary:"{n} servers · {need} need attention"},
+es:{tabs:{health:"Salud",agents:"Agentes",live:"En vivo",skills:"Skills",projects:"Proyectos",harness:"Harness",mcp:"MCP",docs:"Documentos",activity:"Actividad"},
  recheck:"Volver a chequear",checking:"comprobando…",ranAt:"última corrida: {t}",copy:"Copiar",copied:"Copiado",healthOk:"Todo en orden.",sevCrit:"críticos",sevWarn:"avisos",sevInfo:"info",
+ healthActiveNow:"activo ahora",healthNoActive:"Nada corriendo en este momento.",healthRecent:"reciente",healthNoRecent:"Sin sesiones recientes.",
  pickSession:"Seleccioná una sesión.",noSessions:"No hay sesiones en esta ventana.",
  untitled:"(sin título)",sessStarted:"inicio",sessDuration:"duración",sessTurns:"turnos",
  sessFiles:"archivos tocados",sessAgents:"agentes usados",sessSkills:"skills usados",
  sessCommits:"commits",sessSubagents:"subagentes",sessTokens:"tokens (in/out)",sessBranch:"rama",
+ tokIn:"entrada",tokCacheRead:"caché leído",tokCacheWrite:"caché escrito",tokOut:"salida",tokReasoning:"razonamiento",tokCacheRate:"tasa de caché",tokNa:"n/d",
  sessionsFoot:"{n} sesiones",activeNow:"activo hace {n}s",aggRowSessions:"— {n} sesiones, {h}h",
  working:"trabajando",done:"terminó",ok:"ok",warnings:"avisos",invalid:"inválidos",idle:"ocioso",loading:"cargando…",nothing:"Nada que mostrar.",
- pick:"Seleccioná un elemento.",pickAgent:"Seleccioná un agente.",pickSkill:"Seleccioná un skill.",pickProject:"Seleccioná un proyecto.",pickHar:"Seleccioná un proyecto o una bitácora.",pickDoc:"Seleccioná un documento. Se abre en lectura; «Editar» pide confirmación antes de guardar.",
+ pick:"Seleccioná un elemento.",pickAgent:"Seleccioná un agente.",pickSkill:"Seleccioná un skill.",pickProject:"Seleccioná un proyecto.",pickHar:"Seleccioná un proyecto o una bitácora.",pickDoc:"Seleccioná un documento. Se abre en lectura; «Editar» pide confirmación antes de guardar.",pickMcp:"Seleccioná un servidor.",
  search:"buscar…",global:"global",project:"proyecto",problems:"con problemas",unused:"sin uso",documents:"documentos",symlink:"symlink",create:"+ Crear",tool:"herramienta",
  commitToo:"y commitear este cambio (solo esta ruta, con mensaje)",committed:"commiteado",commitFail:"falló el commit: {m}",notRepo2:"(no es un repo git)",
  drift:"DERIVA · CLAUDE CODE ↔ CODEX",twins:"agentes gemelos",twinsD:"{s} iguales · {d} divergidos",rulesD:"CLAUDE.md ↔ AGENTS.md",rulesS:{linked:"enlazado",copy:"copia",bridge:"puente",diverged:"divergido","broken-link":"enlace roto","only-agents":"solo AGENTS.md"},
@@ -109,6 +117,7 @@ es:{tabs:{health:"Salud",agents:"Agentes",live:"En vivo",skills:"Skills",project
  shadows:"Existe un agente global «{name}»: este lo tapará en {project}. Se agrega <code>overrides: global</code>.",writeIn:"Escribir en {project}",
  liveHint:"Agentes de {p}, actualizado cada segundo. Clic salta al panel.",noLive:"Sin proveedor en vivo. Cabina funciona igual; instalá herdr para esta pestaña.",noAgents:"Sin agentes en vivo.",inWs:"{n} agentes en {w} workspaces",waitReview:"Esperan revisión",noneDone:"Nada terminado esperando revisión.",
  openFolder:"Abrir carpeta",linksTo:"enlaza a",size:"tamaño",lines:"líneas",brokenLink:"El enlace apunta a algo que ya no existe. Aparece en el catálogo pero no tiene contenido.",noSkillMd:"Directorio sin SKILL.md: Claude Code lo ignora.",skArch:"Se mueve el directorio completo a",skArchLink:"Es un enlace: se mueve el enlace, el destino real no se toca.",skRefs:"<b>{n} archivo(s) lo mencionan.</b> Si alguno depende de este skill (p. ej. un agente que dice «aplicá la rúbrica de la skill …»), arreglalo primero.",know:"Sé lo que hago. Forzar.",
+ skViewBody:"Ver SKILL.md",skTruncated:"Se muestra hasta 1 MB; el archivo continúa más allá de este punto.",skFiles:"Archivos anexos",skBinary:"Archivo binario — sin vista previa disponible.",skClose:"Cerrar",skBackToBody:"Volver a SKILL.md",skLoadError:"No se pudo cargar el contenido del skill.",
  projHint:"Clic en un proyecto. «Enfocar» filtra las demás pestañas.",rescan:"Reescanear",rescanT:"vuelve a medir agentes, skills, worktrees (lento)",focusOn:"Enfocar",focusOff:"Quitar foco",focusChip:"foco: {p} ×",focused:"foco en {p}: las otras pestañas se filtran",unfocused:"foco quitado",inFocus:"en foco",
  scanning:"escaneando…",scanAgo:"escaneo: hace {t}",scanDone:"escaneo terminado",scanFailed:"el escaneo falló: {m}",
  rescanHint:"Vuelve a medir agentes, skills y (opcional) worktrees. Con las opciones de abajo puede tardar.",rescanMcpLabel:"también revisar servidores MCP (necesita el CLI de claude; lento)",rescanWtLabel:"también medir tamaño de worktrees (~2 s cada uno)",
@@ -125,18 +134,24 @@ es:{tabs:{health:"Salud",agents:"Agentes",live:"En vivo",skills:"Skills",project
  rlHint:"La métrica de tu regla de harness: un harness se juzga por hallazgos que terminan en commit, no por hallazgos producidos.",agentsL:"agentes",tokNd:"· tokens n/d",funnel:"· embudo",openRl:"Abrir bitácora",
  docsHint:"documentos",older:"> 30 días",memHar:"MEMORY / HARNESS",claudeMd:"CLAUDE.md",agentWorking:"● agente trabajando · edición bloqueada",docsFoot:"{s} de {n} documentos · {p} proyectos",oldFoot:"· {n} sin tocar en más de 30 días",blockedFoot:"· {p}: edición bloqueada",
  modified:"modificado",days:"días",maybeStale:"· posiblemente desactualizado",blockedMsg:"Hay un agente trabajando en <b>{p}</b> ahora mismo. Podés leer, pero la edición está bloqueada hasta que termine — editar ahora podría pisar su trabajo.",edit:"Editar",openExt:"Abrir en el editor",reload:"Recargar",editing:"editando",
- editHint:"Antes de guardar se verifica que nadie haya tocado el archivo mientras editabas, y se guarda una copia de la versión anterior.",save:"Guardar",noChanges:"sin cambios",saving:"guardando…",seeCurrent:"Ver la versión actual",loseEdit:"Vas a perder tu edición actual. ¿Recargar?",discard:"Estás editando otro documento. ¿Descartar los cambios?"}};
+ editHint:"Antes de guardar se verifica que nadie haya tocado el archivo mientras editabas, y se guarda una copia de la versión anterior.",save:"Guardar",noChanges:"sin cambios",saving:"guardando…",seeCurrent:"Ver la versión actual",loseEdit:"Vas a perder tu edición actual. ¿Recargar?",discard:"Estás editando otro documento. ¿Descartar los cambios?",
+ dvTitle:"Historial de versiones",dvAmbiguous:"La carpeta de respaldo de este documento era compartida con cualquier documento del mismo nombre en otras carpetas de este proyecto, antes de que los respaldos empezaran a reflejar las subcarpetas — esta lista puede incluir versiones de un archivo distinto.",dvNoDiff:"Sin diferencias con el archivo actual.",dvNoCommand:"cabina no pudo generar un comando seguro para esta ruta.",dvLoadError:"No se pudo cargar el historial de versiones.",dvRestoreCmd:"Para restaurar esta versión, revisá y corré:",
+ mcpTarget:"destino",mcpNotChecked:"Los servidores MCP no se han revisado. Corré <code>cabina scan --mcp</code>, o marcá la casilla «MCP» en el diálogo de reescaneo, para recolectar esto.",mcpEmpty:"No hay servidores MCP configurados.",mcpSummary:"{n} servidores · {need} necesitan atención"}};
 const T=(k,v)=>{let s=(I18N[LANG]||I18N.en)[k]??I18N.en[k]??k; if(typeof s==="object")return s; return v?s.replace(/\{(\w+)\}/g,(_,x)=>v[x]??""):s;};
 const S={view:HUB?"agents":"health",data:null,live:null,skills:null,projs:null,har:null,docs:null,doc:null,activity:null,hub:null,health:null,healthChecking:false,editing:false,sel:null,q:"",chips:new Set(),mode:null,focus:null,loaded:new Set(),
- hooks:null,hooksCmd:"",hooksForce:false,hooksPreview:false,tiles:null,healthHistory:null};
+ hooks:null,hooksCmd:"",hooksForce:false,hooksPreview:false,tiles:null,healthHistory:null,mcp:null,docVersions:null,docVersionSel:null,docVersionDetail:null,skillBody:null,skillFile:null};
 const $=id=>document.getElementById(id);const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const AGENT_CLASSES={valid:"valid",warnings:"warnings",invalid:"invalid",document:"document"};
+const HARNESS_CLASSES={complete:"complete",partial:"partial",none:"none"};
+const agentClass=v=>AGENT_CLASSES[v]||"document";
+const harnessClass=v=>HARNESS_CLASSES[v]||"none";
 async function GET(u){return (await fetch(u)).json();}async function POST(u,b){return (await fetch(u,{method:"POST",headers:{"Content-Type":"application/json","X-Cabina-Token":TOKEN},body:JSON.stringify(b)})).json();}
 let tt;function toast(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(tt);tt=setTimeout(()=>t.classList.remove("show"),2600);}
-const VIEWS=HUB?["agents","skills","projects","harness","activity"]:["health","agents","live","skills","projects","harness","docs","activity"];
+const VIEWS=HUB?["agents","skills","projects","harness","activity"]:["health","agents","live","skills","projects","harness","mcp","docs","activity"];
 $("tabs").innerHTML=VIEWS.map(v=>`<button class="tab" data-v="${v}">${esc(T("tabs")[v])}</button>`).join("");
-const LOADERS={health:()=>loadHealth(),skills:()=>loadSkills(),projects:()=>{loadProjs();loadTiles();loadHealthHistory();},harness:()=>loadHar(),activity:()=>loadActivity(),docs:()=>loadDocs()};
+const LOADERS={health:()=>{loadHealth();ensureLoaded("activity");},skills:()=>loadSkills(),projects:()=>{loadProjs();loadTiles();loadHealthHistory();},harness:()=>loadHar(),mcp:()=>loadMcp(),activity:()=>loadActivity(),docs:()=>loadDocs()};
 function ensureLoaded(v){if(S.loaded.has(v))return;const f=LOADERS[v];if(!f)return;S.loaded.add(v);f();}
-document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{S.view=t.dataset.v;S.mode=null;S.sel=null;S.q="";S.chips.clear();ensureLoaded(S.view);render();});
+document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{S.view=t.dataset.v;S.mode=null;S.sel=null;S.q="";S.chips.clear();S.skillBody=null;S.skillFile=null;ensureLoaded(S.view);render();});
 async function loadAgents(){S.data=await GET("/api/agents");render();if(S.view==="agents"){if(S.mode==="create")renderCreate();else if(S.sel)renderAgentDetail();}}
 async function loadSkills(){S.skills=await GET("/api/skills");if(S.view==="skills")render();}
 async function loadProjs(){S.projs=await GET("/api/projects");if(S.view==="projects")render();}
@@ -144,20 +159,22 @@ async function loadTiles(){if(HUB)return;S.tiles=await GET("/api/tiles");if(S.vi
 async function loadHealthHistory(){if(HUB)return;S.healthHistory=await GET("/api/health-history?days=30");if(S.view==="projects")render();}
 async function loadHar(){S.har=await GET("/api/harness");if(!HUB)S.hooks=await GET("/api/hooks"+(S.hooksCmd?"?cmd="+encodeURIComponent(S.hooksCmd):""));if(S.view==="harness")render();}
 async function loadDocs(){S.docs=await GET("/api/docs");if(S.view==="docs")render();}
-async function loadActivity(){S.activity=await GET("/api/activity?days=30");if(S.view==="activity")render();}
+async function loadActivity(){S.activity=await GET("/api/activity?days=30");if(S.view==="activity")render();if(S.view==="health")renderHealth();}
+async function loadMcp(){S.mcp=await GET("/api/mcp");if(S.view==="mcp")render();}
 async function loadHub(){if(!HUB)return;S.hub=await GET("/api/hub");renderHubBanner();}
 function renderHubBanner(){if(!HUB||!S.hub)return;let el=$("hubBanner");if(!el){el=document.createElement("div");el.id="hubBanner";
  el.style.cssText="padding:8px 18px;background:var(--slate-soft);color:var(--slate);font-size:12px;border-bottom:1px solid var(--line)";
  document.querySelector(".top").after(el);}
  el.innerHTML=S.hub.files.map(f=>`<span>${esc(f.name)} (${esc(f.machine||"?")}) · ${esc(f.status)}</span>`).join("  ·  ");}
-async function loadLive(){S.live=await GET("/api/live");renderStats();if(S.view==="live")renderLive();}
+async function loadLive(){S.live=await GET("/api/live");renderStats();if(S.view==="live")renderLive();if(S.view==="health")renderHealth();}
 function relTime(iso){if(!iso)return null;const t=new Date(iso).getTime();if(isNaN(t))return null;const s=Math.max(0,Math.floor((Date.now()-t)/1000));
  if(s<60)return s+"s";if(s<3600)return Math.floor(s/60)+"m";if(s<86400)return Math.floor(s/3600)+"h";return Math.floor(s/86400)+"d";}
+function fmtDT(iso){const t=new Date(iso);if(isNaN(t))return iso;const p=n=>String(n).padStart(2,"0");return `${t.getFullYear()}-${p(t.getMonth()+1)}-${p(t.getDate())} ${p(t.getHours())}:${p(t.getMinutes())}:${p(t.getSeconds())}`;}
 function renderStats(){const a=S.data?.agents||[],l=S.live?.agents||[];const n=k=>a.filter(x=>x.category===k).length;const w=l.filter(x=>x.status==="working").length,d=l.filter(x=>x.status==="done").length;
  let scanStat="";if(!HUB&&S.scanStatus){if(S.scanStatus.scanning)scanStat=`<span class="stat" id="scanStat">${esc(T("scanning"))}</span>`;
   else{const rt=relTime(S.scanStatus.scanned_at);if(rt)scanStat=`<span class="stat" id="scanStat">${esc(T("scanAgo",{t:rt}))}</span>`;}}
  $("stats").innerHTML=`<span class="stat"><b>${w}</b> ${T("working")}</span>`+(d?`<span class="stat warn"><b>${d}</b> ${T("done")}</span>`:"")+`<span class="stat ok"><b>${n("valid")}</b> ${T("ok")}</span>`+(n("warnings")?`<span class="stat warn"><b>${n("warnings")}</b> ${T("warnings")}</span>`:"")+(n("invalid")?`<span class="stat bad"><b>${n("invalid")}</b> ${T("invalid")}</span>`:"")+scanStat;}
-function render(){document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("on",t.dataset.v===S.view));renderStats();({health:renderHealth,agents:renderAgents,skills:renderSkills,projects:renderProjects,harness:renderHarness,docs:renderDocs,live:renderLive,activity:renderActivity})[S.view]();}
+function render(){document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("on",t.dataset.v===S.view));renderStats();({health:renderHealth,agents:renderAgents,skills:renderSkills,projects:renderProjects,harness:renderHarness,mcp:renderMcp,docs:renderDocs,live:renderLive,activity:renderActivity})[S.view]();}
 async function commitBox(id, path){const r=await GET("/api/in-repo?path="+encodeURIComponent(path));const el=$(id);if(!el)return;el.innerHTML=r.in_repo?`<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--dim)"><input type="checkbox" id="${id}-cb"> ${T("commitToo")}</label>`:`<span class="muted">${T("notRepo2")}</span>`;}
 async function maybeCommit(id, path, message){const cb=$(id+"-cb");if(!cb||!cb.checked)return;const r=await POST("/api/commit",{path,message});toast(r.ok?`${T("committed")} · ${r.message}`:T("commitFail",{m:r.message}));}
 function chipFocus(){return S.focus?`<button class="chip on" id="chipFocus">${esc(T("focusChip",{p:S.focus}))}</button>`:"";}function bindFocus(){const c=$("chipFocus");if(c)c.onclick=()=>{S.focus=null;render();};}
@@ -167,6 +184,13 @@ async function loadHealth(){S.health=await GET("/api/health");if(S.view==="healt
 function healthSevClass(sev){return sev==="crit"?"bad":sev==="warn"?"warn":"info";}
 function healthSevPill(sev){return sev==="crit"?"invalid":sev==="warn"?"warnings":"document";}
 function healthSevLabel(sev){return sev==="crit"?T("sevCrit"):sev==="warn"?T("sevWarn"):T("sevInfo");}
+function healthStrip(){const live=S.live,active=(live&&live.ok?live.agents.filter(a=>a.status==="working"):[]).slice(0,5);
+ const activeHtml=(!live||!live.ok)?`<span class="muted">${T("noLive")}</span>`:active.length?active.map(a=>`<b>${esc(a.agent)}</b> <span class="muted">${esc(a.workspace)}</span>`).join(" · "):`<span class="muted">${T("healthNoActive")}</span>`;
+ let html=`<div class="box info" style="margin-bottom:10px" id="healthStrip"><div><b>${T("healthActiveNow")}</b> ${activeHtml}</div>`;
+ if(S.activity){const recent=(S.activity.sessions||[]).slice().sort((p,r)=>(r.mtime||0)-(p.mtime||0)).slice(0,3);
+  const recentHtml=recent.length?recent.map(x=>`<b>${esc(x.project||"—")}</b> ${esc(x.title||T("untitled"))}`).join(" · "):`<span class="muted">${T("healthNoRecent")}</span>`;
+  html+=`<div style="margin-top:4px"><b>${T("healthRecent")}</b> ${recentHtml}</div>`;}
+ return html+"</div>";}
 function renderHealth(){if(!S.health){$("filters").innerHTML="";$("rows").innerHTML=`<div class="empty">${T("loading")}</div>`;$("detail").innerHTML="";return;}
  const H=S.health,ord={crit:0,warn:1,info:2};const fs=(H.findings||[]).slice().sort((p,r)=>(ord[p.sev]??9)-(ord[r.sev]??9));
  const n={crit:0,warn:0,info:0};fs.forEach(f=>{if(f.sev in n)n[f.sev]++;});
@@ -174,7 +198,7 @@ function renderHealth(){if(!S.health){$("filters").innerHTML="";$("rows").innerH
  $("bRecheck").onclick=async()=>{S.healthChecking=true;renderHealth();await loadHealth();S.healthChecking=false;renderHealth();};
  let body=H.error?`<div class="box bad">${esc(H.error)}</div>`:"";
  body+=fs.length?fs.map((f,i)=>`<div class="box ${healthSevClass(f.sev)}" style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center"><b>${esc(f.title)}</b><span class="pill p-${healthSevPill(f.sev)}">${healthSevLabel(f.sev)}</span></div>`+(f.detail?`<pre class="doc" style="margin-top:6px">${esc(f.detail)}</pre>`:"")+(f.fix?`<div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><code id="hfix${i}">${esc(f.fix)}</code><button class="btn" data-copy="${i}">${T("copy")}</button></div>`:"")+`</div>`).join(""):(H.error?"":`<div class="empty">${T("healthOk")}</div>`);
- $("rows").innerHTML=body;$("detail").innerHTML="";
+ $("rows").innerHTML=healthStrip()+body;$("detail").innerHTML="";
  document.querySelectorAll("[data-copy]").forEach(b=>b.onclick=async()=>{const i=b.dataset.copy,el=$("hfix"+i),txt=fs[+i].fix;
   try{await navigator.clipboard.writeText(txt);toast(T("copied"));}
   catch(e){const rg=document.createRange();rg.selectNodeContents(el);const s=window.getSelection();s.removeAllRanges();s.addRange(rg);}});}
@@ -188,16 +212,16 @@ function renderAgents(){if(!S.data){$("rows").innerHTML=`<div class="empty">${T(
   if(S.chips.has("global")&&x.project!=="global")return false;if(S.chips.has("project")&&x.project==="global")return false;if(S.chips.has("problems")&&!["invalid","warnings"].includes(x.category))return false;
   if(S.chips.has("unused")&&(x.uses>0||!x.is_agent||x.tool==="codex"))return false;if(S.chips.has("docs")&&x.category!=="document")return false;if(!S.chips.has("docs")&&x.category==="document")return false;if(S.chips.has("codex")&&x.tool!=="codex")return false;return true;});
  const ord={invalid:0,warnings:1,valid:2,document:3};sel.sort((p,r)=>(ord[p.category]-ord[r.category])||(r.uses-p.uses)||p.name.localeCompare(r.name));
- $("rows").innerHTML=sel.length?sel.map(x=>{const key=x.tool+":"+x.project+"/"+x.name;const u=x.is_agent&&x.tool==="claude"?` · ${x.attributed&&x.uses_here!=null?x.uses_here:x.uses}${x.homonyms>1&&!(x.attributed&&x.uses_here!=null)?"≈":""}`:"";
-  return `<button class="row ${S.sel===key?"sel":""}" data-k="${esc(key)}"><span class="dot d-${x.category}"></span><span class="n">${esc(x.name)}${x.tool==="codex"?'<span class="tl codex">codex</span>':""}</span><span class="w">${esc(x.project)}${u}${mchip(x)}</span></button>`;}).join(""):`<div class="empty">${T("nothing")}</div>`;
+  $("rows").innerHTML=sel.length?sel.map(x=>{const key=x.tool+":"+x.project+"/"+x.name;const u=x.is_agent&&x.tool==="claude"?` · ${fmtNum(x.attributed&&x.uses_here!=null?x.uses_here:x.uses)}${x.homonyms>1&&!(x.attributed&&x.uses_here!=null)?"≈":""}`:"";
+  return `<button class="row ${S.sel===key?"sel":""}" data-k="${esc(key)}"><span class="dot d-${agentClass(x.category)}"></span><span class="n">${esc(x.name)}${x.tool==="codex"?'<span class="tl codex">codex</span>':""}</span><span class="w">${esc(x.project)}${u}${mchip(x)}</span></button>`;}).join(""):`<div class="empty">${T("nothing")}</div>`;
  document.querySelectorAll(".row").forEach(r=>r.onclick=()=>{S.sel=r.dataset.k;S.mode=null;renderAgents();renderAgentDetail();});
  const ag=a.filter(x=>x.is_agent);const inv=ag.filter(x=>x.category==="invalid").length,av=ag.filter(x=>x.category==="warnings").length,su=ag.filter(x=>x.uses===0).length,dc=a.filter(x=>x.category==="document").length;
  $("foot").textContent=`${sel.filter(x=>x.is_agent).length} / ${ag.length}`+(inv?` · ${inv} ${T("invalid")}`:"")+(av?` · ${av} ${T("warnings")}`:"")+(su?` · ${su} ${T("unused")}`:"")+(dc?` · ${dc} ${T("documents")}`:"")+(S.data.window?` · ${S.data.window} →`:"");
  if(!S.mode&&!S.sel)$("detail").innerHTML=`<div class="muted">${T("pickAgent")}</div>`;}
 function renderAgentDetail(){const x=(S.data?.agents||[]).find(y=>y.tool+":"+y.project+"/"+y.name===S.sel);if(!x){$("detail").innerHTML=`<div class="muted">${T("pickAgent")}</div>`;return;}
- const et={valid:T("ok"),warnings:T("warnings"),invalid:T("invalid"),document:T("documents")}[x.category];
- let h=`<div class="h">${esc(x.name)} <span class="pill p-${x.category}">${et}</span>${x.tool==="codex"?'<span class="tl codex">codex</span>':'<span class="tl">claude</span>'}</div><div class="meta"><span>${T("where")}</span><b>${esc(x.project)}</b>`+((!HUB&&x.path)?`<span>${T("file")}</span><b><code>${esc(x.path)}</code></b>`:"")+
-  (x.is_agent?`<span>${T("model")}</span><b>${esc(x.model||"—")}</b><span>${T("tools")}</span><b>${esc(x.tools||"—")}</b><span>${T("lastUse")}</span><b>${x.tool==="codex"?`<span class="muted">${T("codexUses")}</span>`:x.last?esc(x.last)+" · "+(x.attributed&&x.uses_here!=null?`${x.uses_here} ${T("here")} · ${x.uses} total`:`${x.uses} ${T("invocations")}`):T("never")}${x.homonyms>1&&!(x.attributed&&x.uses_here!=null)?` <span class="muted">(${T("shared",{n:x.homonyms-1})})</span>`:""}</b>`:"")+`</div>`;
+ const et={valid:T("ok"),warnings:T("warnings"),invalid:T("invalid"),document:T("documents")}[agentClass(x.category)];
+ let h=`<div class="h">${esc(x.name)} <span class="pill p-${agentClass(x.category)}">${et}</span>${x.tool==="codex"?'<span class="tl codex">codex</span>':'<span class="tl">claude</span>'}</div><div class="meta"><span>${T("where")}</span><b>${esc(x.project)}</b>`+((!HUB&&x.path)?`<span>${T("file")}</span><b><code>${esc(x.path)}</code></b>`:"")+
+   (x.is_agent?`<span>${T("model")}</span><b>${esc(x.model||"—")}</b><span>${T("tools")}</span><b>${esc(x.tools||"—")}</b><span>${T("lastUse")}</span><b>${x.tool==="codex"?`<span class="muted">${T("codexUses")}</span>`:x.last?esc(x.last)+" · "+(x.attributed&&x.uses_here!=null?`${fmtNum(x.uses_here)} ${T("here")} · ${fmtNum(x.uses)} total`:`${fmtNum(x.uses)} ${T("invocations")}`):T("never")}${x.homonyms>1&&!(x.attributed&&x.uses_here!=null)?` <span class="muted">(${T("shared",{n:x.homonyms-1})})</span>`:""}</b>`:"")+`</div>`;
  if(x.description||x.desc)h+=`<div class="muted">${esc(x.description||x.desc)}</div>`;if(x.category==="document")h+=`<div class="box info">${T("isDoc")}</div>`;
  if((x.critical||[]).length)h+=`<div class="box bad"><b>${T("notMet")}</b><ul>${(x.critical||[]).map(c=>`<li>${esc(c)}</li>`).join("")}</ul></div>`;if((x.warnings||[]).length)h+=`<div class="box warn"><b>${T("warnT")}</b><ul>${(x.warnings||[]).map(c=>`<li>${esc(c)}</li>`).join("")}</ul></div>`;
  h+=`<div id="refs"></div><div class="actions">`+(HUB?"":`<button class="btn primary" id="bOpen">${T("openFile")}</button><button class="btn" id="bRefs">${T("refs")}</button><button class="btn danger" id="bArch">${T("archive")}</button>`)+`</div>`;
@@ -227,17 +251,56 @@ function renderSkills(){if(!S.skills){$("rows").innerHTML=`<div class="empty">${
  $("q").oninput=e=>{S.q=e.target.value;renderSkills();};document.querySelectorAll(".chip[data-c]").forEach(c=>c.onclick=()=>{const k=c.dataset.c;S.chips.has(k)?S.chips.delete(k):S.chips.add(k);renderSkills();});
  const q=S.q.toLowerCase();let sel=a.filter(x=>{if(S.focus&&x.project!==S.focus)return false;if(q&&!(x.name+" "+x.project+" "+x.desc).toLowerCase().includes(q))return false;if(S.chips.has("global")&&x.project!=="global")return false;if(S.chips.has("project")&&x.project==="global")return false;if(S.chips.has("symlink")&&!x.symlink)return false;if(S.chips.has("unused")&&x.uses>0)return false;if(S.chips.has("problems")&&x.state==="ok")return false;return true;});
  sel.sort((p,r)=>(p.state==="ok")-(r.state==="ok")||(r.uses-p.uses)||p.name.localeCompare(r.name));const est=x=>x.state==="ok"?"valid":(x.state==="broken-link"||x.state==="no-skill-md")?"invalid":"warnings";
- $("rows").innerHTML=sel.length?sel.map(x=>{const key=(x.tool||"claude")+":"+x.project+"/"+x.name;return `<button class="row ${S.sel===key?"sel":""}" data-k="${esc(key)}"><span class="dot d-${est(x)}"></span><span class="n">${esc(x.name)}${x.symlink?' <span class="muted">↗</span>':""}${x.tool==="codex"?'<span class="tl codex">codex</span>':""}</span><span class="w">${esc(x.project)} · ${x.uses_here!=null?x.uses_here:x.uses}</span></button>`;}).join(""):`<div class="empty">${T("nothing")}</div>`;
- document.querySelectorAll(".row").forEach(r=>r.onclick=()=>{S.sel=r.dataset.k;renderSkills();renderSkillDetail();});
+  $("rows").innerHTML=sel.length?sel.map(x=>{const key=(x.tool||"claude")+":"+x.project+"/"+x.name;return `<button class="row ${S.sel===key?"sel":""}" data-k="${esc(key)}"><span class="dot d-${agentClass(est(x))}"></span><span class="n">${esc(x.name)}${x.symlink?' <span class="muted">↗</span>':""}${x.tool==="codex"?'<span class="tl codex">codex</span>':""}</span><span class="w">${esc(x.project)} · ${fmtNum(x.uses_here!=null?x.uses_here:x.uses)}</span></button>`;}).join(""):`<div class="empty">${T("nothing")}</div>`;
+  document.querySelectorAll(".row").forEach(r=>r.onclick=()=>{S.sel=r.dataset.k;S.skillBody=null;S.skillFile=null;renderSkills();renderSkillDetail();});
  const ng=a.filter(x=>x.project==="global").length,prob=a.filter(x=>x.state!=="ok").length,su=a.filter(x=>x.uses===0).length;$("foot").textContent=`${sel.length} / ${a.length} · ${ng} ${T("global")} · ${a.length-ng} ${T("project")}`+(prob?` · ${prob} ${T("problems")}`:"")+` · ${su} ${T("unused")}`;
  if(!S.sel)$("detail").innerHTML=`<div class="muted">${T("pickSkill")}</div>`;}
 function renderSkillDetail(){const x=(S.skills?.skills||[]).find(y=>(y.tool||"claude")+":"+y.project+"/"+y.name===S.sel);if(!x)return;const et={ok:["valid",T("ok")],"no-frontmatter":["warnings","no frontmatter"],"no-skill-md":["invalid","no SKILL.md"],"broken-link":["invalid","broken link"]}[x.state];
- let h=`<div class="h">${esc(x.name)} <span class="pill p-${et[0]}">${et[1]}</span></div><div class="meta"><span>${T("where")}</span><b>${esc(x.project)}</b><span>${T("path")}</span><b><code>${esc(x.path)}</code></b>`+(x.symlink?`<span>${T("linksTo")}</span><b><code>${esc(x.target)}</code></b>`:"")+`<span>${T("size")}</span><b>${x.lines} ${T("lines")}</b><span>${T("lastUse")}</span><b>${x.last?esc(x.last)+" · "+x.uses+" "+T("invocations"):T("never")}</b></div>`;
+  let h=`<div class="h">${esc(x.name)} <span class="pill p-${agentClass(et[0])}">${et[1]}</span></div><div class="meta"><span>${T("where")}</span><b>${esc(x.project)}</b><span>${T("path")}</span><b><code>${esc(x.path)}</code></b>`+(x.symlink?`<span>${T("linksTo")}</span><b><code>${esc(x.target)}</code></b>`:"")+`<span>${T("size")}</span><b>${fmtNum(x.lines)} ${T("lines")}</b><span>${T("lastUse")}</span><b>${x.last?esc(x.last)+" · "+fmtNum(x.uses)+" "+T("invocations"):T("never")}</b></div>`;
  if(x.desc)h+=`<div class="muted">${esc(x.desc)}</div>`;if(x.state==="broken-link")h+=`<div class="box bad">${T("brokenLink")}</div>`;if(x.state==="no-skill-md")h+=`<div class="box bad">${T("noSkillMd")}</div>`;
- h+=`<div id="refs"></div>`+(HUB?"":`<div class="actions"><button class="btn primary" id="bOpen">${T("openFolder")}</button><button class="btn" id="bRefs">${T("refs")}</button><button class="btn danger" id="bArch">${T("archive")}</button></div>`);$("detail").innerHTML=h;
+ const canViewBody=!HUB&&(x.state==="ok"||x.state==="no-frontmatter");
+ h+=`<div id="refs"></div>`+(HUB?"":`<div class="actions"><button class="btn primary" id="bOpen">${T("openFolder")}</button>`+(canViewBody?`<button class="btn" id="bViewBody">${T("skViewBody")}</button>`:"")+`<button class="btn" id="bRefs">${T("refs")}</button><button class="btn danger" id="bArch">${T("archive")}</button></div>`);$("detail").innerHTML=h;
  if(!HUB){$("bOpen").onclick=async()=>{toast((await POST("/api/open",{path:x.path})).message);};
+  if(canViewBody)$("bViewBody").onclick=()=>loadSkillBody(x);
   $("bRefs").onclick=async()=>{$("refs").innerHTML=`<div class="muted">${T("searching")}</div>`;const r=await GET("/api/references?name="+encodeURIComponent(x.name));$("refs").innerHTML=r.references.length?`<div class="box warn"><b>${T("refsFound",{n:r.references.length,name:esc(x.name)})}</b><ul>${r.references.map(f=>`<li><code>${esc(f)}</code></li>`).join("")}</ul></div>`:`<div class="box info">${T("refsNone")}</div>`;};
   $("bArch").onclick=()=>renderArchive(x,"/api/archive-skill",{name:x.name,project:x.project,path:x.path},"skills/"+x.project,renderSkillDetail,loadSkills,x.symlink?T("skArchLink"):T("skArch")+` <code>_archive/&lt;today&gt;/skills/${esc(x.project)}/</code>.`);}}
+function fmtBytesSk(n){n=Number(n)||0;if(n<1024)return n+" B";if(n<1024*1024)return (n/1024).toFixed(1)+" KB";return (n/1024/1024).toFixed(1)+" MB";}
+async function loadSkillBody(x){const key=S.sel;const tool=x.tool||"claude",project=x.project,name=x.name;S.skillBody={loading:true,error:null,data:null};S.skillFile=null;renderSkillBodyView(x);
+ let r;
+ try{r=await GET(`/api/skill-body?tool=${encodeURIComponent(tool)}&project=${encodeURIComponent(project)}&name=${encodeURIComponent(name)}`);}
+ catch(e){if(S.sel!==key)return;S.skillBody={loading:false,error:T("skLoadError"),data:null};renderSkillBodyView(x);return;}
+ if(S.sel!==key)return;
+ if(!r.ok){S.skillBody={loading:false,error:r.message||T("skLoadError"),data:null};renderSkillBodyView(x);return;}
+ S.skillBody={loading:false,error:null,data:r};renderSkillBodyView(x);}
+function renderSkillBodyView(x){const sb=S.skillBody;if(!sb)return;
+ let h=`<div class="h">${esc(x.name)} <span class="pill p-document">SKILL.md</span></div>`;
+ if(sb.loading){$("detail").innerHTML=h+`<div class="muted">${T("loading")}</div>`;return;}
+ if(sb.error){$("detail").innerHTML=h+`<div class="box bad">${esc(sb.error)}</div><div class="actions"><button class="btn" id="bSkClose">${T("skClose")}</button></div>`;$("bSkClose").onclick=()=>renderSkillDetail();return;}
+ const d=sb.data;
+ if(d.truncated)h+=`<div class="box warn">${T("skTruncated")}</div>`;
+ h+=`<pre class="doc">${esc(d.content)}</pre>`;
+ const others=(d.files||[]).filter(f=>f.path!=="SKILL.md");
+ if(others.length)h+=`<div class="muted" style="margin-top:6px">${T("skFiles")}</div><div style="display:flex;flex-direction:column;gap:4px;margin-top:4px">`+
+  others.map(f=>`<button class="btn" data-p="${esc(f.path)}" style="text-align:left">${esc(f.path)} · ${fmtBytesSk(f.size)}</button>`).join("")+`</div>`;
+ h+=`<div class="actions"><button class="btn" id="bSkClose">${T("skClose")}</button></div>`;
+ $("detail").innerHTML=h;
+ $("bSkClose").onclick=()=>renderSkillDetail();
+ $("detail").querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>loadSkillFile(x,b.dataset.p));}
+async function loadSkillFile(x,path){const key=S.sel;const tool=x.tool||"claude",project=x.project,name=x.name;S.skillFile={path,loading:true,error:null,data:null};renderSkillFileView(x);
+ let r;
+ try{r=await GET(`/api/skill-file?tool=${encodeURIComponent(tool)}&project=${encodeURIComponent(project)}&name=${encodeURIComponent(name)}&path=${encodeURIComponent(path)}`);}
+ catch(e){if(S.sel!==key||!S.skillFile||S.skillFile.path!==path)return;S.skillFile={path,loading:false,error:T("skLoadError"),data:null};renderSkillFileView(x);return;}
+ if(S.sel!==key||!S.skillFile||S.skillFile.path!==path)return;
+ if(!r.ok){S.skillFile={path,loading:false,error:r.message||T("skLoadError"),data:null};renderSkillFileView(x);return;}
+ S.skillFile={path,loading:false,error:null,data:r};renderSkillFileView(x);}
+function renderSkillFileView(x){const sf=S.skillFile;if(!sf)return;
+ let h=`<div class="h">${esc(sf.path)} <span class="pill p-document">${esc(x.name)}</span></div>`;
+ if(sf.loading){$("detail").innerHTML=h+`<div class="muted">${T("loading")}</div>`;return;}
+ if(sf.error){$("detail").innerHTML=h+`<div class="box bad">${esc(sf.error)}</div><div class="actions"><button class="btn" id="bSkBack">${T("skBackToBody")}</button></div>`;$("bSkBack").onclick=()=>renderSkillBodyView(x);return;}
+ const d=sf.data;
+ h+=d.binary?`<div class="box info">${T("skBinary")}</div>`:`<pre class="doc">${esc(d.content||"")}</pre>`;
+ h+=`<div class="muted">${fmtBytesSk(d.size)}</div><div class="actions"><button class="btn" id="bSkBack">${T("skBackToBody")}</button></div>`;
+ $("detail").innerHTML=h;$("bSkBack").onclick=()=>renderSkillBodyView(x);}
 // ---------- ACTIVITY ----------
 function actTimeline(sessions){const days=14;const today=new Date();today.setHours(0,0,0,0);const buckets=Array(days).fill(0);
  sessions.forEach(s=>{if(!s.started)return;const dt=new Date(s.started);dt.setHours(0,0,0,0);const d=Math.round((today-dt)/86400000);if(d>=0&&d<days)buckets[days-1-d]++;});   // local calendar day, not a rolling 24h window (R7)
@@ -245,6 +308,7 @@ function actTimeline(sessions){const days=14;const today=new Date();today.setHou
  const bars=buckets.map((v,i)=>{const bh=Math.round((v/max)*h);return `<rect x="${i*bw+1}" y="${h-bh}" width="${bw-2}" height="${Math.max(bh,1)}" rx="1"></rect>`;}).join("");
  return `<svg width="${w}" height="${h}" style="color:var(--moss);fill:currentColor;vertical-align:middle" role="img" aria-label="14-day session count">${bars}</svg>`;}
 function sessKey(x){return x.source_path||(x.project+"|"+x.started+"|"+(x.machine||""));}
+const fmtNum=n=>{const v=Number(n);return Number.isFinite(v)&&v>=0?v.toLocaleString(LANG==="es"?"es-CR":"en-US"):"0";};
 function renderActivity(){if(!S.activity){$("rows").innerHTML=`<div class="empty">${T("loading")}</div>`;$("filters").innerHTML="";return;}
  const detail=(S.activity.sessions||[]).length>0;
  if(!detail){renderActivityAggregated();return;}
@@ -255,14 +319,23 @@ function renderActivity(){if(!S.activity){$("rows").innerHTML=`<div class="empty
  // silently disappears from the list.
  const detailMachines=new Set(a.map(x=>x.machine));
  const aggOnly=(S.activity.aggregated||[]).filter(x=>!detailMachines.has(x.machine));
- $("filters").innerHTML=actTimeline(a)+`<input id="q" placeholder="${T("search")}" value="${esc(S.q)}">`+chipFocus();
+ // entrypoint is a raw measured field (sessions.py) — absent entirely from hub-detail exports
+ // (snapshot._detail_row is a whitelist that omits it). Chips + row column only appear when at
+ // least one loaded row actually carries it; never invent a label for what it might mean.
+ const epCounts=new Map();a.forEach(x=>{if(x.entrypoint)epCounts.set(x.entrypoint,(epCounts.get(x.entrypoint)||0)+1);});
+ const epChips=[...epCounts.entries()];
+ $("filters").innerHTML=actTimeline(a)+`<input id="q" placeholder="${T("search")}" value="${esc(S.q)}">`+
+  epChips.map(([v,n])=>`<button class="chip ${S.chips.has("ep:"+v)?"on":""}" data-c="${esc("ep:"+v)}">${esc(v)} ${n}</button>`).join("")+chipFocus();
  bindFocus();$("q").oninput=e=>{S.q=e.target.value;renderActivity();};
+ document.querySelectorAll(".chip[data-c]").forEach(c=>c.onclick=()=>{const k=c.dataset.c;S.chips.has(k)?S.chips.delete(k):S.chips.add(k);renderActivity();});
  const q=S.q.toLowerCase();
- let sel=a.filter(x=>{if(S.focus&&x.project!==S.focus)return false;if(q&&!((x.project||"")+" "+(x.title||"")+" "+(x.machine||"")).toLowerCase().includes(q))return false;return true;});
+ const epOn=epChips.filter(([v])=>S.chips.has("ep:"+v)).map(([v])=>v);
+ let sel=a.filter(x=>{if(S.focus&&x.project!==S.focus)return false;if(q&&!((x.project||"")+" "+(x.title||"")+" "+(x.machine||"")).toLowerCase().includes(q))return false;
+  if(epOn.length&&!epOn.includes(x.entrypoint))return false;return true;});
  let aggSel=aggOnly.filter(x=>{if(S.focus&&x.project!==S.focus)return false;if(q&&!((x.project||"")+" "+(x.machine||"")).toLowerCase().includes(q))return false;return true;});
  const rowsHtml=sel.map(x=>{const key=sessKey(x);const active=x.mtime&&(now-x.mtime)<activeSecs;
-  return `<button class="row ${S.sel===key?"sel":""}" data-k="${esc(key)}"><span class="dot d-${active?"working":"valid"}"></span><span class="n">${esc(x.title||T("untitled"))}${active?` <span class="tl">${T("activeNow",{n:Math.round(now-x.mtime)})}</span>`:""}${mchip(x)}</span><span class="w">${esc(x.project||"—")} · ${Math.round((x.duration_s||0)/60)}m</span></button>`;}).join("")
-  +aggSel.map(x=>`<div class="row" style="cursor:default"><span class="dot d-valid"></span><span class="n">${esc(x.project||"—")} · ${esc(x.machine||"?")}</span><span class="w">${T("aggRowSessions",{n:x.sessions||0,h:(x.hours||0).toFixed(1)})}</span></div>`).join("");
+  return `<button class="row ${S.sel===key?"sel":""}" data-k="${esc(key)}"><span class="dot d-${active?"working":"valid"}"></span><span class="n">${esc(x.title||T("untitled"))}${active?` <span class="tl">${T("activeNow",{n:Math.round(now-x.mtime)})}</span>`:""}${mchip(x)}</span><span class="w">${esc(x.project||"—")} · ${Math.round((x.duration_s||0)/60)}m${epChips.length?` · ${esc(x.entrypoint||"—")}`:""}</span></button>`;}).join("")
+   +aggSel.map(x=>`<div class="row" style="cursor:default"><span class="dot d-valid"></span><span class="n">${esc(x.project||"—")} · ${esc(x.machine||"?")}</span><span class="w">${T("aggRowSessions",{n:fmtNum(x.sessions),h:fmtNum(x.hours)})}</span></div>`).join("");
  $("rows").innerHTML=(sel.length||aggSel.length)?rowsHtml:`<div class="empty">${T("noSessions")}</div>`;
  document.querySelectorAll(".row[data-k]").forEach(r=>r.onclick=()=>{S.sel=r.dataset.k;renderActivity();});
  $("foot").textContent=T("sessionsFoot",{n:sel.length});
@@ -272,21 +345,30 @@ function renderActivityAggregated(){const a=S.activity.aggregated||[];
  $("q").oninput=e=>{S.q=e.target.value;renderActivityAggregated();};
  const q=S.q.toLowerCase();let sel=a.filter(x=>{if(S.focus&&x.project!==S.focus)return false;if(q&&!((x.project||"")+" "+(x.machine||"")).toLowerCase().includes(q))return false;return true;});
  $("rows").innerHTML=sel.length?sel.map(x=>{const key=(x.project||"")+"|"+(x.machine||"");
-  return `<button class="row ${S.sel===key?"sel":""}" data-k="${esc(key)}"><span class="dot d-valid"></span><span class="n">${esc(x.project||"—")}${mchip(x)}</span><span class="w">${x.sessions||0} · ${(x.hours||0).toFixed(1)}h</span></button>`;}).join(""):`<div class="empty">${T("noSessions")}</div>`;
+   return `<button class="row ${S.sel===key?"sel":""}" data-k="${esc(key)}"><span class="dot d-valid"></span><span class="n">${esc(x.project||"—")}${mchip(x)}</span><span class="w">${fmtNum(x.sessions)} · ${fmtNum(x.hours)}h</span></button>`;}).join(""):`<div class="empty">${T("noSessions")}</div>`;
  document.querySelectorAll(".row").forEach(r=>r.onclick=()=>{S.sel=r.dataset.k;renderActivityAggregated();});
  $("foot").textContent=T("sessionsFoot",{n:sel.length});
  if(!S.sel){$("detail").innerHTML=`<div class="muted">${T("pickSession")}</div>`;return;}
  const x=a.find(y=>(y.project||"")+"|"+(y.machine||"")===S.sel);if(!x)return;
- $("detail").innerHTML=`<div class="h">${esc(x.project||"—")}${mchip(x)}</div><div class="meta"><span>${T("sessCommits")}</span><b>${x.commits||0}</b><span>${T("sessDuration")}</span><b>${(x.hours||0).toFixed(1)}h</b><span>${T("sessTokens")}</span><b>${(x.tokens&&x.tokens.in)||0} / ${(x.tokens&&x.tokens.out)||0}</b></div>`;}
+  $("detail").innerHTML=`<div class="h">${esc(x.project||"—")}${mchip(x)}</div><div class="meta"><span>${T("sessCommits")}</span><b>${fmtNum(x.commits)}</b><span>${T("sessDuration")}</span><b>${fmtNum(x.hours)}h</b><span>${T("sessTokens")}</span><b>${fmtNum(x.tokens&&x.tokens.in)} / ${fmtNum(x.tokens&&x.tokens.out)}</b></div>`;}
 function renderSessionDetail(){const x=(S.activity?.sessions||[]).find(y=>sessKey(y)===S.sel);if(!x){$("detail").innerHTML=`<div class="muted">${T("pickSession")}</div>`;return;}
  const tc=Object.entries(x.tool_calls||{}).map(([k,v])=>`${k}:${v}`).join(", ")||"—";
  const ag=Object.keys(x.agents||{}).join(", ")||"—",sk=Object.keys(x.skills||{}).join(", ")||"—";
+ // tokens.thinking/thinking_lines did not exist before 2026-08-12 (and hub-detail exports never
+ // carry them at all, snapshot._detail_row is a whitelist) — an OLD/whitelisted record has no
+ // such keys. thinking_lines===0 means "this file cannot tell us", not "no reasoning happened":
+ // a bare 0 there would be a measurement lie, so it renders the tokNd marker instead of a number.
+ const tok=x.tokens||{},tIn=tok.in||0,tOut=tok.out||0,tCR=tok.cache_read||0,tCW=tok.cache_write||0,tLines=tok.thinking_lines||0,tThink=tok.thinking||0;
+ const denom=tIn+tCR+tCW,cacheRate=denom>0?Math.round(tCR/denom*100)+"%":"—";
+ const reasoning=tLines>0?fmtNum(tThink):T("tokNa");
  let h=`<div class="h">${esc(x.title||T("untitled"))}${mchip(x)}</div><div class="meta"><span>${T("where")}</span><b>${esc(x.project||"—")}</b><span>${T("sessBranch")}</span><b>${esc(x.branch||"—")}</b>`+
-  `<span>${T("sessStarted")}</span><b>${esc(x.started||"—")}</b><span>${T("sessDuration")}</span><b>${Math.round((x.duration_s||0)/60)}m</b>`+
+   `<span>${T("sessStarted")}</span><b>${esc(x.started||"—")}</b><span>${T("sessDuration")}</span><b>${fmtNum(Math.round((x.duration_s||0)/60))}m</b>`+
   `<span>${T("sessTurns")}</span><b>${x.turns}</b><span>${T("sessFiles")}</span><b>${(x.files_touched||[]).length}</b>`+
   `<span>${T("sessAgents")}</span><b>${esc(ag)}</b><span>${T("sessSkills")}</span><b>${esc(sk)}</b>`+
-  `<span>${T("sessCommits")}</span><b>${x.commits||0}</b><span>${T("sessSubagents")}</span><b>${x.subagents||0}</b>`+
-  `<span>${T("sessTokens")}</span><b>${(x.tokens&&x.tokens.in)||0} / ${(x.tokens&&x.tokens.out)||0}</b></div>`+
+   `<span>${T("sessCommits")}</span><b>${fmtNum(x.commits)}</b><span>${T("sessSubagents")}</span><b>${fmtNum(x.subagents)}</b>`+
+  `<span>${T("tokIn")}</span><b>${fmtNum(tIn)}</b><span>${T("tokCacheRead")}</span><b>${fmtNum(tCR)}</b>`+
+  `<span>${T("tokCacheWrite")}</span><b>${fmtNum(tCW)}</b><span>${T("tokOut")}</span><b>${fmtNum(tOut)}</b>`+
+  `<span>${T("tokReasoning")}</span><b>${reasoning}</b><span>${T("tokCacheRate")}</span><b>${cacheRate}</b></div>`+
   `<div class="muted">${esc(tc)}</div>`+((x.files_touched||[]).length?`<pre class="doc">${(x.files_touched||[]).map(esc).join("\n")}</pre>`:"");
  $("detail").innerHTML=h;}
 // Note: x.title is ALWAYS interpolated through esc() — Fase 2 (hub) depends on this staying true (R10, XSS).
@@ -336,7 +418,7 @@ async function loadWorktreePanel(x){if(HUB)return;
  const sizeTxt=s.mb_measured?T("wtSizeGb",{gb:(s.mb/1024).toFixed(1)}):T("wtSizeUnmeasured");
  let html=`<b>${esc(T("wtStats",{n:s.total,clean:s.clean,dirty:s.dirty,unknown:s.unknown,prunable:s.prunable}))}</b>`;
  html+=`<div class="muted" style="margin-top:4px">${esc(sizeTxt)}`+(s.mb_measured?"":` · <button class="btn" id="bWtRescan">${T("wtRescanSizes")}</button>`)+`</div>`;
- html+=`<pre class="doc" id="wtScript" style="margin-top:8px;max-height:200px">${esc(r.script)}</pre>`;
+ html+=`<pre class="doc" id="wtScript" style="margin-top:8px;max-height:none;overflow:visible">${esc(r.script)}</pre>`;
  html+=`<div class="actions" style="margin-top:8px"><button class="btn" id="bWtCopy">${T("wtCopyScript")}</button><button class="btn" id="bWtTerm">${T("wtOpenTerminal")}</button></div>`;
  el.className="box "+((s.dirty||s.unknown)?"warn":"info");el.innerHTML=html;
  const rb=$("bWtRescan");if(rb)rb.onclick=()=>{renderRescanDialog();const cb=$("cbWt");if(cb)cb.checked=true;};
@@ -399,7 +481,7 @@ function renderCompareResult(text){
 function harKey(x){return x.name+"|"+(x.machine||"");}   // G1: mirror projKey — name alone collides when two hub machines share a project name
 function renderHarness(){if(!S.har){$("rows").innerHTML=`<div class="empty">${T("loading")}</div>`;$("filters").innerHTML="";return;}const es=S.har.states,bs=S.har.runlogs;
  $("filters").innerHTML=`<span class="muted">${T("harHint")}</span>`+chipFocus();bindFocus();const lvl={complete:T("complete"),partial:T("partial"),none:T("noHar")};
- let rows=(HUB?"":renderHooksPanel())+es.filter(e=>!S.focus||e.name===S.focus).map(e=>{const prob=e.hooks_dead.length+e.hooks_broken.length;return `<button class="row ${S.sel==="e:"+harKey(e)?"sel":""}" data-k="e:${esc(harKey(e))}"><span class="dot d-${e.level}"></span><span class="n">${esc(e.name)} <span class="muted" style="font-family:var(--sans)">${lvl[e.level]}</span></span><span class="w">${e.hooks_active.length}/${e.hooks.length} hooks${prob?` · <span style="color:var(--amber)">${prob} ${T("problem")}</span>`:""}${e.memory_days!==null?` · MEM ${e.memory_days}d`:""}${mchip(e)}</span></button>`;}).join("");
+ let rows=(HUB?"":renderHooksPanel())+es.filter(e=>!S.focus||e.name===S.focus).map(e=>{const prob=e.hooks_dead.length+e.hooks_broken.length,cls=harnessClass(e.level);return `<button class="row ${S.sel==="e:"+harKey(e)?"sel":""}" data-k="e:${esc(harKey(e))}"><span class="dot d-${cls}"></span><span class="n">${esc(e.name)} <span class="muted" style="font-family:var(--sans)">${lvl[cls]}</span></span><span class="w">${e.hooks_active.length}/${e.hooks.length} hooks${prob?` · <span style="color:var(--amber)">${prob} ${T("problem")}</span>`:""}${e.memory_days!==null?` · MEM ${e.memory_days}d`:""}${mchip(e)}</span></button>`;}).join("");
  if(bs.length){rows+=`<div class="grp">${T("runlog")}</div>`+bs.filter(b=>!S.focus||b.project===S.focus).map(b=>{const r=b.summary;return `<button class="row ${S.sel==="b:"+b.project?"sel":""}" data-k="b:${esc(b.project)}"><span class="dot d-valid"></span><span class="n">${esc(b.project)} <span class="muted" style="font-family:var(--sans)">harness-runs.md</span></span><span class="w">${r.runs} ${T("runs")} · ${r.consequential} ${T("consq")}${r.k_per_consequential?` · ${T("kPer",{k:r.k_per_consequential})}`:""}</span></button>`;}).join("");}
  const dr=S.har.drift;if(dr&&dr.codex_present){const tw=dr.twins,rl=dr.rules,sk=dr.skills;const nd=tw.filter(x=>x.status==="diverged").length,rd=rl.filter(x=>x.status==="diverged").length,rc=rl.filter(x=>x.status==="copy").length,sd=sk.filter(x=>x.status==="diverged").length;
   const dot=(nd||rd||sd)?"invalid":rc?"warnings":"valid";
@@ -411,11 +493,11 @@ function renderHarDetail(){if(!S.sel)return;const tipo=S.sel.slice(0,1),name=S.s
  if(tipo==="d"){const dr=S.har.drift;const st=k=>({same:"valid",linked:"valid",bridge:"valid",copy:"warnings",diverged:"invalid","broken-link":"invalid","only-agents":"warnings"}[k]||"document");
   let h=`<div class="h">${T("driftTitle")}</div><div class="muted">${T("driftHint")}</div>`;
   h+=`<div class="box info"><b>${T("twins")}</b> · ${T("twinsD",{s:dr.twins.filter(x=>x.status==="same").length,d:dr.twins.filter(x=>x.status==="diverged").length})}${dr.twins.filter(x=>x.status==="diverged").map(x=>`<div style="margin-top:6px">${T("twinsBox",{name:esc(x.name),sim:x.similarity})}</div>`).join("")}</div>`;
-  dr.rules.forEach(x=>{const cls=st(x.status)==="valid"?"info":st(x.status)==="warnings"?"warn":"bad";const m={linked:T("rulesLinked",{p:esc(x.project)}),bridge:T("rulesBridge",{p:esc(x.project)}),copy:T("rulesCopy",{p:esc(x.project)})+`<br><code>cd ${esc(x.path)} && mv AGENTS.md AGENTS.md.bak && ln -s CLAUDE.md AGENTS.md</code>`,diverged:T("rulesDiv",{p:esc(x.project),n:x.diff_lines})+(x.diff?`<pre class="doc" style="margin-top:6px;max-height:200px">${esc(x.diff)}</pre>`:"")}[x.status]||`<b>${esc(x.project)}</b>: ${esc(x.status)}`;h+=`<div class="box ${cls}">${m}</div>`;});
+  dr.rules.forEach(x=>{const cls=st(x.status)==="valid"?"info":st(x.status)==="warnings"?"warn":"bad";const m={linked:T("rulesLinked",{p:esc(x.project)}),bridge:T("rulesBridge",{p:esc(x.project)}),copy:T("rulesCopy",{p:esc(x.project)})+`<br><code>cd ${esc(x.path)} && mv AGENTS.md AGENTS.md.bak && ln -s CLAUDE.md AGENTS.md</code>`,diverged:T("rulesDiv",{p:esc(x.project),n:x.diff_lines})+(x.diff?`<pre class="doc" style="margin-top:6px;max-height:none;overflow:visible">${esc(x.diff)}</pre>`:"")}[x.status]||`<b>${esc(x.project)}</b>: ${esc(x.status)}`;h+=`<div class="box ${cls}">${m}</div>`;});
   if(dr.skills.length)h+=`<div class="box ${dr.skills.some(x=>x.status==="diverged")?"warn":"info"}"><b>${T("skillsD")}</b>: ${dr.skills.map(x=>`${esc(x.name)} <span class="pill p-${st(x.status)}">${esc(x.status)}</span>`).join(" ")}</div>`;
   $("detail").innerHTML=h;return;}
  if(tipo==="e"){const e=S.har.states.find(x=>harKey(x)===name);if(!e)return;const lvl={complete:T("complete"),partial:T("partial"),none:T("noHar")};
-  let h=`<div class="h">${esc(e.name)} <span class="pill p-${e.level}">${lvl[e.level]}</span></div><div class="meta"><span>${T("path")}</span><b><code>${esc(e.path)}</code></b><span>${T("pieces")}</span><b>${["CLAUDE.md","HARNESS.md","MEMORY.md","hooks","rules","workflows"].map(k=>`<span class="pill ${(e.has||{})[k]?"p-valid":"p-document"}">${k}</span>`).join(" ")}</b><span>${T("hooks")}</span><b>${(e.hooks||[]).length?T("activeOf",{a:(e.hooks_active||[]).length,n:(e.hooks||[]).length}):T("none")}</b><span>rules</span><b>${e.rules}</b><span>workflows</span><b>${e.workflows}</b>`+
+  const cls=harnessClass(e.level);let h=`<div class="h">${esc(e.name)} <span class="pill p-${cls}">${lvl[cls]}</span></div><div class="meta"><span>${T("path")}</span><b><code>${esc(e.path)}</code></b><span>${T("pieces")}</span><b>${["CLAUDE.md","HARNESS.md","MEMORY.md","hooks","rules","workflows"].map(k=>`<span class="pill ${(e.has||{})[k]?"p-valid":"p-document"}">${k}</span>`).join(" ")}</b><span>${T("hooks")}</span><b>${(e.hooks||[]).length?T("activeOf",{a:(e.hooks_active||[]).length,n:(e.hooks||[]).length}):T("none")}</b><span>rules</span><b>${e.rules}</b><span>workflows</span><b>${e.workflows}</b>`+
    (e.memory_days!==null?`<span>MEMORY.md</span><b>${e.memory_days===0?T("today"):T("daysUntouched",{n:e.memory_days})}${e.memory_days>30?` <span style="color:var(--amber)">${T("maybeDead")}</span>`:""}</b>`:"")+`<span>${T("runlogL")}</span><b>${e.runlog?T("yesRl"):T("no")}</b></div>`;
   if((e.hooks_broken||[]).length)h+=`<div class="box bad">${T("hkBroken",{n:e.hooks_broken.length})}<ul>${e.hooks_broken.map(x=>`<li><code>${esc(x)}</code></li>`).join("")}</ul></div>`;
   if((e.hooks_dead||[]).length)h+=`<div class="box warn">${T("hkDead",{n:e.hooks_dead.length})}<ul>${e.hooks_dead.map(x=>`<li><code>${esc(x)}</code></li>`).join("")}</ul><div class="muted" style="margin-top:6px">${T("hkDeadFix")}</div></div>`;
@@ -456,6 +538,18 @@ function bindHooksPanel(){const s=S.hooks;if(!s)return;
    div.outerHTML=`<div class="box ${j.ok?"info":"bad"}" style="margin-top:8px">${esc(j.message)}</div>`;
    S.hooks=j.status;
    renderHarness();};};}
+// ---------- MCP ----------
+function renderMcp(){if(!S.mcp){$("filters").innerHTML="";$("rows").innerHTML=`<div class="empty">${T("loading")}</div>`;$("detail").innerHTML="";return;}
+ const d=S.mcp;$("filters").innerHTML="";
+ if(!d.checked){$("rows").innerHTML=`<div class="empty">${T("mcpNotChecked")}</div>`;$("detail").innerHTML="";return;}
+ if(!d.servers.length){$("rows").innerHTML=`<div class="empty">${T("mcpEmpty")}</div>`;$("detail").innerHTML="";return;}
+ const c=d.counts,need=c.failed+c.auth+c.unverified,cls={ok:"valid",auth:"warnings",unverified:"document",failed:"invalid"};
+ $("filters").innerHTML=`<span class="muted">${T("mcpSummary",{n:c.total,need:need})}</span>`;
+ $("rows").innerHTML=d.servers.map(x=>{const key=x.name;return `<button class="row ${S.sel===key?"sel":""}" data-k="${esc(key)}"><span class="dot d-${cls[x.status]||"document"}"></span><span class="n">${esc(x.name)}</span><span class="w"><span class="pill p-${cls[x.status]||"document"}">${esc(x.status)}</span></span></button>`;}).join("");
+ document.querySelectorAll(".row").forEach(r=>r.onclick=()=>{S.sel=r.dataset.k;renderMcp();});
+ const cur=d.servers.find(y=>y.name===S.sel);
+ if(!cur){$("detail").innerHTML=`<div class="muted">${T("pickMcp")}</div>`;return;}
+ $("detail").innerHTML=`<div class="h">${esc(cur.name)} <span class="pill p-${cls[cur.status]||"document"}">${esc(cur.status)}</span></div><div class="meta"><span>${T("mcpTarget")}</span><b><code>${esc(cur.target)}</code></b></div><div class="box info" style="margin-top:6px">${esc(cur.detail)}</div>`;}
 // ---------- DOCS ----------
 function renderDocs(){if(!S.docs){$("rows").innerHTML=`<div class="empty">${T("loading")}</div>`;$("filters").innerHTML="";return;}const a=S.docs.docs,work=new Set(S.docs.working);
  const chips=[["old",T("older")],["mem",T("memHar")],["claude",T("claudeMd")]];$("filters").innerHTML=`<input id="q" placeholder="${T("search")}" value="${esc(S.q)}">`+chips.map(([k,l])=>`<button class="chip ${S.chips.has(k)?"on":""}" data-c="${k}">${l}</button>`).join("")+chipFocus();bindFocus();
@@ -467,10 +561,44 @@ function renderDocs(){if(!S.docs){$("rows").innerHTML=`<div class="empty">${T("l
  $("foot").textContent=T("docsFoot",{s:sel.length,n:a.length,p:ps.length})+(old?" "+T("oldFoot",{n:old}):"")+(work.size?" "+T("blockedFoot",{p:[...work].join(", ")}):"");
  if(!S.sel)$("detail").innerHTML=`<div class="muted">${T("pickDoc")}</div>`;}
 async function openDoc(key){if(S.editing&&!confirm(T("discard")))return;S.editing=false;S.sel=key;renderDocs();const [project,rel]=key.split("::");$("detail").innerHTML=`<div class="muted">${T("loading")}</div>`;
- const r=await GET(`/api/doc?project=${encodeURIComponent(project)}&rel=${encodeURIComponent(rel)}`);if(!r.ok){$("detail").innerHTML=`<div class="box bad">${esc(r.message)}</div>`;return;}S.doc={project,rel,...r};renderDocRead();}
+ const r=await GET(`/api/doc?project=${encodeURIComponent(project)}&rel=${encodeURIComponent(rel)}`);if(!r.ok){$("detail").innerHTML=`<div class="box bad">${esc(r.message)}</div>`;return;}S.doc={project,rel,...r};S.docVersions=null;S.docVersionSel=null;S.docVersionDetail=null;renderDocRead();}
 function renderDocRead(){const d=S.doc;if(!d)return;$("detail").innerHTML=`<div class="h">${esc(d.rel.split("/").pop())} <span class="pill p-document">${esc(d.project)}</span></div><div class="meta"><span>${T("path")}</span><b><code>${esc(d.path)}</code></b><span>${T("modified")}</span><b>${esc(d.mtime)} · ${d.days===0?T("today"):d.days+" "+T("days")}${d.days>30?` <span style="color:var(--amber)">${T("maybeStale")}</span>`:""}</b><span>${T("size")}</span><b>${d.content.split("\n").length} ${T("lines")}</b></div>`+
- (d.blocked?`<div class="box warn">${T("blockedMsg",{p:esc(d.project)})}</div>`:"")+`<pre class="doc">${esc(d.content)}</pre><div class="actions"><button class="btn primary" id="bEdit" ${d.blocked?"disabled":""}>${T("edit")}</button><button class="btn" id="bExt">${T("openExt")}</button><button class="btn" id="bReload">${T("reload")}</button></div>`;
- $("bEdit").onclick=()=>renderDocEdit();$("bExt").onclick=async()=>{toast((await POST("/api/open",{path:d.path})).message);};$("bReload").onclick=()=>openDoc(S.sel);}
+ (d.blocked?`<div class="box warn">${T("blockedMsg",{p:esc(d.project)})}</div>`:"")+`<pre class="doc">${esc(d.content)}</pre><div class="actions"><button class="btn primary" id="bEdit" ${d.blocked?"disabled":""}>${T("edit")}</button><button class="btn" id="bExt">${T("openExt")}</button><button class="btn" id="bReload">${T("reload")}</button></div>`+
+ (!HUB?`<div id="vPanel" class="muted">${esc(T("loading"))}</div>`:"");
+ $("bEdit").onclick=()=>renderDocEdit();$("bExt").onclick=async()=>{toast((await POST("/api/open",{path:d.path})).message);};$("bReload").onclick=()=>openDoc(S.sel);
+ if(!HUB)loadDocVersions(d,S.sel);}
+async function loadDocVersions(d,key){if(HUB)return;
+ let v;
+ try{v=await GET(`/api/doc-versions?project=${encodeURIComponent(d.project)}&rel=${encodeURIComponent(d.rel)}`);}
+ catch(e){if(S.sel!==key)return;const el0=$("vPanel");if(el0){el0.className="box bad";el0.innerHTML=esc(T("dvLoadError"));}return;}
+ if(S.sel!==key)return;
+ S.docVersions=v.versions;renderVPanel();}
+function diffLineHtml(diff){return diff.split("\n").map(l=>{const el=esc(l);const cls=l.startsWith("+")&&!l.startsWith("+++")?"dl-add":l.startsWith("-")&&!l.startsWith("---")?"dl-del":l.startsWith("@@")?"dl-hunk":"";return cls?`<span class="${cls}">${el}</span>`:el;}).join("\n");}
+function renderVPanel(){const el=$("vPanel");if(!el)return;const vs=S.docVersions;
+ if(vs===null){el.className="muted";el.innerHTML=esc(T("loading"));return;}
+ if(!vs.length){el.className="";el.innerHTML="";return;}
+ const ambiguous=vs.some(x=>x.ambiguous);
+ let html=(ambiguous?`<div class="box warn" style="margin-bottom:8px">${esc(T("dvAmbiguous"))}</div>`:"")+
+  `<b>${esc(T("dvTitle"))}</b><div style="display:flex;flex-direction:column;gap:4px;margin-top:6px">`+
+  vs.map(x=>`<button class="btn ${S.docVersionSel===x.stamp?"primary":""}" data-stamp="${esc(x.stamp)}" style="text-align:left">${esc(fmtDT(x.iso))} · ${x.size} B</button>`).join("")+`</div>`;
+ if(S.docVersionSel){const dd=S.docVersionDetail;
+  if(!dd)html+=`<div class="muted" style="margin-top:8px">${esc(T("loading"))}</div>`;
+  else if(!dd.ok)html+=`<div class="box bad" style="margin-top:8px">${esc(dd.message)}</div>`;
+  else{html+=`<pre class="doc" id="vDiff" style="margin-top:8px;max-height:none;overflow:visible">${dd.diff?diffLineHtml(dd.diff):esc(T("dvNoDiff"))}</pre>`+
+   (dd.command?`<div class="muted" style="margin-top:6px">${esc(T("dvRestoreCmd"))}</div><div class="actions" style="margin-top:4px"><code id="vCmd" style="flex:1;overflow-wrap:anywhere">${esc(dd.command)}</code><button class="btn" id="bVCopy">${T("copy")}</button></div>`
+    :`<div class="box warn" style="margin-top:6px">${esc(dd.command_reason||T("dvNoCommand"))}</div>`);}}
+ el.className="box info";el.innerHTML=html;
+ el.querySelectorAll("[data-stamp]").forEach(b=>b.onclick=()=>selectDocVersion(b.dataset.stamp));
+ const bc=$("bVCopy");if(bc)bc.onclick=async()=>{
+  try{await navigator.clipboard.writeText(S.docVersionDetail.command);toast(T("copied"));}
+  catch(e){const rg=document.createRange();rg.selectNodeContents($("vCmd"));const sel=window.getSelection();sel.removeAllRanges();sel.addRange(rg);}};}
+async function selectDocVersion(stamp){const d=S.doc;if(!d)return;const key=S.sel;
+ S.docVersionSel=stamp;S.docVersionDetail=null;renderVPanel();
+ let r;
+ try{r=await GET(`/api/doc-version?project=${encodeURIComponent(d.project)}&rel=${encodeURIComponent(d.rel)}&stamp=${encodeURIComponent(stamp)}`);}
+ catch(e){if(S.sel!==key||S.docVersionSel!==stamp)return;S.docVersionDetail={ok:false,message:T("dvLoadError")};renderVPanel();return;}
+ if(S.sel!==key||S.docVersionSel!==stamp)return;
+ S.docVersionDetail=r;renderVPanel();}
 function renderDocEdit(){const d=S.doc;S.editing=true;$("detail").innerHTML=`<div class="h">${esc(d.rel.split("/").pop())} <span class="pill p-warnings">${T("editing")}</span></div><div class="muted">${T("editHint")}</div><textarea class="editor" id="ta" spellcheck="false">${esc(d.content)}</textarea><div id="msg"></div><div id="cbDoc"></div><div class="actions"><button class="btn primary" id="bSave">${T("save")}</button><button class="btn" id="bCancel">${T("cancel")}</button></div>`;commitBox("cbDoc",d.path);
  $("bCancel").onclick=()=>{S.editing=false;renderDocRead();};$("bSave").onclick=async()=>{const nv=$("ta").value;if(nv===d.content){toast(T("noChanges"));S.editing=false;renderDocRead();return;}$("bSave").disabled=true;$("bSave").textContent=T("saving");
   const r=await POST("/api/save-doc",{project:d.project,rel:d.rel,content:nv,hash:d.hash});if(r.ok){toast(r.message);await maybeCommit("cbDoc",d.path,`cabina: edit ${d.rel} (${d.project})`);S.editing=false;await loadDocs();openDoc(S.sel);}else{$("bSave").disabled=false;$("bSave").textContent=T("save");$("msg").innerHTML=`<div class="box bad">${esc(r.message)}${r.conflict?` <button class="btn" id="bSee" style="margin-left:8px">${T("seeCurrent")}</button>`:""}</div>`;if(r.conflict)$("bSee").onclick=()=>{if(confirm(T("loseEdit"))){S.editing=false;openDoc(S.sel);}};}};}

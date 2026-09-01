@@ -16,6 +16,109 @@ class TestHubFixtures(unittest.TestCase):
 
 
 class TestHubLoadDir(unittest.TestCase):
+    def test_hub_normalizes_hostile_export_rows_and_css_enums(self):
+        from cabina import hub as HUB
+        payload = '<img src=x onerror=alert(1)>'
+        hostile = {
+            "machine": payload,
+            "agents": [{"name": "agent", "project": "p", "category": payload, "model": payload,
+                         "tools": payload, "critical": payload, "warnings": payload, "uses": "-5", "dirty": payload},
+                       {"project": "missing-name"}, "not-a-row"],
+            "skills": [{"name": "skill", "project": "p", "state": payload, "uses": "nan"}, {"state": "ok"}],
+            "harness": [{"project": payload, "name": payload, "level": payload, "hooks_dead": payload}, {"level": "complete"}],
+            "projects": [payload, 3, "safe"],
+            "projects_detail": [{"name": payload, "last_commit": payload, "dirty": payload, "agents": "-2", "docs": payload}],
+            "activity": {"aggregated": [{"project": payload, "sessions": "-1", "hours": "nan", "agents": payload}],
+                          "sessions": [{"project": payload, "title": payload, "branch": payload, "started": payload,
+                                         "files_touched": [payload, 3], "tokens": payload}]},
+        }
+        with tempfile.TemporaryDirectory() as d:
+            open(os.path.join(d, "hostile.json"), "w").write(json.dumps(hostile))
+            merged = HUB.load_dir(d, 5)["merged"]
+        dumped = json.dumps(merged)
+        self.assertIn(payload, dumped)  # text remains data; the UI must escape it at the sink
+        self.assertEqual(merged["agents"][0]["category"], "document")
+        self.assertGreaterEqual(merged["agents"][0]["uses"], 0)
+        self.assertEqual(merged["skills"][0]["state"], "no-frontmatter")
+        self.assertEqual(merged["harness"][0]["level"], "none")
+        self.assertEqual(merged["projects"], sorted([payload, "safe"]))
+        self.assertIsInstance(merged["activity"]["sessions"][0]["tokens"], dict)
+        self.assertIsInstance(merged["agents"][0]["model"], str)
+        self.assertIsInstance(merged["agents"][0]["tools"], str)
+        self.assertEqual(merged["agents"][0]["critical"], [])
+        self.assertEqual(merged["agents"][0]["warnings"], [])
+        self.assertEqual(merged["projects_detail"][0]["name"], payload)
+        self.assertEqual(merged["projects_detail"][0]["last_commit"], payload)
+        self.assertEqual(merged["harness"][0]["project"], payload)
+        self.assertEqual(merged["activity"]["sessions"][0]["title"], payload)
+        self.assertEqual(merged["activity"]["sessions"][0]["branch"], payload)
+
+    def test_hub_activity_tokens_keep_only_historical_fields(self):
+        from cabina import config as CFG, hub as HUB
+        tokens = {"in": 1, "out": 2, "cache_read": 3, "cache_write": 4,
+                  "thinking": 99, "thinking_lines": 100, "thinking_trace": "secret"}
+        export = {"machine": "m", "agents": [], "skills": [], "harness": [], "projects": ["p"],
+                  "activity": {"aggregated": [{"project": "p", "tokens": tokens}],
+                               "sessions": [{"project": "p", "tokens": tokens}]}}
+        with tempfile.TemporaryDirectory() as d:
+            open(os.path.join(d, "tokens.json"), "w").write(json.dumps(export))
+            merged = HUB.load_dir(d, 5)["merged"]
+            app = HUB.HubApp(d, CFG.load(None))
+            api = app.api_activity()
+        expected = {"in": 1, "out": 2, "cache_read": 3, "cache_write": 4}
+        self.assertEqual(merged["activity"]["aggregated"][0]["tokens"], expected)
+        self.assertEqual(merged["activity"]["sessions"][0]["tokens"], expected)
+        self.assertEqual(api["aggregated"][0]["tokens"], expected)
+        self.assertEqual(api["sessions"][0]["tokens"], expected)
+
+    def test_hub_rejects_scalar_collections_and_extreme_numbers(self):
+        from cabina import config as CFG, hub as HUB
+        huge = 10 ** 4000
+        hostile = {
+            "machine": "m",
+            "agents": huge,
+            "skills": True,
+            "harness": {"project": "p"},
+            "projects": {"name": "p"},
+            "projects_detail": 3,
+            "activity": {"aggregated": None, "sessions": {"project": "p"}},
+        }
+        with tempfile.TemporaryDirectory() as d:
+            open(os.path.join(d, "hostile.json"), "w").write(json.dumps(hostile))
+            merged = HUB.load_dir(d, 5)["merged"]
+            app = HUB.HubApp(d, CFG.load(None))
+            self.assertEqual(app.api_agents()["agents"], [])
+            self.assertEqual(app.api_skills()["skills"], [])
+            self.assertEqual(app.api_projects()["projects"], [])
+            self.assertEqual(app.api_harness()["states"], [])
+            self.assertEqual(app.api_activity()["aggregated"], [])
+            self.assertEqual(app.api_activity()["sessions"], [])
+        self.assertEqual(merged["agents"], [])
+        self.assertEqual(merged["skills"], [])
+        self.assertEqual(merged["harness"], [])
+        self.assertEqual(merged["projects"], [])
+        self.assertEqual(merged["projects_detail"], [])
+        self.assertEqual(merged["activity"], {"aggregated": [], "sessions": []})
+
+        numeric = {
+            "machine": "m",
+            "agents": [{"name": "a", "uses": huge}],
+            "skills": [{"name": "s", "lines": huge}],
+            "harness": [],
+            "projects": [],
+            "projects_detail": [{"name": "p", "dirty": huge}],
+            "activity": {"aggregated": [{"project": "p", "sessions": huge}],
+                         "sessions": [{"project": "p", "duration_s": huge}]},
+        }
+        with tempfile.TemporaryDirectory() as d:
+            open(os.path.join(d, "numeric.json"), "w").write(json.dumps(numeric))
+            merged = HUB.load_dir(d, 5)["merged"]
+        self.assertEqual(merged["agents"][0]["uses"], 0)
+        self.assertEqual(merged["skills"][0]["lines"], 0)
+        self.assertEqual(merged["projects_detail"][0]["dirty"], 0)
+        self.assertEqual(merged["activity"]["aggregated"][0]["sessions"], 0)
+        self.assertEqual(merged["activity"]["sessions"][0]["duration_s"], 0)
+
     def test_hub_lists_sessions_from_multiple_exports(self):
         from cabina import hub as HUB
         with tempfile.TemporaryDirectory() as d:
@@ -178,7 +281,8 @@ class TestHubServer(unittest.TestCase):
         self.assertEqual(len(self.get("/api/hub")["files"]), 1)
         self.assertEqual(self.get("/api/agents")["agents"][0]["machine"], "m1")
         self.assertTrue(self.get("/api/activity")["aggregated"])
-        for p in ("/api/live", "/api/docs", "/api/doc", "/api/references", "/api/in-repo"):
+        for p in ("/api/live", "/api/docs", "/api/doc", "/api/doc-versions", "/api/doc-version", "/api/references", "/api/in-repo", "/api/mcp",
+                  "/api/skill-body", "/api/skill-file"):
             with self.assertRaises(urllib.error.HTTPError):
                 self.get(p)
 

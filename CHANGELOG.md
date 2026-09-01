@@ -9,6 +9,37 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Skill body viewer** in the Skills tab: "View SKILL.md" shows the skill's full text (escaped,
+  never rendered) plus a clickable list of its attached files with per-file preview — so a skill
+  can be read before it is trusted or archived. `GET /api/skill-body`, `GET /api/skill-file`,
+  read-only, no new POST. The skill is addressed by tool/project/name and resolved server-side
+  against the catalog — a filesystem path is never accepted from the client; a preview path must
+  resolve (symlinks included) strictly inside the skill's own directory, capped at 1 MB, binary
+  files detected and not shown. Local only: neither route exists in `cabina hub`. The confinement
+  guards what a request can ask for, not concurrent local writers — anyone who can write to the
+  disk can already read it without cabina.
+- **MCP tab** in the UI: what `cabina scan --mcp` already collected (`claude mcp list`) is now
+  shown — name, target, status, detail — sorted failed > needs auth > unverified > ok, with a
+  counts summary. `GET /api/mcp` only reads the cached scan, it never shells out itself. Local
+  only: not part of `cabina hub`. It does not show tool counts or which agents use a server —
+  neither is derivable from `claude mcp list`'s output.
+- **Document version history** in the Docs tab: read-only list of a document's previous saves
+  (timestamp, size), a unified diff against the current file, and a restore command — generated
+  for you to review and run, never executed by cabina. `GET /api/doc-versions`, `GET
+  /api/doc-version`. A version flagged `ambiguous` means its backup folder was, before this
+  change, shared with any other same-named document in a different subdirectory of the project —
+  the list may include a version that actually belongs to a different file.
+- **Session `entrypoint` and reasoning-token breakdown**: sessions now record the raw entrypoint
+  string (`cli`, `sdk-py`, `sdk-ts`, `sdk-cli`, …) and reasoning ("thinking") tokens where the
+  transcript carries them. The Activity tab gets entrypoint filter chips with counts, an
+  entrypoint column per row, and a per-session token composition (in / cache read / cache write /
+  out / reasoning) with a cache-hit rate. A session recorded before reasoning tokens existed in
+  the transcript format (before 2026-08-12) shows "n/a" for reasoning, never a bare `0` — a `0`
+  there would claim "measured, none happened" when the true answer is "not measurable".
+  `entrypoint` and reasoning-token counts are local-only counters: neither reaches `cabina export`,
+  `cabina hub` or the MCP server. They are measurements, not prompt or transcript text.
+- **Health tab strip**: "active now" (from the Live tab's data) and "recent" (from Activity) at
+  the top of the Health tab, from state already loaded elsewhere — no new endpoint.
 - **Worktrees, told honestly**: worktree status (`dirty`, `branch`) is now measured on every
   scan — it used to be gated behind `--worktrees` together with the slow `du`, so every
   worktree reported `-1 uncommitted` and `0 MB`, and `cabina check`'s stale-worktree warning
@@ -65,9 +96,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Security
 
-- The web server (and the hub) now reject any request whose `Host` header is not loopback or the
-  configured bind host (HTTP 421), and any POST whose `Origin` is foreign (403) — closes the
-  DNS-rebinding path by which a malicious page could read the per-process token off `/` and then
+- The web server defaults to `127.0.0.1`; `serve()` accepts only localhost or a configured loopback
+  IP and rejects LAN addresses before constructing `App`/`ThreadingHTTPServer`. The server and hub
+  reject non-loopback `Host` headers (HTTP 421), and POSTs with a foreign `Origin` (403) — closing
+  the DNS-rebinding path by which a malicious page could read the per-process token off `/` and then
   POST with it. Break-tested.
 - `POST /api/hooks-install` (and `cabina hooks --write --cmd`) only ever wire `cabina` itself
   (`cabina…` on PATH or `<python> -m cabina`; shell metacharacters refused; `force` cannot bypass
@@ -119,9 +151,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `cabina config --example` omitted several `DEFAULTS` keys (`[activity]`, `[hub]`,
   `contract.known_fields`, `scan.skip_dirs`, `live.active_seconds`, `docs.max_per_dir`) and
   showed a hardcoded Unix `state_dir`; now complete and per-platform.
+- A session's `entrypoint` is parsed incrementally, by byte offset, like the rest of a
+  transcript — so every session recorded before the field existed had already been read past the
+  line that carries it, and would have stayed blank forever. A bounded, one-time head scan
+  backfills it for those records without touching the incremental offset, turn or token counts.
+- Panes that already scroll (the worktree cleanup script, the CLAUDE.md/AGENTS.md drift diff, the
+  new document-version diff) no longer nest a second scrollbar inside themselves.
 
 ### Changed
 
+- **Document backups now mirror the document's own subdirectory** under
+  `<state_dir>/doc-backups/<project>/`, instead of one flat directory per project — two documents
+  with the same filename in different subdirectories used to share one backup history and
+  interleave their versions. Existing flat backups stay exactly where they are and stay
+  readable, but only a root-level document's version list still reads that flat directory (marked
+  `ambiguous`, since it may hold another document's old versions too); a document in a
+  subdirectory never reads the flat leftovers.
 - Usage (`usage.py`) is incremental: it keeps a per-file byte-offset registry
   (`<state_dir>/usage-history.json`) and reads only new bytes, updating agents and skills in one
   pass. `cabina agents` and the first UI load drop from ~9-11 s to ~0.1 s warm (~3-5 s on the
