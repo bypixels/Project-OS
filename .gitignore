@@ -6,3 +6,6 @@ dist/
 .venv/
 .pytest_cache/
 .DS_Store
+# impeccable design-process working files (iteration screenshots with real data, question logs)
+.impeccable/shots/
+.impeccable/questions/
