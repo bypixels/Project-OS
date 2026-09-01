@@ -87,6 +87,17 @@ class TestServer(unittest.TestCase):
             s2 = self.get("/api/skills")
             self.assertEqual(m.call_count, 2)                 # archive invalidated the cache: refreshes again
             self.assertFalse(any(x["name"] == "throwaway" for x in s2["skills"]))
+    def test_projects_endpoint_caches_codex_sessions_walk(self):
+        # api_projects called usage.codex_sessions() (an os.walk over every Codex session file)
+        # on EVERY GET, unlike api_agents' cached, TTL'd roster(). Mirror that pattern: two
+        # consecutive GETs must walk Codex sessions only once.
+        from project_os import usage
+        from unittest import mock
+        self.app._codex = None                        # force a real recompute inside the patched block below
+        with mock.patch("project_os.server.usage.codex_sessions", wraps=usage.codex_sessions) as m:
+            self.get("/api/projects")
+            self.get("/api/projects")
+            self.assertEqual(m.call_count, 1)          # second GET served from cache: no re-walk
     def test_rescan_invalidates_skills_cache(self):
         # Reviewer-verified regression: api_rescan's background go() clears self._roster but
         # not self._skills, so Skills could show up to 30s of stale data after a rescan even
@@ -260,9 +271,13 @@ class TestServer(unittest.TestCase):
         s = self.get("/api/skills"); self.assertEqual({(x["name"], x["tool"]) for x in s["skills"]}, {("gsk", "claude"), ("deploy", "claude"), ("gsk", "codex")})
         self.assertEqual(next(x for x in s["skills"] if x["name"] == "deploy")["uses"], 1)
         p = self.get("/api/projects"); self.assertEqual(p["projects"][0]["name"], "alpha")
+        self.assertEqual(p["projects"][0]["codex_last"], "2026-08-04")   # from the synthetic Codex session cwd'd into alpha
         h = self.get("/api/harness"); self.assertEqual(h["states"][0]["hooks_dead"], ["dead.sh"])
         self.assertEqual(h["drift"]["twins"][0]["status"], "same")                       # reviewer.md ≡ reviewer.toml
-        self.assertEqual({x["project"]: x["status"] for x in h["drift"]["rules"]}, {"alpha": "diverged"})
+        # beta-codex-only is the solo-Codex project fixture (AGENTS.md, no CLAUDE.md): drift
+        # correctly classifies it "only-agents" now that scan.py discovers it as a project.
+        self.assertEqual({x["project"]: x["status"] for x in h["drift"]["rules"]},
+                          {"alpha": "diverged", "beta-codex-only": "only-agents"})
         d = self.get("/api/docs"); self.assertTrue(any(x["rel"] == ".claude/MEMORY.md" for x in d["docs"]))
         l = self.get("/api/live"); self.assertFalse(l["ok"]); self.assertEqual(l["provider"], "none")
     def test_skill_body_endpoint(self):
@@ -321,6 +336,23 @@ class TestServer(unittest.TestCase):
         d_narrow = self.get("/api/activity?project=alpha&days=1")
         self.assertFalse(any(s["session_id"] == old_id for s in d_narrow["sessions"]))
         self.assertLessEqual(len(d_narrow["sessions"]), len(d_wide["sessions"]))
+    def test_activity_endpoint_serves_cwd_and_source_path_deliberately(self):
+        # INTENT, not accident: cwd and source_path are LOCAL-ONLY fields (sessions.py:50,
+        # SUMMARY_FIELDS) -- absolute filesystem paths on the operator's own machine. /api/activity
+        # is project-os's own local UI (server.py binds loopback-only, guarded by the CSRF token),
+        # never the hub/export surface (snapshot._detail_row is a separate whitelist that omits
+        # both). If someone "fixes" this endpoint by dropping these fields, or copies this shape
+        # into the hub or `project-os export`, that must be a conscious decision -- not a refactor
+        # that quietly leaks local paths into a shared snapshot, or quietly breaks whatever in the
+        # UI reads sessKey()'s x.source_path. This test exists to force that decision to be made
+        # on purpose.
+        from project_os import sessions as SESS
+        SESS.refresh(self.env.cfg)
+        d = self.get("/api/activity?days=30")
+        self.assertTrue(d["sessions"])
+        for s in d["sessions"]:
+            self.assertIn("cwd", s)
+            self.assertIn("source_path", s)
     def test_post_requires_token(self):
         code, _ = self.post("/api/open", {"path": "/tmp"}, token="wrong"); self.assertEqual(code, 403)
         code, _ = self.post("/api/open", {"path": "/tmp"}, token=""); self.assertEqual(code, 403)
@@ -788,6 +820,34 @@ class TestServer(unittest.TestCase):
         # expression itself, not just that a "cache rate" label exists somewhere on the page.
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
         self.assertIn('denom>0?Math.round(tCR/denom*100)+"%":"—"', html)
+    def test_session_detail_subagent_tokens_shown_only_when_subagents_used(self):
+        # subagent_tokens is a SEPARATE aggregate from the session's own tokens (sessions.py R3:
+        # never summed together) and was invisible in the UI. Must render only when x.subagents>0
+        # -- a session with none must not show a zero row for tokens no subagent ever spent.
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        self.assertIn("if(x.subagents>0){", html)
+        self.assertIn("x.subagent_tokens", html)
+        self.assertIn('T("subagentTokens")', html)
+        # hub-detail rows never carry subagent_tokens at all (snapshot._detail_row omits it),
+        # so each field must fall back to tokNa individually rather than fmtNum(undefined),
+        # which renders as a fabricated "0". Assert the actual per-field guard, not just that
+        # the word "subagentTokens" is present.
+        start = html.index("if(x.subagents>0){")
+        end = html.index("$(\"detail\").innerHTML=h;", start)
+        block = html[start:end]
+        for field in ("st.in", "st.cache_read", "st.cache_write", "st.out"):
+            self.assertIn(f'{field}!=null?fmtNum({field}):esc(T("tokNa"))', block)
+    def test_activity_top_files_block_respects_focus_and_top_ten(self):
+        # Client-side only, over sessions already in S.activity -- no new endpoint. Must respect
+        # project focus (same as every other Activity row) and cap at 10.
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        start = html.index("function topFilesHtml(sessions)")
+        end = html.index("function renderActivity()", start)
+        fn = html[start:end]
+        self.assertIn("!S.focus||x.project===S.focus", fn)
+        self.assertIn(".slice(0,10)", fn)
+        self.assertIn("files_touched", fn)
+        self.assertIn("topFilesHtml(a)", html)
     def test_agents_skills_block_fields_always_escaped(self):
         # F1: the ACTIVITY-only scan above never reaches renderAgents / renderAgentDetail /
         # renderSkillDetail (all defined before the ACTIVITY marker), and its field list omits
@@ -876,6 +936,13 @@ class TestServer(unittest.TestCase):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
         self.assertIn("function projKey", html)
         self.assertIn("projKey(y)===S.sel", html)
+    def test_project_detail_last_codex_session_row_unknown_is_na_never_blank(self):
+        # codex_last (api_projects) is null when Codex is absent or this project has no Codex
+        # sessions -- the house "unknown" vocabulary (tokNa, reused from the memory_days row just
+        # above it) must render, never an empty dash or a fabricated value.
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        self.assertIn('T("codexLast")', html)
+        self.assertIn('x.codex_last?esc(x.codex_last):T("tokNa")', html)
     def test_harness_row_and_detail_keyed_by_name_and_machine(self):
         # G1: harness rows used e.name alone as key — in hub mode two machines can both have a
         # project called "alpha", so the detail always resolved the first one. Mirror projKey.
@@ -1003,13 +1070,29 @@ class TestServer(unittest.TestCase):
         for key in ("colUncommitted", "colWorktrees", "colMemory", "colActivity", "laneLegend"):
             self.assertIn(key + ":", en_block, key)
             self.assertIn(key + ":", es_block, key)
+    def test_new_addition_i18n_keys_present_in_both_languages(self):
+        # Session subagent-token aggregate, Activity's top-files block and Projects' Last Codex
+        # session row all added new I18N keys.
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        start = html.index("const I18N={")
+        end = html.index("const T=(k,v)=>")
+        block = html[start:end]
+        split = block.index("\nes:{")
+        en_block, es_block = block[:split], block[split:]
+        for key in ("subagentTokens", "topFiles", "topFilesN", "codexLast"):
+            self.assertIn(key + ":", en_block, key)
+            self.assertIn(key + ":", es_block, key)
     def test_projects_tab_no_longer_calls_tiles_or_health_history(self):
-        # Lanes redesign: one representation. The endpoints remain server-side, but the UI must
-        # not fetch them -- a reappearance means dead tiles code came back.
+        # Lanes redesign: one representation. /api/tiles stays dead everywhere (a reappearance
+        # means dead tiles code came back). /api/health-history is legitimately consumed again --
+        # by the Health tab's 30-day trend (loadHealthHistory), not by Projects -- so this test is
+        # scoped to the PROJECTS section only, same idiom as test_project_tiles_never_task_like_fields.
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
         self.assertNotIn("/api/tiles", html)
-        self.assertNotIn("/api/health-history", html)
         self.assertNotIn("loadTiles", html)
+        projects = html[html.index("// ---------- PROJECTS ----------"):html.index("// ---------- HARNESS ----------")]
+        self.assertNotIn("/api/health-history", projects)
+        self.assertIn("/api/health-history", html)             # confirms the Health tab still fetches it
     # ---------- S1-b/c: Health tab ----------
     def test_index_health_tab_is_first_and_default_view_outside_hub(self):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
@@ -1298,6 +1381,21 @@ class TestServer(unittest.TestCase):
         self.assertIn('(!live||!live.ok)?', fn)
         self.assertIn('T("healthNoActive")', fn)
         self.assertIn("if(S.activity){", fn)                          # recent half only once loaded
+    def test_health_trend_fetched_once_and_rendered_honestly_below_two_points(self):
+        # Fase 3's /api/health-history existed server-side with no consumer since the lanes
+        # redesign (test_projects_tab_no_longer_calls_tiles_or_health_history above). The Health
+        # tab is now that consumer: loadHealth() also kicks loadHealthHistory() (without touching
+        # the LOADERS.health literal another test locks down), and healthTrendHtml() must refuse
+        # to draw a "trend" out of fewer than two points.
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
+        self.assertIn('async function loadHealthHistory(){S.healthHistory=await GET("/api/health-history?days=30")', html)
+        self.assertIn("loadHealthHistory();", html)
+        start = html.index("function healthTrendHtml()")
+        end = html.index("\n", html.index("return ", start))
+        fn = html[start:end]
+        self.assertIn("series.length<2", fn)
+        self.assertIn('T("healthTrendNone")', fn)
+        self.assertIn("S.healthHistory", html)
     def test_health_i18n_keys_present_in_both_languages(self):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
         start = html.index("const I18N={")
@@ -1305,7 +1403,8 @@ class TestServer(unittest.TestCase):
         block = html[start:end]
         split = block.index("\nes:{")
         en_block, es_block = block[:split], block[split:]
-        for key in ("health", "recheck", "checking", "ranAt", "copy", "copied", "healthOk", "sevCrit", "sevWarn", "sevInfo"):
+        for key in ("health", "recheck", "checking", "ranAt", "copy", "copied", "healthOk", "sevCrit", "sevWarn", "sevInfo",
+                     "healthTrend", "healthTrendNone", "healthTrendAria"):
             self.assertIn(key + ":", en_block, key)
             self.assertIn(key + ":", es_block, key)
 if __name__ == "__main__": unittest.main()

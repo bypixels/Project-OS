@@ -107,10 +107,11 @@ en:{tabs:{health:"Health",agents:"Agents",live:"Live",skills:"Skills",projects:"
  legendNeutral:"no state",approxT:"count shared with agents of the same name in other projects — not attributable to this one",approxNote:"≈ count shared with homonyms",
  pickFinding:"Select a finding.",hEvidence:"Evidence",hFix:"Suggested command",recentTools:"Recent tools",subagentRows:"Subagents",colUncommitted:"uncommitted",colWorktrees:"worktrees",colMemory:"memory",colActivity:"30 days",colSessions:"sessions",sortBy:"sort by {c}",laneSessions:"{d}: {n} session(s)",laneAria:"{p}: {n} sessions in 30 days; busiest {d} with {m}",laneAriaEmpty:"{p}: no sessions in the last 30 days",laneLegend:"sessions/day",laneLess:"less",laneMore:"more",laneStart:"-30d",laneEnd:"today",laneTotalT:"sessions in 30 days",dotWhy:"status",dotWt:"worktrees {gb} GB (over 5 GB)",dotDirty:"{n} uncommitted (over 20)",dotMem:"MEMORY.md untouched {n} d (over 30)",dotOk:"no threshold crossed",
  recheck:"Re-check",checking:"checking…",ranAt:"last run: {t}",copy:"Copy",copied:"Copied",healthOk:"All clear.",sevCrit:"critical",sevWarn:"warnings",sevInfo:"info",
+ healthTrend:"30-day trend",healthTrendNone:"not enough history yet",healthTrendAria:"critical, warning and info counts over time",
  healthActiveNow:"active now",healthNoActive:"Nothing running right now.",healthRecent:"recent",healthNoRecent:"No recent sessions.",
- pickSession:"Select a session.",noSessions:"No sessions in this window.",untitled:"(untitled)",
+ pickSession:"Select a session.",noSessions:"No sessions in this window.",untitled:"(untitled)",topFiles:"Most-touched files",topFilesN:"{n} session(s)",
  sessStarted:"started",sessDuration:"duration",sessTurns:"turns",sessFiles:"files touched",
- sessAgents:"agents used",sessSkills:"skills used",sessCommits:"commits",sessSubagents:"subagents",
+ sessAgents:"agents used",sessSkills:"skills used",sessCommits:"commits",sessSubagents:"subagents",subagentTokens:"Subagent tokens",
  sessTokens:"tokens (in/out)",sessBranch:"branch",tokIn:"in",tokCacheRead:"cache read",tokCacheWrite:"cache write",tokOut:"out",tokReasoning:"reasoning",tokCacheRate:"cache rate",tokNa:"n/a",
  sessionsFoot:"{n} sessions",activeNow:"active {n}s ago",aggRowSessions:"— {n} sessions, {h}h",
  working:"working",done:"done",ok:"ok",warnings:"warnings",invalid:"invalid",idle:"idle",loading:"loading…",nothing:"Nothing to show.",
@@ -138,7 +139,7 @@ en:{tabs:{health:"Health",agents:"Agents",live:"Live",skills:"Skills",projects:"
  rescanHint:"Re-measure agents, skills and (optionally) worktrees. The options below can make it slow.",rescanMcpLabel:"also check MCP servers (needs the claude CLI; slow)",rescanWtLabel:"also measure worktree sizes (~2 s each)",
  exportBtn:"Export…",exportT:"download this environment as JSON",exportTitle:"Export environment",exportActivityLabel:"include session activity (aggregated per project)",exportDetailLabel:"per-session detail",exportConfirm:"Download",
  compareBtn:"Compare…",compareT:"compare with another machine's export",compareTitle:"Compare with another export",compareHint:"Pick a project-os export .json file from another machine.",compareRun:"Compare",compareParseError:"Could not read that file as JSON.",closeBtn:"Close",
- path:"path",git:"git",clean:"clean",uncommitted:"{n} uncommitted",notRepo:"not a repo",lastCommit:"last commit",assets:"assets",agentsN:"agents",skillsN:"skills",commandsN:"commands",rulesN:"rules",harness:"harness",hooksN:"hooks",wfN:"workflows",docsN:"documents",memDays:"MEMORY.md",today:"today",daysUntouched:"{n} days untouched",maybeDead:"· possibly dead",
+ path:"path",git:"git",clean:"clean",uncommitted:"{n} uncommitted",notRepo:"not a repo",lastCommit:"last commit",assets:"assets",agentsN:"agents",skillsN:"skills",commandsN:"commands",rulesN:"rules",harness:"harness",hooksN:"hooks",wfN:"workflows",docsN:"documents",memDays:"MEMORY.md",today:"today",daysUntouched:"{n} days untouched",maybeDead:"· possibly dead",codexLast:"Last Codex session",
  tilesTitle:"Projects at a glance",tilesSparkAria:"30-day health trend (critical/warning)",tileActive:"active",tileIdle:"idle",tileNever:"no sessions yet",
  wtStats:"{n} worktrees · {clean} clean · {dirty} dirty · {unknown} unknown · {prunable} orphaned",wtSizeGb:"{gb} GB",wtSizeUnmeasured:"size not measured",wtRescanSizes:"Rescan with sizes",wtCopyScript:"Copy cleanup commands",wtOpenTerminal:"Open terminal here",wtLoadError:"Could not load worktree data.",
  harHint:"Harness state per project. Below, the run log.",complete:"complete",partial:"partial",noHar:"no harness",problem:"problem(s)",runlog:"RUN LOG",runs:"runs",consq:"consq.",kPer:"{k}k/consq.",
@@ -157,11 +158,12 @@ es:{tabs:{health:"Salud",agents:"Agentes",live:"En vivo",skills:"Skills",project
  legendNeutral:"sin estado",approxT:"conteo compartido con agentes del mismo nombre en otros proyectos — no atribuible a este",approxNote:"≈ conteo compartido con homónimos",
  pickFinding:"Seleccioná un hallazgo.",hEvidence:"Evidencia",hFix:"Comando sugerido",recentTools:"Herramientas recientes",subagentRows:"Subagentes",colUncommitted:"sin commit",colWorktrees:"worktrees",colMemory:"memoria",colActivity:"30 días",colSessions:"sesiones",sortBy:"ordenar por {c}",laneSessions:"{d}: {n} sesión(es)",laneAria:"{p}: {n} sesiones en 30 días; el día más activo fue {d} con {m}",laneAriaEmpty:"{p}: sin sesiones en los últimos 30 días",laneLegend:"sesiones/día",laneLess:"menos",laneMore:"más",laneStart:"-30d",laneEnd:"hoy",laneTotalT:"sesiones en 30 días",dotWhy:"estado",dotWt:"worktrees {gb} GB (más de 5 GB)",dotDirty:"{n} sin commit (más de 20)",dotMem:"MEMORY.md sin tocar {n} d (más de 30)",dotOk:"ningún umbral cruzado",
  recheck:"Volver a chequear",checking:"comprobando…",ranAt:"última corrida: {t}",copy:"Copiar",copied:"Copiado",healthOk:"Todo en orden.",sevCrit:"críticos",sevWarn:"avisos",sevInfo:"info",
+ healthTrend:"Tendencia de 30 días",healthTrendNone:"todavía no hay suficiente historial",healthTrendAria:"conteo de críticos, avisos e info a lo largo del tiempo",
  healthActiveNow:"activo ahora",healthNoActive:"Nada corriendo en este momento.",healthRecent:"reciente",healthNoRecent:"Sin sesiones recientes.",
  pickSession:"Seleccioná una sesión.",noSessions:"No hay sesiones en esta ventana.",
- untitled:"(sin título)",sessStarted:"inicio",sessDuration:"duración",sessTurns:"turnos",
+ untitled:"(sin título)",topFiles:"Archivos más tocados",topFilesN:"{n} sesión(es)",sessStarted:"inicio",sessDuration:"duración",sessTurns:"turnos",
  sessFiles:"archivos tocados",sessAgents:"agentes usados",sessSkills:"skills usados",
- sessCommits:"commits",sessSubagents:"subagentes",sessTokens:"tokens (in/out)",sessBranch:"rama",
+ sessCommits:"commits",sessSubagents:"subagentes",subagentTokens:"Tokens de subagentes",sessTokens:"tokens (in/out)",sessBranch:"rama",
  tokIn:"entrada",tokCacheRead:"caché leído",tokCacheWrite:"caché escrito",tokOut:"salida",tokReasoning:"razonamiento",tokCacheRate:"tasa de caché",tokNa:"n/d",
  sessionsFoot:"{n} sesiones",activeNow:"activo hace {n}s",aggRowSessions:"— {n} sesiones, {h}h",
  working:"trabajando",done:"terminó",ok:"ok",warnings:"avisos",invalid:"inválidos",idle:"ocioso",loading:"cargando…",nothing:"Nada que mostrar.",
@@ -189,7 +191,7 @@ es:{tabs:{health:"Salud",agents:"Agentes",live:"En vivo",skills:"Skills",project
  rescanHint:"Vuelve a medir agentes, skills y (opcional) worktrees. Con las opciones de abajo puede tardar.",rescanMcpLabel:"también revisar servidores MCP (necesita el CLI de claude; lento)",rescanWtLabel:"también medir tamaño de worktrees (~2 s cada uno)",
  exportBtn:"Exportar…",exportT:"descarga este entorno como JSON",exportTitle:"Exportar entorno",exportActivityLabel:"incluir actividad de sesiones (agregada por proyecto)",exportDetailLabel:"detalle por sesión",exportConfirm:"Descargar",
  compareBtn:"Comparar…",compareT:"comparar con el export de otra máquina",compareTitle:"Comparar con otro export",compareHint:"Elegí un archivo .json exportado desde otra máquina.",compareRun:"Comparar",compareParseError:"No se pudo leer ese archivo como JSON.",closeBtn:"Cerrar",
- path:"ruta",git:"git",clean:"limpio",uncommitted:"{n} sin commit",notRepo:"no es un repo",lastCommit:"último commit",assets:"assets",agentsN:"agentes",skillsN:"skills",commandsN:"comandos",rulesN:"rules",harness:"harness",hooksN:"hooks",wfN:"workflows",docsN:"documentos",memDays:"MEMORY.md",today:"hoy",daysUntouched:"{n} días sin tocar",maybeDead:"· posiblemente muerto",
+ path:"ruta",git:"git",clean:"limpio",uncommitted:"{n} sin commit",notRepo:"no es un repo",lastCommit:"último commit",assets:"assets",agentsN:"agentes",skillsN:"skills",commandsN:"comandos",rulesN:"rules",harness:"harness",hooksN:"hooks",wfN:"workflows",docsN:"documentos",memDays:"MEMORY.md",today:"hoy",daysUntouched:"{n} días sin tocar",maybeDead:"· posiblemente muerto",codexLast:"Última sesión de Codex",
  tilesTitle:"Proyectos de un vistazo",tilesSparkAria:"tendencia de salud de 30 días (crítico/advertencia)",tileActive:"activo",tileIdle:"inactivo",tileNever:"sin sesiones aún",
  wtStats:"{n} worktrees · {clean} limpios · {dirty} con cambios · {unknown} desconocidos · {prunable} huérfanos",wtSizeGb:"{gb} GB",wtSizeUnmeasured:"tamaño no medido",wtRescanSizes:"Reescanear con tamaños",wtCopyScript:"Copiar comandos de limpieza",wtOpenTerminal:"Abrir terminal aquí",wtLoadError:"No se pudo cargar la información de worktrees.",
  harHint:"Estado del harness por proyecto. Abajo, la bitácora de corridas.",complete:"completo",partial:"parcial",noHar:"sin harness",problem:"problema(s)",runlog:"BITÁCORA DE CORRIDAS",runs:"corridas",consq:"consec.",kPer:"{k}k/consec.",
@@ -204,7 +206,7 @@ es:{tabs:{health:"Salud",agents:"Agentes",live:"En vivo",skills:"Skills",project
  dvTitle:"Historial de versiones",dvAmbiguous:"La carpeta de respaldo de este documento era compartida con cualquier documento del mismo nombre en otras carpetas de este proyecto, antes de que los respaldos empezaran a reflejar las subcarpetas — esta lista puede incluir versiones de un archivo distinto.",dvNoDiff:"Sin diferencias con el archivo actual.",dvNoCommand:"project-os no pudo generar un comando seguro para esta ruta.",dvLoadError:"No se pudo cargar el historial de versiones.",dvRestoreCmd:"Para restaurar esta versión, revisá y corré:",
  mcpTarget:"destino",mcpNotChecked:"Los servidores MCP no se han revisado. Corré <code>project-os scan --mcp</code>, o marcá la casilla «MCP» en el diálogo de reescaneo, para recolectar esto.",mcpEmpty:"No hay servidores MCP configurados.",mcpSummary:"{n} servidores · {need} necesitan atención"}};
 const T=(k,v)=>{let s=(I18N[LANG]||I18N.en)[k]??I18N.en[k]??k; if(typeof s==="object")return s; return v?s.replace(/\{(\w+)\}/g,(_,x)=>v[x]??""):s;};
-const S={view:HUB?"agents":"health",data:null,live:null,skills:null,projs:null,har:null,docs:null,doc:null,activity:null,hub:null,health:null,healthChecking:false,editing:false,sel:null,q:"",chips:new Set(),mode:null,focus:null,loaded:new Set(),
+const S={view:HUB?"agents":"health",data:null,live:null,skills:null,projs:null,har:null,docs:null,doc:null,activity:null,hub:null,health:null,healthHistory:null,healthChecking:false,editing:false,sel:null,q:"",chips:new Set(),mode:null,focus:null,loaded:new Set(),
  hooks:null,hooksCmd:"",hooksForce:false,hooksPreview:false,projSort:{key:"activity",dir:"desc"},mcp:null,docVersions:null,docVersionSel:null,docVersionDetail:null,skillBody:null,skillFile:null};
 const $=id=>document.getElementById(id);const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 // wbr() and evidenceHtml() both take ALREADY-ESCAPED text and only add markup of their own; they
@@ -281,15 +283,30 @@ function idHue(name){let h=5381;const t=String(name??"");for(let i=0;i<t.length;
 // emits no caller data at all, only an integer hue, so it is not an escaping sink.
 const idSwatch=name=>`<span class="idc" style="--h:${idHue(name)}" aria-hidden="true"></span>`;
 // ---------- HEALTH ----------
-async function loadHealth(){S.health=await GET("/api/health");if(S.view==="health")renderHealth();}
+async function loadHealth(){S.health=await GET("/api/health");loadHealthHistory();if(S.view==="health")renderHealth();}
+async function loadHealthHistory(){S.healthHistory=await GET("/api/health-history?days=30");if(S.view==="health")renderHealth();}
 function healthSevPill(sev){return sev==="crit"?"invalid":sev==="warn"?"warnings":"document";}
 function healthSevLabel(sev){return sev==="crit"?T("sevCrit"):sev==="warn"?T("sevWarn"):T("sevInfo");}
+// Trend: a stacked bar per health.jsonl entry (crit/warn/info), oldest-left. Fewer than 2 points
+// says so honestly ("not enough history yet") rather than drawing a single-bar "trend" that isn't one.
+function healthTrendHtml(){const series=(S.healthHistory&&S.healthHistory.series)||[];
+ if(series.length<2)return `<b>${T("healthTrend")}</b> <span class="muted">${T("healthTrendNone")}</span>`;
+ const max=Math.max(1,...series.map(s=>(s.crit||0)+(s.warn||0)+(s.info||0)));
+ const w=160,h=28,n=series.length,bw=w/n;
+ const bars=series.map((s,i)=>{let y=h;const rs=[];
+  [[s.crit||0,"var(--rust)"],[s.warn||0,"var(--amber)"],[s.info||0,"var(--slate)"]].forEach(([v,c])=>{
+   if(!v)return;const bh=Math.max(1,Math.round(v/max*h));y-=bh;
+   rs.push(`<rect x="${(i*bw+1).toFixed(1)}" y="${y}" width="${Math.max(1,bw-2).toFixed(1)}" height="${bh}" fill="${c}"></rect>`);});
+  return rs.join("");}).join("");
+ const first=series[0].when||"",last=series[series.length-1].when||"";
+ return `<b>${T("healthTrend")}</b> <svg width="${w}" height="${h}" role="img" aria-label="${esc(T("healthTrendAria"))}" style="vertical-align:middle">${bars}</svg> <span class="muted">${esc(first)} → ${esc(last)}</span>`;}
 function healthStrip(){const live=S.live,active=(live&&live.ok?live.agents.filter(a=>a.status==="working"):[]).slice(0,5);
  const activeHtml=(!live||!live.ok)?`<span class="muted">${T("noLive")}</span>`:active.length?active.map(a=>`<b>${esc(a.agent)}</b> <span class="muted">${esc(a.workspace)}</span>`).join(" · "):`<span class="muted">${T("healthNoActive")}</span>`;
  let html=`<div class="box info" style="margin-bottom:8px;padding:8px 10px;font-size:var(--fs-2)" id="healthStrip"><div><b>${T("healthActiveNow")}</b> ${activeHtml}</div>`;
  if(S.activity){const recent=(S.activity.sessions||[]).slice().sort((p,r)=>(r.mtime||0)-(p.mtime||0)).slice(0,3);
   const recentHtml=recent.length?recent.map(x=>`<b>${esc(x.project||"—")}</b> ${esc(x.title||T("untitled"))}`).join(" · "):`<span class="muted">${T("healthNoRecent")}</span>`;
   html+=`<div style="margin-top:4px"><b>${T("healthRecent")}</b> ${recentHtml}</div>`;}
+ if(S.healthHistory)html+=`<div style="margin-top:4px">${healthTrendHtml()}</div>`;
  return html+"</div>";}
 // The finding list should inform without a click: one dim line of the finding's own evidence.
 const subOf=d=>{const l=String(d||"").split("\n").map(t=>t.trim()).find(Boolean)||"";return l.length>90?l.slice(0,90)+"\u2026":l;};
@@ -434,6 +451,16 @@ function toolTime(ts){if(ts==null||ts==="")return "";
  return relTime(d.toISOString());}
 function sessKey(x){return x.source_path||(x.project+"|"+x.started+"|"+(x.machine||""));}
 const fmtNum=n=>{const v=Number(n);return Number.isFinite(v)&&v>=0?v.toLocaleString(LANG==="es"?"es-CR":"en-US"):"0";};
+// Client-side only: counted from the sessions already loaded into S.activity (each file counted
+// once per session, however many times that session touched it), never a server round-trip.
+// Respects project focus, same as every other Activity row -- not the free-text/entrypoint
+// filters, which describe sessions, not files.
+function topFilesHtml(sessions){const filtered=(sessions||[]).filter(x=>!S.focus||x.project===S.focus);
+ const counts={};filtered.forEach(s=>{new Set(s.files_touched||[]).forEach(f=>{counts[f]=(counts[f]||0)+1;});});
+ const top=Object.entries(counts).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).slice(0,10);
+ if(!top.length)return "";
+ return `<div class="box info" style="margin-bottom:8px;padding:8px 10px;font-size:var(--fs-2)"><b>${T("topFiles")}</b><ul style="margin:4px 0 0 16px">`+
+  top.map(([f,n])=>`<li><code>${wbr(esc(f))}</code> <span class="muted">${T("topFilesN",{n})}</span></li>`).join("")+`</ul></div>`;}
 function renderActivity(){if(!S.activity){$("rows").innerHTML=`<div class="empty">${T("loading")}</div>`;$("filters").innerHTML="";return;}
  const detail=(S.activity.sessions||[]).length>0;
  if(!detail){renderActivityAggregated();return;}
@@ -461,7 +488,7 @@ function renderActivity(){if(!S.activity){$("rows").innerHTML=`<div class="empty
  const rowsHtml=sel.map(x=>{const key=sessKey(x);const active=x.mtime&&(now-x.mtime)<activeSecs;
   return `<button class="row ${S.sel===key?"sel":""}" data-k="${esc(key)}"><span class="dot d-${active?"working":"valid"}"></span><span class="n">${esc(x.title||T("untitled"))}${active?` <span class="tl">${T("activeNow",{n:Math.round(now-x.mtime)})}</span>`:""}${mchip(x)}</span><span class="w">${esc(x.project||"—")} · ${Math.round((x.duration_s||0)/60)}m${epChips.length?` · ${esc(x.entrypoint||"—")}`:""}</span></button>`;}).join("")
    +aggSel.map(x=>`<div class="row" style="cursor:default"><span class="dot d-valid"></span><span class="n">${esc(x.project||"—")} · ${esc(x.machine||"?")}</span><span class="w">${T("aggRowSessions",{n:fmtNum(x.sessions),h:fmtNum(x.hours)})}</span></div>`).join("");
- $("rows").innerHTML=(sel.length||aggSel.length)?rowsHtml:`<div class="empty">${T("noSessions")}</div>`;
+ $("rows").innerHTML=topFilesHtml(a)+((sel.length||aggSel.length)?rowsHtml:`<div class="empty">${T("noSessions")}</div>`);
  document.querySelectorAll(".row[data-k]").forEach(r=>r.onclick=()=>{S.sel=r.dataset.k;renderActivity();});
  $("foot").textContent=T("sessionsFoot",{n:sel.length});
  if(!S.sel)$("detail").innerHTML=`<div class="muted">${T("pickSession")}</div>`;else renderSessionDetail();}
@@ -504,6 +531,15 @@ function renderSessionDetail(){const x=(S.activity?.sessions||[]).find(y=>sessKe
  const subs=x.subagent_rows||[];
  if(subs.length)h+=`<div><div class="grp" style="position:static;border:0;padding:0 0 6px">${T("subagentRows")}</div><div class="subs">`+
   subs.map(r=>`<div class="subRow">${idSwatch(r.name)}<span class="sn">${esc(r.name)}</span><span class="st">${r.tokens==null?esc(T("tokNa")):fmtNum(r.tokens)}</span></div>`).join("")+`</div></div>`;
+ // subagent_tokens is the SEPARATE aggregate sessions.py keeps (never summed into x.tokens, R3) --
+ // shown only when subagents were actually used, never a zero row for a session with none. Hub
+ // exports never carry it at all (snapshot._detail_row omits it) -- st is then {} and every field
+ // is undefined, so each field falls back to tokNa individually: a bare fmtNum(undefined) would
+ // render "0", a fabricated measurement for a cost that was never zero.
+ if(x.subagents>0){const st=x.subagent_tokens||{};
+  h+=`<div><div class="grp" style="position:static;border:0;padding:0 0 6px">${T("subagentTokens")}</div><div class="meta">`+
+   `<span>${T("tokIn")}</span><b>${st.in!=null?fmtNum(st.in):esc(T("tokNa"))}</b><span>${T("tokCacheRead")}</span><b>${st.cache_read!=null?fmtNum(st.cache_read):esc(T("tokNa"))}</b>`+
+   `<span>${T("tokCacheWrite")}</span><b>${st.cache_write!=null?fmtNum(st.cache_write):esc(T("tokNa"))}</b><span>${T("tokOut")}</span><b>${st.out!=null?fmtNum(st.out):esc(T("tokNa"))}</b></div></div>`;}
  $("detail").innerHTML=h;}
 // Note: x.title is ALWAYS interpolated through esc() — Fase 2 (hub) depends on this staying true (R10, XSS).
 // ---------- PROJECTS ----------
@@ -606,7 +642,8 @@ function dotEval(x){const why=[];let cls="valid";
 function renderProjDetail(){const x=(S.projs?.projects||[]).find(y=>projKey(y)===S.sel);if(!x)return;const doc=k=>`<span class="pill ${x.docs[k]?"p-valid":"p-document"}">${k}</span>`;
  let h=`<div class="h">${esc(x.name)}${mchip(x)}${S.focus===x.name?` <span class="pill p-valid">${T("inFocus")}</span>`:""}</div><div class="meta"><span>${T("path")}</span><b><code>${wbr(esc(x.path))}</code></b><span>${T("git")}</span><b>${x.git?esc(x.branch||"—")+(x.dirty?` · <span style="color:var(--amber)">${T("uncommitted",{n:x.dirty})}</span>`:" · "+T("clean")):T("notRepo")}</b><span>${T("lastCommit")}</span><b>${esc(x.last_commit||"—")}</b><span>${T("dotWhy")}</span><b><span class="pill p-${dotEval(x).cls}">${esc(dotEval(x).why)}</span></b>
   <span>${T("assets")}</span><b>${x.agents} ${T("agentsN")} · ${x.skills} ${T("skillsN")} · ${x.commands} ${T("commandsN")} · ${x.rules} ${T("rulesN")}</b><span>${T("harness")}</span><b>${x.hooks} ${T("hooksN")} · ${x.workflows} ${T("wfN")}</b><span>${T("docsN")}</span><b>${["CLAUDE.md","HARNESS.md","MEMORY.md","PROGRESS.md"].map(doc).join(" ")}</b>`+
-  (x.memory_days!==null?`<span>${T("memDays")}</span><b>${x.memory_days===0?T("today"):T("daysUntouched",{n:x.memory_days})}${x.memory_days>30?` <span style="color:var(--amber)">${T("maybeDead")}</span>`:""}</b>`:"")+`</div>`;
+  (x.memory_days!==null?`<span>${T("memDays")}</span><b>${x.memory_days===0?T("today"):T("daysUntouched",{n:x.memory_days})}${x.memory_days>30?` <span style="color:var(--amber)">${T("maybeDead")}</span>`:""}</b>`:"")+
+  `<span>${T("codexLast")}</span><b>${x.codex_last?esc(x.codex_last):T("tokNa")}</b></div>`;
  h+=(!HUB&&x.worktrees?`<div id="wtPanel" class="box info">${esc(T("loading"))}</div>`:"");
  h+=`<div class="actions"><button class="btn primary" id="bFocus">${S.focus===x.name?T("focusOff"):T("focusOn")}</button>`+(HUB?"":`<button class="btn" id="bFolder">${T("openFolder")}</button>`)+`</div>`;$("detail").innerHTML=h;
  $("bFocus").onclick=()=>{S.focus=S.focus===x.name?null:x.name;renderProjects();renderProjDetail();toast(S.focus?T("focused",{p:S.focus}):T("unfocused"));};
