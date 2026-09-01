@@ -263,6 +263,18 @@ active nav and the primary action all speak with it; nothing else does.
 in words ("n/a", "size not measured", "never recorded"). Unknown never borrows moss, amber or rust,
 and it is never rendered as 0.
 
+**The Heat-Ramp Rule.** The 30-day lane is the one sequential encoding in the product, and it uses
+an achromatic ramp — `--lane-0` through `--lane-4` — precisely because every chromatic channel is
+already spoken for: moss/amber/rust report state, blue is interaction, and the identity hues name
+agents. Values are light `#F6F7F8 · #8D929B · #6F757D · #525760 · #373B42` and dark
+`#1B1E22 · #5F656D · #80868E · #A2A8B0 · #C5CBD2`. Step 0 is the surface: a day with no sessions
+is an empty cell, never a mark. Steps 1–4 are OKLab-monotonic (light 97.6 → 65.9 → 56.0 → 45.6 →
+35.1; dark 23.4 → 50.4 → 61.8 → 72.9 → 84.0) with even ~10–11 L steps between data levels, and
+step 1 clears 3:1 against its surface in both themes (3.13 / 3.11) so the lightest mark that
+carries information is still a mark. The wide empty→step-1 gap is deliberate: "no sessions" versus
+"some" is the boundary that must read first. The scale is ABSOLUTE and shared by every row
+(1 / 2–3 / 4–6 / 7+), so lanes compare down the column instead of each row normalizing itself.
+
 **The Identity-Color Rule.** Identity hues live only in the 8px rounded swatch beside an agent's
 name — never on a background, never on text, and never in the warm/green arc the status colors own
 (moss, amber, rust). It is a second channel, not a louder status: the status dot stays first and
@@ -303,6 +315,12 @@ prose stays in the sans face even inside a technical panel. The build enforces t
 `evidenceHtml()` splits a finding into prose and measured lines and only monospaces the latter.
 Monospace is never a costume for "this feels technical."
 
+**Column headers.** `.sortBtn` is a registered variant of the Label step: 11px/600 in `dim`, but
+sentence-case with no tracking, unlike `.grp` section labels which stay uppercase at 0.07em. The
+reason is measured, not stylistic — uppercase + tracking made "uncommitted" and "worktrees" wider
+than their own columns and they clipped. Section labels name a region and can afford the tracking;
+a column header must fit the column it names.
+
 **The Five-Step Rule.** The ramp is exactly five sizes (11 / 12.5 / 14 / 18 / 22px), exposed as
 `--fs-1` through `--fs-5`. A new surface picks one of the five; it does not introduce a sixth, and
 it does not hardcode a px value that a step already covers.
@@ -330,12 +348,29 @@ Long values ellipsize rather than wrap; paths break after a separator (`wbr()`),
 **Rhythm.** Spacing steps in use are 2 / 4 / 6 / 8 / 10 / 12 / 14 / 16 / 20px. 6px and 8px are the
 intra-component gaps, 14px is the row gutter, 16–20px frames the panes.
 
-**Viewport caps.** Evidence and document previews cap at 60vh, the editor opens at 52vh, and the
-project tile grid caps at 30vh — a long body never pushes the actions out of reach.
+**Viewport caps.** Evidence and document previews cap at 60vh and the editor opens at 52vh — a
+long body never pushes the actions out of reach. The skill viewer opts out (`pre.doc.full`) so the
+whole SKILL.md flows with the detail pane instead of opening a window inside it.
+
+**The projects table (`.ptable`).** One row per project on a shared grid: name+branch, the 30-day
+lane with its total, then five right-aligned numeric columns (agents, skills, uncommitted,
+worktrees, memory). Header and rows share the template through `--pcols`, so a column can never
+drift out of alignment with its heading. It is a `role="grid"` with `role="columnheader"` +
+`aria-sort` on the sortable heads and focusable `role="row"` rows (Enter/Space activate).
 
 ### Named Rules
 **The Two-Pane Rule.** Every view is the same shell: a list that carries clickable headlines and a
 detail pane that carries the evidence. A new view adopts the shell; it does not invent a layout.
+
+**The Container Rule.** 840px is the only *viewport* breakpoint (it decides the shell). Column
+folding inside the list is a *container* question, not a viewport one — the list pane is 329px wide
+at an 840px viewport and 794px at 1440px, so `.list` is the query container and `.ptable` folds in the reverse
+order of importance: memory at 659px, worktrees at 599px, and the lane — the column the view now
+leads with — only at 525px. The footer answers the 599px query, hiding its worktree total rather
+than summing a column the reader can no longer see. A fold never leaves a ghost sort: if the
+active sort column folds away, the table falls back to a column that is still on screen
+(activity, or name when the lane itself has folded), re-rendered from a `ResizeObserver`. Nothing folded is lost — every folded number is spelled out in the detail
+pane one click away.
 
 **The 840 Rule.** One breakpoint, at 840px. Above it: sidebar nav, two panes side by side. Below
 it: the nav becomes a horizontal scroller with its scrollbar hidden, the panes stack with a rule

@@ -95,16 +95,16 @@ class TestWorktreesScript(unittest.TestCase):
         data = self._fixture()
         text = worktrees.script(self.env.cfg, data)
         expected = (
-            "# project-os worktree cleanup — review before running; project-os never executes these itself.\n"
-            "# Branches are kept; only worktree directories are affected.\n"
+            ": '# project-os worktree cleanup — review before running; project-os never executes these itself.'\n"
+            ": '# Branches are kept; only worktree directories are affected.'\n"
             "\n"
             'git -C "/repo/alpha" worktree prune\n'
             "\n"
             'git -C "/repo/alpha" worktree remove "/repo/alpha-wt/clean1"\n'
             'git -C "/repo/beta" worktree remove "/repo/beta-wt/clean2"\n'
             "\n"
-            "# skipped (uncommitted changes): /repo/alpha-wt/dirty1\n"
-            "# skipped (status unknown — run: project-os scan): /repo/alpha-wt/unknown1\n"
+            ": '# skipped (uncommitted changes): /repo/alpha-wt/dirty1'\n"
+            ": '# skipped (status unknown — run: project-os scan): /repo/alpha-wt/unknown1'\n"
         )
         self.assertEqual(text, expected)
 
@@ -146,6 +146,7 @@ class TestWorktreesScriptUnsafePaths(unittest.TestCase):
 
     UNSAFE_PATHS = [
         '/repo/gamma-wt/wt"quote',
+        "/repo/gamma-wt/wt'quote",
         '/repo/gamma-wt/wt$(whoami)',
         '/repo/gamma-wt/wt`cmd`',
         '/repo/gamma-wt/wt%VAR%',
@@ -168,7 +169,10 @@ class TestWorktreesScriptUnsafePaths(unittest.TestCase):
         text = worktrees.script(self.env.cfg, self._fixture())
         for p in self.UNSAFE_PATHS:
             self.assertNotIn(f'worktree remove "{p}"', text)
-            self.assertIn(f"# skipped (path needs manual handling — unusual characters): {p}", text)
+            # built through the same helper the source uses, so a path containing a literal
+            # single quote (like "/repo/gamma-wt/wt'quote" above) is asserted against its
+            # correctly ESCAPED form, not a naive f-string that would never match.
+            self.assertIn(worktrees._comment(f"skipped (path needs manual handling — unusual characters): {p}"), text)
         # exactly one safe worktree -> exactly one remove command in the whole script
         self.assertEqual(text.count("worktree remove"), 1)
 
@@ -188,8 +192,52 @@ class TestWorktreesScriptUnsafePaths(unittest.TestCase):
         text = worktrees.script(self.env.cfg, data)
         self.assertNotIn("worktree prune", text)
         self.assertNotIn("worktree remove", text)
-        self.assertIn(f"# skipped (path needs manual handling — unusual characters): {repo}-wt/clean", text)
-        self.assertIn(f"# skipped (path needs manual handling — unusual characters): {repo}-wt/gone", text)
+        self.assertIn(worktrees._comment(f"skipped (path needs manual handling — unusual characters): {repo}-wt/clean"), text)
+        self.assertIn(worktrees._comment(f"skipped (path needs manual handling — unusual characters): {repo}-wt/gone"), text)
+
+
+class TestWorktreesScriptPasteSafety(unittest.TestCase):
+    """Production defect: a raw `#` line pasted into an interactive zsh (default: no
+    `setopt interactive_comments`) is NOT a comment there -- it gets parsed as a real command,
+    and a stray ';' inside one (the old header comment had one) chains a second real command
+    right after it. Falsifiable invariant: every non-empty line of script()'s output must start
+    with 'git ' (a real, reviewed command) or with ": '#" (the inert no-op form) -- nothing
+    else is ever safe to leave on its own line in a script meant to be pasted whole."""
+
+    def setUp(self):
+        self.env = Env()
+
+    def tearDown(self):
+        self.env.cleanup()
+
+    def _assert_every_line_is_paste_safe(self, text):
+        for line in text.splitlines():
+            if not line:
+                continue
+            self.assertTrue(line.startswith("git ") or line.startswith(": '#"),
+                             f"unsafe non-command line: {line!r}")
+
+    def test_every_line_is_a_command_or_an_inert_comment(self):
+        alpha = _project("alpha", "/repo/alpha", [
+            {"path": "/repo/alpha-wt/clean1", "name": "clean1", "mb": 12, "mtime": "2026-08-01",
+             "dirty": 0, "branch": "feat-clean", "prunable": False},
+            {"path": "/repo/alpha-wt/dirty1", "name": "dirty1", "mb": 30, "mtime": "2026-08-02",
+             "dirty": 3, "branch": "feat-dirty", "prunable": False},
+            {"path": "/repo/alpha-wt/gone1", "name": "gone1", "mb": None, "mtime": "2026-07-01",
+             "dirty": None, "branch": "old-branch", "prunable": True},
+            {"path": "/repo/alpha-wt/unknown1", "name": "unknown1", "mb": 5, "mtime": "2026-08-03",
+             "dirty": -1, "branch": "feat-unk", "prunable": False},
+            {"path": "/repo/alpha-wt/wt'quote", "name": "unsafeq", "mb": 1, "mtime": "2026-08-01",
+             "dirty": 0, "branch": "b", "prunable": False},
+            {"path": "/repo/alpha-wt/wt\nline", "name": "unsafen", "mb": 1, "mtime": "2026-08-01",
+             "dirty": 0, "branch": "b", "prunable": False},
+        ])
+        text = worktrees.script(self.env.cfg, _data(alpha))
+        self._assert_every_line_is_paste_safe(text)
+
+    def test_empty_message_is_also_paste_safe(self):
+        text = worktrees.script(self.env.cfg, _data(_project("alpha", "/repo/alpha", [])))
+        self._assert_every_line_is_paste_safe(text)
 
 
 class TestWorktreesSummary(unittest.TestCase):

@@ -230,6 +230,37 @@ class TestWorktreesCommand(unittest.TestCase):
         finally:
             env.cleanup()
 
+    def test_worktrees_command_stdout_is_entirely_paste_safe(self):
+        # Full-output regression: not just script()'s own text, but the SUMMARY LINE printed
+        # right before it. That line used to carry raw `backticks` around the suggested
+        # command -- backticks are command substitution in zsh/bash, so pasting the whole
+        # stdout block actually RAN `project-os scan --worktrees` (a real, reported defect,
+        # worse than the original one: it triggers a slow scan).
+        from project_os import cli as CLI
+        env = Env()
+        try:
+            scan.save(env.cfg, scan.run(env.cfg))
+            data = {"projects": [{"name": "alpha", "path": env.alpha, "git": {"worktrees": [
+                {"path": f"{env.alpha}-wt/dirty1", "name": "dirty1", "mb": None, "mtime": "2026-08-01",
+                 "dirty": 3, "branch": "b", "prunable": False},
+            ]}}]}
+            a = argparse.Namespace(project=None, json=False)
+            buf = io.StringIO()
+            with mock.patch("project_os.scan.ensure", return_value=data):
+                with redirect_stdout(buf):
+                    rc = CLI._worktrees(env.cfg, a)
+            self.assertEqual(rc, 0)
+            out = buf.getvalue()
+            self.assertIn("unmeasured", out)     # exercises the exact branch that had backticks
+            self.assertNotIn("`", out)
+            for line in out.splitlines():
+                if not line:
+                    continue
+                self.assertTrue(line.startswith("git ") or line.startswith(": '#"),
+                                 f"unsafe non-command line in CLI stdout: {line!r}")
+        finally:
+            env.cleanup()
+
     def test_worktrees_command_json(self):
         from project_os import cli as CLI
         env = Env()

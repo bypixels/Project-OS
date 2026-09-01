@@ -9,6 +9,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Projects view redesigned as "lanes"**: one sortable table replaces the duplicated
+  tiles-grid + list. Each project row carries a 30-day activity lane (per-day session cells on
+  one absolute neutral ramp shared by every row, axis-labeled "-30d…today"), its session total
+  under its own header, and sortable inventory columns (agents / skills / uncommitted /
+  worktrees / memory days). The view opens sorted by 30-day activity descending — "who grew" is
+  the screen's first statement. Status dots now carry their evidence (the threshold that fired,
+  in the tooltip and the detail's status row); unknowns speak one vocabulary ("size not
+  measured" — the "? GB" glyph is gone); columns fold responsively without ghost sorts (a sort
+  on a folded column falls back visibly) and the lane legend hides with its column. Lane
+  attribution is keyed per machine, so hub-aggregated homonymous projects never swap lanes.
+- **`project-os worktrees` output is now paste-safe in zsh**: every non-command line is emitted
+  as an inert `: '# …'` line, and the summary line lost its backticks — pasting the old output
+  into a default zsh executed comment fragments as commands (including, worst case, a slow
+  `scan --worktrees` via command substitution). The whole stdout of the subcommand now
+  pastes silently, enforced by a test over the complete output.
+
 - **Full rebrand: cabina → Project-OS.** The CLI command is now `project-os`, the Python module
   `project_os`, the pip package `project-os`. Everything named after the old brand moved with it:
   `$PROJECT_OS_CONFIG` (config override), `~/.config/project-os` + `~/.local/share/project-os`

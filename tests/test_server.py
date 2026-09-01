@@ -556,13 +556,20 @@ class TestServer(unittest.TestCase):
         start = html.index("function renderProjects(){if(!S.projs)")
         end = html.index("function renderProjDetail(){")
         body = html[start:end]
-        # row text: GB only when measured, "?G" otherwise -- never a raw toFixed(1) on an
-        # unmeasured size
-        self.assertIn('x.worktrees_mb_measured?(x.worktrees_mb/1024).toFixed(1)+"G":"?G"', body)
-        # footer: GB total only when every project with worktrees was measured, "? GB" otherwise,
+        # rows no longer render sizes (bare worktree count since the lanes redesign). The three
+        # surviving uses of worktrees_mb all sit behind the measured-guard (footer total, dot
+        # threshold, dot evidence sentence); any NEW unguarded use fails the count below.
+        self.assertIn("x.worktrees_mb_measured&&x.worktrees_mb>5000", body)
+        self.assertIn("x.worktrees_mb_measured?x.worktrees_mb:0", body)
+        self.assertIn('T("dotWt",{gb:(x.worktrees_mb/1024', body)
+        import re as _re
+        self.assertEqual(len(_re.findall(r"x\.worktrees_mb(?!_measured)", body)), 3)
+        # footer: GB total only when every project with worktrees was measured, the
+        # wtSizeUnmeasured words otherwise (one unknown vocabulary, never a "? GB" glyph),
         # and omitted entirely when nothing has worktrees at all (no more unconditional "(0.0 GB)")
         self.assertIn("wtMeasured?wtG.toFixed(1)", body)
-        self.assertIn('"? GB"', body)
+        self.assertIn('esc(T("wtSizeUnmeasured"))', body)
+        self.assertNotIn('"? GB"', body)
         self.assertIn("wtProjects.length?", body)
         # the red/amber dot must never trigger the size condition on an unmeasured project
         self.assertIn("x.worktrees_mb_measured&&x.worktrees_mb>5000", body)
@@ -978,49 +985,31 @@ class TestServer(unittest.TestCase):
         # neither in the API shape (Unit 2) nor accidentally introduced by the renderer (Unit 3).
         tile = self.app.api_tiles()["tiles"][0]
         self.assertEqual(set(tile), {"project", "last_session", "active", "health", "open_findings_count"})
+        # the tiles UI died with the lanes redesign, but the concern survives on its successor:
+        # the projects renderer stays a read-only summary, never a Kanban.
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
-        start = html.index("function healthPills")
-        end = html.index("function renderProjects(){if(!S.projs)")
+        start = html.index("function renderProjects(){if(!S.projs)")
+        end = html.index("function renderProjDetail(){")
         src = html[start:end]
         for bad in ("assignee", "todo", "\"status\"", "'status'"):
             self.assertNotIn(bad, src)
-        # the crit/warn/info pills must actually be built from the health counts (not silently
-        # dropped) -- both per-tile (t.health, passed to healthPills) and in the tiles header
-        # (the global S.tiles.health totals from Unit fix #2).
-        for k in ("health.crit", "health.warn", "health.info"):
-            self.assertIn(k, src)
-        self.assertIn("healthPills(t.health)", src)
-        self.assertIn("healthPills(S.tiles.health)", src)
-        import re
-        pattern = re.compile(r"\$\{([^{}]*\bt\.(?:project|last_session)\b[^{}]*)\}")
-        hits = list(pattern.finditer(src))
-        self.assertGreater(len(hits), 0)
-        for m in hits:
-            self.assertIn("esc(", m.group(1), f"unescaped interpolation: ${{{m.group(1)}}}")
-    def test_project_tiles_grid_is_compact_and_height_capped(self):
-        # Live-check finding: with 21 real projects the tiles grid took 5 rows and pushed the
-        # project list off-screen. Compact row tiles + a capped, scrollable grid area.
-        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
-        self.assertIn("minmax(220px,1fr)", html)
-        self.assertIn("max-height:30vh", html)
-        self.assertIn("overflow:auto", html)
-    def test_tiles_and_sparkline_i18n_keys_present_in_both_languages(self):
+    def test_lanes_and_columns_i18n_keys_present_in_both_languages(self):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
         start = html.index("const I18N={")
         end = html.index("const T=(k,v)=>")
         block = html[start:end]
         split = block.index("\nes:{")
         en_block, es_block = block[:split], block[split:]
-        for key in ("tilesTitle", "tilesSparkAria", "tileActive", "tileIdle", "tileNever"):
+        for key in ("colUncommitted", "colWorktrees", "colMemory", "colActivity", "laneLegend"):
             self.assertIn(key + ":", en_block, key)
             self.assertIn(key + ":", es_block, key)
-    def test_projects_tab_lazy_loads_tiles_never_in_hub(self):
+    def test_projects_tab_no_longer_calls_tiles_or_health_history(self):
+        # Lanes redesign: one representation. The endpoints remain server-side, but the UI must
+        # not fetch them -- a reappearance means dead tiles code came back.
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
-        self.assertIn("/api/tiles", html)
-        self.assertIn("/api/health-history", html)
-        # both fetches are guarded the same way every other server-only call is: `if(HUB)return;`
-        loadtiles = html[html.index("async function loadTiles"):html.index("async function loadTiles") + 60]
-        self.assertIn("HUB", loadtiles)
+        self.assertNotIn("/api/tiles", html)
+        self.assertNotIn("/api/health-history", html)
+        self.assertNotIn("loadTiles", html)
     # ---------- S1-b/c: Health tab ----------
     def test_index_health_tab_is_first_and_default_view_outside_hub(self):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
@@ -1248,19 +1237,13 @@ class TestServer(unittest.TestCase):
         self.assertIn('style="display:flex;flex-direction:column;gap:4px;margin-top:6px">', vpanel)
         self.assertNotIn("max-height:160px", vpanel)
         self.assertNotIn("overflow:auto", vpanel)
-    def test_tiles_grid_scroll_cap_deliberately_kept_project_list_would_go_off_screen(self):
-        # NOT a violation, checked rather than guessed: .tilesGrid is injected as content of
-        # #rows itself (renderProjectTiles() is prepended into $("rows").innerHTML in
-        # renderProjects()), i.e. nested inside the list pane that already scrolls -- same shape
-        # as the blocks removed above. But this cap predates this unit (test_project_tiles_grid_
-        # is_compact_and_height_capped) and its own code comment says why: with 21 real projects
-        # the uncapped tile grid took 5 rows and pushed the actual project row list out of view.
-        # Removing the cap here would reintroduce that regression, so it stays -- unlike the other
-        # nested blocks, there is no primary content below it competing for the same scrollbar.
+    def test_tiles_grid_fully_removed_by_lanes_redesign(self):
+        # The tiles grid (and its deliberate 30vh scroll cap) died with the lanes redesign: one
+        # representation per project. Any reappearance of these markers means the dead grid came
+        # back without its old justification.
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/") as r: html = r.read().decode()
-        self.assertIn(".tilesGrid{", html)
-        self.assertIn("max-height:30vh;overflow:auto}", html)
-        self.assertIn('$("rows").innerHTML=renderProjectTiles()+a.map(', html)   # confirms: nested in #rows, not a sibling
+        self.assertNotIn(".tilesGrid{", html)
+        self.assertNotIn("renderProjectTiles", html)
     # ---------- MCP tab: two-pane selection ----------
     def test_mcp_three_ui_states_still_render(self):
         # Do not weaken: the not-checked / empty / list branches from before this unit's

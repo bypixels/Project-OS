@@ -4,8 +4,8 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Project-OS</title>
 <style>
-:root{color-scheme:light;--bg:#F6F7F8;--panel:#FFFFFF;--ink:#0B0D0F;--dim:#5E636A;--line:#E2E5E8;--hover:#F0F1F3;--neutral:#AEB3B9;--accent:#0B5FCE;--accent-soft:#E7EFFC;--accent-ink:#0A4FA8;--on-accent:#FFFFFF;--moss:#1C7A3E;--moss-soft:#E1F2E7;--amber:#875806;--amber-soft:#F9EDD6;--rust:#B22417;--rust-soft:#FAE4E1;--slate:#3B4A5B;--slate-soft:#ECF0F4;--mono:ui-monospace,'SF Mono',SFMono-Regular,Menlo,Consolas,monospace;--sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;--r:6px;--nav:212px;--fs-1:11px;--fs-2:12.5px;--fs-3:14px;--fs-4:18px;--fs-5:22px}
-@media (prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#0C0D0F;--panel:#131518;--ink:#E8EAED;--dim:#9AA0A8;--line:#24272C;--hover:#1B1E22;--neutral:#4C5158;--accent:#5CA0FF;--accent-soft:#16273D;--accent-ink:#9AC2FF;--on-accent:#08131F;--moss:#6ECE8B;--moss-soft:#13251A;--amber:#DFB158;--amber-soft:#2A2313;--rust:#F08C7E;--rust-soft:#331A18;--slate:#9EB5CB;--slate-soft:#182029}}
+:root{color-scheme:light;--bg:#F6F7F8;--panel:#FFFFFF;--ink:#0B0D0F;--dim:#5E636A;--line:#E2E5E8;--hover:#F0F1F3;--neutral:#AEB3B9;--accent:#0B5FCE;--accent-soft:#E7EFFC;--accent-ink:#0A4FA8;--on-accent:#FFFFFF;--moss:#1C7A3E;--moss-soft:#E1F2E7;--amber:#875806;--amber-soft:#F9EDD6;--rust:#B22417;--rust-soft:#FAE4E1;--slate:#3B4A5B;--slate-soft:#ECF0F4;--mono:ui-monospace,'SF Mono',SFMono-Regular,Menlo,Consolas,monospace;--sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;--lane-0:#F6F7F8;--lane-1:#8D929B;--lane-2:#6F757D;--lane-3:#525760;--lane-4:#373B42;--r:6px;--nav:212px;--fs-1:11px;--fs-2:12.5px;--fs-3:14px;--fs-4:18px;--fs-5:22px}
+@media (prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#0C0D0F;--panel:#131518;--ink:#E8EAED;--dim:#9AA0A8;--line:#24272C;--hover:#1B1E22;--neutral:#4C5158;--accent:#5CA0FF;--accent-soft:#16273D;--accent-ink:#9AC2FF;--on-accent:#08131F;--moss:#6ECE8B;--moss-soft:#13251A;--amber:#DFB158;--amber-soft:#2A2313;--rust:#F08C7E;--rust-soft:#331A18;--slate:#9EB5CB;--slate-soft:#182029;--lane-0:#1B1E22;--lane-1:#5F656D;--lane-2:#80868E;--lane-3:#A2A8B0;--lane-4:#C5CBD2}}
 *{box-sizing:border-box;margin:0;padding:0}html,body{height:100%}
 body{background:var(--bg);color:var(--ink);font:var(--fs-3)/1.5 var(--sans);font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;display:flex;flex-direction:column}
 button{font:inherit;cursor:pointer;color:inherit}input,select,textarea{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:6px 10px}
@@ -36,6 +36,28 @@ input:focus,select:focus,textarea:focus,button:focus-visible,a:focus-visible,[ta
 .toolRow{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:baseline;padding:4px 0;border-bottom:1px solid var(--line)}.toolRow:last-child{border-bottom:0}
 .tn{font-size:var(--fs-2);font-weight:500;white-space:nowrap}.td{font-family:var(--mono);font-size:var(--fs-2);color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tt{font-size:var(--fs-1);color:var(--dim);white-space:nowrap}
 .subRow{display:flex;align-items:baseline;padding:3px 0 3px 14px;font-size:var(--fs-2)}.sn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.st{color:var(--dim);margin-left:10px;white-space:nowrap}
+.list{container-type:inline-size}
+.ptable{--pcols:minmax(100px,1fr) 190px 50px 46px 80px 66px 52px}
+.phead,.row.proj{display:grid;grid-template-columns:var(--pcols);gap:8px;align-items:center}
+.phead{position:sticky;top:0;z-index:1;background:var(--bg);border-bottom:1px solid var(--line);padding:3px 14px}
+.ch{min-width:0;overflow:hidden}.ch.num{text-align:right}
+.sortBtn{width:100%;text-align:inherit;background:none;border:0;padding:3px 0;font-size:var(--fs-1);font-weight:600;color:var(--dim);white-space:nowrap}.sortBtn:hover{color:var(--ink)}
+.ch[aria-sort="ascending"] .sortBtn,.ch[aria-sort="descending"] .sortBtn{color:var(--accent-ink)}.sortBtn .ind{margin-left:3px}
+.row.proj{padding:6px 14px;min-height:34px}
+.pc{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pc.num{text-align:right;font-size:var(--fs-2);color:var(--dim)}
+.pcName{display:flex;align-items:center;gap:10px}
+.pcName>.n{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.pcName>.muted{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis}.pcName>.tl{flex:none}
+.pcLane{display:flex;align-items:center;gap:6px}.laneTotal{flex:none;width:34px;text-align:right;font-size:var(--fs-2);color:var(--dim)}
+.chLane{display:flex;flex-direction:column;gap:1px}.chTop{display:flex;align-items:baseline;gap:6px}.chTop .sortBtn{flex:1;width:auto}
+.laneTotalH{flex:none;text-align:right;font-size:var(--fs-1);font-weight:600;color:var(--dim);white-space:nowrap}.axis{display:flex;justify-content:space-between;width:149px;font-size:var(--fs-1);line-height:1.1;color:var(--dim)}
+.laneKeyRow{display:flex;align-items:center;gap:6px;padding:5px 14px;border-bottom:1px solid var(--line);font-size:var(--fs-1);color:var(--dim);background:var(--panel)}
+.lane{display:inline-flex;gap:1px}.cell{width:4px;height:14px;border-radius:1px;background:var(--lane-0)}
+.cell.s1{background:var(--lane-1)}.cell.s2{background:var(--lane-2)}.cell.s3{background:var(--lane-3)}.cell.s4{background:var(--lane-4)}
+.laneKey{display:inline-flex;align-items:center;gap:2px;margin:0 4px}
+@container (max-width:659px){.ptable{--pcols:minmax(100px,1fr) 190px 50px 46px 80px 66px}.chmemory_days,.pcmemory_days{display:none}}
+@container (max-width:599px){.ptable{--pcols:minmax(100px,1fr) 190px 50px 46px 80px}.chworktrees,.pcworktrees,.fwt{display:none}}
+@container (max-width:525px){.ptable{--pcols:minmax(90px,1fr) 46px 42px 76px}.chLane,.pcLane,.laneKeyRow{display:none}}
 .row.stack{align-items:start;padding:8px 14px}.row .nn{display:flex;flex-direction:column;gap:1px;min-width:0}.row .sub{font-size:var(--fs-2);line-height:1.35;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.row .sub:empty{display:none}.row.stack .w{padding-top:1px}
 .dot{width:8px;height:8px;border-radius:50%;flex:none}.d-valid,.d-done,.d-ok,.d-complete{background:var(--moss)}.d-warnings,.d-working,.d-partial{background:var(--amber)}.d-invalid,.d-bad{background:var(--rust)}.d-document,.d-idle,.d-none,.d-unknown{background:var(--neutral)}
 .row .n{font-family:var(--mono);font-size:var(--fs-3);letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.row .w{color:var(--dim);font-size:var(--fs-2);white-space:nowrap}
@@ -51,7 +73,6 @@ input:focus,select:focus,textarea:focus,button:focus-visible,a:focus-visible,[ta
 pre.lines{font-family:var(--mono);font-size:var(--fs-2);line-height:1.5;white-space:pre;overflow-x:auto;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);padding:8px 12px}
 .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:auto;padding-top:8px;align-items:center}.btn{font-size:var(--fs-3);padding:6px 12px;min-height:32px;border-radius:var(--r);border:1px solid var(--line);background:var(--panel);color:var(--ink)}.btn:hover{background:var(--hover);border-color:var(--neutral)}.btn.on{background:var(--accent-soft);color:var(--accent-ink);border-color:var(--accent-soft);font-weight:600;box-shadow:inset 1px 0 0 var(--accent)}.btn.on:hover{background:var(--accent-soft);border-color:var(--accent)}.btn.primary{background:var(--accent);color:var(--on-accent);border-color:var(--accent);font-weight:500}.btn.primary:hover{background:var(--accent-ink);border-color:var(--accent-ink)}.btn.danger{color:var(--rust)}.btn.danger:hover{background:var(--rust-soft);border-color:var(--rust-soft)}.btn[disabled]{opacity:.45;cursor:default}.btn[disabled]:hover{background:var(--panel);border-color:var(--line)}
 .muted{color:var(--dim);font-size:var(--fs-3)}.tl{font-size:var(--fs-1);padding:1px 6px;border-radius:5px;background:var(--slate-soft);color:var(--slate);font-family:var(--sans);margin-left:6px;vertical-align:middle}.tl.codex{background:var(--amber-soft);color:var(--amber)}.form{display:grid;gap:10px}.form label{display:grid;gap:4px;font-size:var(--fs-2);color:var(--dim)}.form .err{color:var(--rust);font-size:var(--fs-2);min-height:14px}
-.tilesGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px;margin-bottom:10px;max-height:30vh;overflow:auto}.tile{background:var(--bg);border:1px solid var(--line);border-radius:var(--r);padding:6px 10px;min-height:44px;display:flex;align-items:center;gap:8px}.tileName{font-weight:600;font-size:var(--fs-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}.tilesHead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
 textarea{min-height:90px;resize:vertical;font-family:var(--mono);font-size:var(--fs-2)}textarea.editor{width:100%;min-height:52vh;line-height:1.5;tab-size:2}
 pre.doc,pre.preview{font-family:var(--mono);font-size:12.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;max-height:60vh;overflow:auto}
 pre.doc.full{max-height:none;overflow:visible}
@@ -84,7 +105,7 @@ const I18N={
 en:{tabs:{health:"Health",agents:"Agents",live:"Live",skills:"Skills",projects:"Projects",harness:"Harness",mcp:"MCP",docs:"Docs",activity:"Activity"},
  navAria:"Sections",navStatus:"Status",navCatalog:"Catalog",navProjects:"Projects",navSystem:"System",
  legendNeutral:"no state",approxT:"count shared with agents of the same name in other projects — not attributable to this one",approxNote:"≈ count shared with homonyms",
- pickFinding:"Select a finding.",hEvidence:"Evidence",hFix:"Suggested command",recentTools:"Recent tools",subagentRows:"Subagents",
+ pickFinding:"Select a finding.",hEvidence:"Evidence",hFix:"Suggested command",recentTools:"Recent tools",subagentRows:"Subagents",colUncommitted:"uncommitted",colWorktrees:"worktrees",colMemory:"memory",colActivity:"30 days",colSessions:"sessions",sortBy:"sort by {c}",laneSessions:"{d}: {n} session(s)",laneAria:"{p}: {n} sessions in 30 days; busiest {d} with {m}",laneAriaEmpty:"{p}: no sessions in the last 30 days",laneLegend:"sessions/day",laneLess:"less",laneMore:"more",laneStart:"-30d",laneEnd:"today",laneTotalT:"sessions in 30 days",dotWhy:"status",dotWt:"worktrees {gb} GB (over 5 GB)",dotDirty:"{n} uncommitted (over 20)",dotMem:"MEMORY.md untouched {n} d (over 30)",dotOk:"no threshold crossed",
  recheck:"Re-check",checking:"checking…",ranAt:"last run: {t}",copy:"Copy",copied:"Copied",healthOk:"All clear.",sevCrit:"critical",sevWarn:"warnings",sevInfo:"info",
  healthActiveNow:"active now",healthNoActive:"Nothing running right now.",healthRecent:"recent",healthNoRecent:"No recent sessions.",
  pickSession:"Select a session.",noSessions:"No sessions in this window.",untitled:"(untitled)",
@@ -134,7 +155,7 @@ en:{tabs:{health:"Health",agents:"Agents",live:"Live",skills:"Skills",projects:"
 es:{tabs:{health:"Salud",agents:"Agentes",live:"En vivo",skills:"Skills",projects:"Proyectos",harness:"Harness",mcp:"MCP",docs:"Documentos",activity:"Actividad"},
  navAria:"Secciones",navStatus:"Estado",navCatalog:"Catálogo",navProjects:"Proyectos",navSystem:"Sistema",
  legendNeutral:"sin estado",approxT:"conteo compartido con agentes del mismo nombre en otros proyectos — no atribuible a este",approxNote:"≈ conteo compartido con homónimos",
- pickFinding:"Seleccioná un hallazgo.",hEvidence:"Evidencia",hFix:"Comando sugerido",recentTools:"Herramientas recientes",subagentRows:"Subagentes",
+ pickFinding:"Seleccioná un hallazgo.",hEvidence:"Evidencia",hFix:"Comando sugerido",recentTools:"Herramientas recientes",subagentRows:"Subagentes",colUncommitted:"sin commit",colWorktrees:"worktrees",colMemory:"memoria",colActivity:"30 días",colSessions:"sesiones",sortBy:"ordenar por {c}",laneSessions:"{d}: {n} sesión(es)",laneAria:"{p}: {n} sesiones en 30 días; el día más activo fue {d} con {m}",laneAriaEmpty:"{p}: sin sesiones en los últimos 30 días",laneLegend:"sesiones/día",laneLess:"menos",laneMore:"más",laneStart:"-30d",laneEnd:"hoy",laneTotalT:"sesiones en 30 días",dotWhy:"estado",dotWt:"worktrees {gb} GB (más de 5 GB)",dotDirty:"{n} sin commit (más de 20)",dotMem:"MEMORY.md sin tocar {n} d (más de 30)",dotOk:"ningún umbral cruzado",
  recheck:"Volver a chequear",checking:"comprobando…",ranAt:"última corrida: {t}",copy:"Copiar",copied:"Copiado",healthOk:"Todo en orden.",sevCrit:"críticos",sevWarn:"avisos",sevInfo:"info",
  healthActiveNow:"activo ahora",healthNoActive:"Nada corriendo en este momento.",healthRecent:"reciente",healthNoRecent:"Sin sesiones recientes.",
  pickSession:"Seleccioná una sesión.",noSessions:"No hay sesiones en esta ventana.",
@@ -184,7 +205,7 @@ es:{tabs:{health:"Salud",agents:"Agentes",live:"En vivo",skills:"Skills",project
  mcpTarget:"destino",mcpNotChecked:"Los servidores MCP no se han revisado. Corré <code>project-os scan --mcp</code>, o marcá la casilla «MCP» en el diálogo de reescaneo, para recolectar esto.",mcpEmpty:"No hay servidores MCP configurados.",mcpSummary:"{n} servidores · {need} necesitan atención"}};
 const T=(k,v)=>{let s=(I18N[LANG]||I18N.en)[k]??I18N.en[k]??k; if(typeof s==="object")return s; return v?s.replace(/\{(\w+)\}/g,(_,x)=>v[x]??""):s;};
 const S={view:HUB?"agents":"health",data:null,live:null,skills:null,projs:null,har:null,docs:null,doc:null,activity:null,hub:null,health:null,healthChecking:false,editing:false,sel:null,q:"",chips:new Set(),mode:null,focus:null,loaded:new Set(),
- hooks:null,hooksCmd:"",hooksForce:false,hooksPreview:false,tiles:null,healthHistory:null,mcp:null,docVersions:null,docVersionSel:null,docVersionDetail:null,skillBody:null,skillFile:null};
+ hooks:null,hooksCmd:"",hooksForce:false,hooksPreview:false,projSort:{key:"activity",dir:"desc"},mcp:null,docVersions:null,docVersionSel:null,docVersionDetail:null,skillBody:null,skillFile:null};
 const $=id=>document.getElementById(id);const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 // wbr() and evidenceHtml() both take ALREADY-ESCAPED text and only add markup of their own; they
 // are always called as wbr(esc(x)) / evidenceHtml(esc(x)) so escaping still happens at the sink.
@@ -212,17 +233,15 @@ const NAV_GROUPS=[["navStatus",["health","live","activity"]],["navCatalog",["age
 $("tabs").setAttribute("aria-label",T("navAria"));
 $("tabs").innerHTML=NAV_GROUPS.map(([g,vs])=>{const items=vs.filter(v=>VIEWS.includes(v));
  return items.length?`<div class="navGroup"><div class="navLabel">${esc(T(g))}</div>`+items.map(v=>`<button class="tab" data-v="${v}">${esc(T("tabs")[v])}</button>`).join("")+`</div>`:"";}).join("");
-const LOADERS={health:()=>{loadHealth();ensureLoaded("activity");},skills:()=>loadSkills(),projects:()=>{loadProjs();loadTiles();loadHealthHistory();},harness:()=>loadHar(),mcp:()=>loadMcp(),activity:()=>loadActivity(),docs:()=>loadDocs()};
+const LOADERS={health:()=>{loadHealth();ensureLoaded("activity");},skills:()=>loadSkills(),projects:()=>{loadProjs();ensureLoaded("activity");},harness:()=>loadHar(),mcp:()=>loadMcp(),activity:()=>loadActivity(),docs:()=>loadDocs()};
 function ensureLoaded(v){if(S.loaded.has(v))return;const f=LOADERS[v];if(!f)return;S.loaded.add(v);f();}
 document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{S.view=t.dataset.v;S.mode=null;S.sel=null;S.q="";S.chips.clear();S.skillBody=null;S.skillFile=null;ensureLoaded(S.view);render();});
 async function loadAgents(){S.data=await GET("/api/agents");render();if(S.view==="agents"){if(S.mode==="create")renderCreate();else if(S.sel)renderAgentDetail();}}
 async function loadSkills(){S.skills=await GET("/api/skills");if(S.view==="skills")render();}
 async function loadProjs(){S.projs=await GET("/api/projects");if(S.view==="projects")render();}
-async function loadTiles(){if(HUB)return;S.tiles=await GET("/api/tiles");if(S.view==="projects")render();}
-async function loadHealthHistory(){if(HUB)return;S.healthHistory=await GET("/api/health-history?days=30");if(S.view==="projects")render();}
 async function loadHar(){S.har=await GET("/api/harness");if(!HUB)S.hooks=await GET("/api/hooks"+(S.hooksCmd?"?cmd="+encodeURIComponent(S.hooksCmd):""));if(S.view==="harness")render();}
 async function loadDocs(){S.docs=await GET("/api/docs");if(S.view==="docs")render();}
-async function loadActivity(){S.activity=await GET("/api/activity?days=30");if(S.view==="activity")render();if(S.view==="health")renderHealth();}
+async function loadActivity(){S.activity=await GET("/api/activity?days=30");if(S.view==="activity")render();if(S.view==="health")renderHealth();if(S.view==="projects")render();}
 async function loadMcp(){S.mcp=await GET("/api/mcp");if(S.view==="mcp")render();}
 async function loadHub(){if(!HUB)return;S.hub=await GET("/api/hub");renderHubBanner();}
 function renderHubBanner(){if(!HUB||!S.hub)return;let el=$("hubBanner");if(!el){el=document.createElement("div");el.id="hubBanner";
@@ -489,33 +508,103 @@ function renderSessionDetail(){const x=(S.activity?.sessions||[]).find(y=>sessKe
 // Note: x.title is ALWAYS interpolated through esc() — Fase 2 (hub) depends on this staying true (R10, XSS).
 // ---------- PROJECTS ----------
 function projKey(x){return x.name+"|"+(x.machine||"");}   // E2: name alone collides when two hub machines share a project name
-function relSince(iso){if(!iso)return null;const days=Math.floor((Date.now()-new Date(iso).getTime())/86400000);if(isNaN(days))return null;return days<=0?T("today"):days+" d";}
-function healthSparkline(series){const s=(series||[]).slice(-30);if(!s.length)return "";const w=110,h=24;
- const maxV=Math.max(1,...s.map(d=>Math.max(d.crit||0,d.warn||0)));const stepX=s.length>1?w/(s.length-1):0;
- const pts=k=>s.map((d,i)=>`${(i*stepX).toFixed(1)},${(h-((d[k]||0)/maxV)*h).toFixed(1)}`).join(" ");
- return `<svg width="${w}" height="${h}" style="vertical-align:middle" role="img" aria-label="${esc(T("tilesSparkAria"))}"><polyline points="${pts("crit")}" fill="none" stroke="var(--rust)" stroke-width="1.5"></polyline><polyline points="${pts("warn")}" fill="none" stroke="var(--amber)" stroke-width="1.5"></polyline></svg>`;}
-function healthPills(health){const parts=[];
- if(health.crit)parts.push(`<span class="pill p-invalid">${health.crit}</span>`);
- if(health.warn)parts.push(`<span class="pill p-warnings">${health.warn}</span>`);
- if(health.info)parts.push(`<span class="pill p-document">${health.info}</span>`);
- return parts.length?parts.join(" "):`<span class="pill p-valid">${esc(T("ok"))}</span>`;}
-function renderProjectTiles(){if(HUB||!S.tiles)return "";const tiles=S.tiles.tiles||[];
- const spark=S.healthHistory?healthSparkline(S.healthHistory.series):"";
- const cells=tiles.map(t=>{const since=relSince(t.last_session);
-  return `<div class="tile"><span class="tileName">${esc(t.project)}</span><span class="pill ${t.active?"p-valid":"p-document"}">${t.active?esc(T("tileActive")):esc(T("tileIdle"))}</span><span class="muted" style="font-size:var(--fs-1)">${since!==null?esc(since):esc(T("tileNever"))}</span><span style="margin-left:auto">${healthPills(t.health)}</span></div>`;}).join("");
- return `<div class="tilesHead"><span class="muted">${T("tilesTitle")}</span>${healthPills(S.tiles.health)}${spark}</div><div class="tilesGrid">${cells}</div>`;}
+// ---------- the 30-day lane ----------
+// One heat scale shared by every row, so lanes are comparable down the column; buckets are absolute,
+// never per-row maxima. Counted client-side from /api/activity's own session list — a day with no
+// sessions is an empty cell (the surface), never a fabricated zero, and a machine that reports no
+// session detail at all (hub aggregate-only) gets NO lane column rather than 30 empty cells.
+const LANE_DAYS=30;
+function laneCounts(){const ss=S.activity&&S.activity.sessions;if(!ss||!ss.length)return null;
+ const today=new Date();today.setHours(0,0,0,0);const out={};
+ ss.forEach(x=>{if(!x.started)return;const d=new Date(x.started);if(isNaN(d.getTime()))return;
+  d.setHours(0,0,0,0);                                  // local calendar day, not a rolling 24h window
+  const i=LANE_DAYS-1-Math.round((today-d)/86400000);if(i<0||i>=LANE_DAYS)return;
+  const k=(x.project||"")+"|"+(x.machine||"");          // same key the row uses (projKey), not the bare name
+  (out[k]=out[k]||Array(LANE_DAYS).fill(0))[i]++;});
+ return out;}
+const laneStep=n=>n<=0?0:n===1?1:n<=3?2:n<=6?3:4;
+function laneDay(i){const d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()-(LANE_DAYS-1-i));
+ const p=v=>String(v).padStart(2,"0");return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;}
+function lanePeak(counts){let bi=0;for(let i=1;i<counts.length;i++)if(counts[i]>counts[bi])bi=i;return bi;}
+function laneHtml(counts,escName){const total=counts.reduce((a,b)=>a+b,0);const pk=lanePeak(counts);
+ const aria=total?T("laneAria",{p:escName,n:total,d:laneDay(pk),m:counts[pk]}):T("laneAriaEmpty",{p:escName});
+ return `<span class="lane" role="img" aria-label="${aria}">`+
+  counts.map((c,i)=>`<span class="cell s${laneStep(c)}" title="${esc(T("laneSessions",{d:laneDay(i),n:c}))}"></span>`).join("")+`</span>`+
+  `<span class="laneTotal" title="${esc(T("laneTotalT"))}">${fmtNum(total)}</span>`;}
+function laneKeyHtml(){return `<div class="laneKeyRow"><span>${esc(T("laneLegend"))}</span><span>${esc(T("laneLess"))}</span><span class="laneKey">`+
+ [0,1,2,3,4].map(i=>`<span class="cell s${i}"></span>`).join("")+`</span><span>${esc(T("laneMore"))}</span></div>`;}
+// ---------- sortable columns ----------
+// memory_days may be absent (never measured). It sorts to the bottom in BOTH directions and prints
+// "n/a" -- it is not a zero, and it must not win an ascending sort by pretending to be one.
+const PROJ_COLS=[["agents","agentsN"],["skills","skillsN"],["dirty","colUncommitted"],["worktrees","colWorktrees"],["memory_days","colMemory"]];
+function projSorted(a,key,totals){const s=S.projSort.dir==="asc"?1:-1;
+ const val=x=>key==="name"?String(x.name||"").toLowerCase():key==="activity"?(((totals&&totals[projKey(x)])||[]).reduce((m,n)=>m+n,0))
+  :key==="memory_days"?(x.memory_days==null?null:x.memory_days):(Number(x[key])||0);
+ return a.slice().sort((p,r)=>{const vp=val(p),vr=val(r);
+  if(vp===null&&vr===null)return String(p.name).localeCompare(String(r.name));
+  if(vp===null)return 1;if(vr===null)return -1;
+  if(typeof vp==="string")return s*vp.localeCompare(vr)||0;
+  return s*(vp-vr)||String(p.name).localeCompare(String(r.name));});}
+function sortHead(key,label,cls,activeKey,extra,below){const on=activeKey===key;
+ const sortAttr=on?(S.projSort.dir==="asc"?"ascending":"descending"):"none";
+ const ind=on?(S.projSort.dir==="asc"?"↑":"↓"):"";
+ return `<span class="ch ${cls}" role="columnheader" data-col="${esc(key)}" aria-sort="${sortAttr}"><span class="chTop"><button class="sortBtn" data-s="${esc(key)}" aria-label="${esc(T("sortBy",{c:label}))}">${esc(label)}${ind?`<span class="ind" aria-hidden="true">${ind}</span>`:""}</button>${extra||""}</span>${below||""}</span>`;}
+function foldedSortFallback(){const el=$("rows").querySelector(`.ch[data-col="${S.projSort.key}"]`);
+ if(!el||getComputedStyle(el).display!=="none")return false;
+ const laneEl=$("rows").querySelector('.ch[data-col="activity"]');
+ const laneOn=!!laneEl&&getComputedStyle(laneEl).display!=="none";
+ S.projSort=(laneOn&&S.projSort.key!=="activity")?{key:"activity",dir:"desc"}:{key:"name",dir:"asc"};
+ return true;}
+let projRO=null;
+function watchProjWidth(){if(projRO||typeof ResizeObserver==="undefined")return;
+ const el=document.querySelector(".list");if(!el)return;
+ projRO=new ResizeObserver(()=>{if(S.view==="projects"&&foldedSortFallback()){renderProjects();if(S.sel)renderProjDetail();}});
+ projRO.observe(el);}
 function renderProjects(){if(!S.projs){$("rows").innerHTML=`<div class="empty">${T("loading")}</div>`;$("filters").innerHTML="";return;}const a=S.projs.projects;
  $("filters").innerHTML=`<span class="muted">${T("projHint")}</span>`+chipFocus()+(HUB?"":`<button class="btn" id="bRescan" style="margin-left:auto" title="${T("rescanT")}">${T("rescan")}</button><button class="btn" id="bExport" title="${T("exportT")}">${T("exportBtn")}</button><button class="btn" id="bCompare" title="${T("compareT")}">${T("compareBtn")}</button>`);bindFocus();
  if(!HUB){$("bRescan").onclick=renderRescanDialog;$("bExport").onclick=renderExportDialog;$("bCompare").onclick=renderCompareDialog;updateScanUI();}
- $("rows").innerHTML=renderProjectTiles()+a.map(x=>{const wt=x.worktrees?` · ${x.worktrees}wt ${x.worktrees_mb_measured?(x.worktrees_mb/1024).toFixed(1)+"G":"?G"}`:"";const dot=(x.worktrees_mb_measured&&x.worktrees_mb>5000)?"invalid":(x.dirty>20||(x.memory_days!==null&&x.memory_days>30))?"warnings":"valid";
-  return `<button class="row ${S.sel===projKey(x)?"sel":""} ${S.focus===x.name?"focus":""}" data-k="${esc(projKey(x))}"><span class="dot d-${dot}"></span><span class="n">${esc(x.name)} <span class="muted">${esc(x.branch||"—")}</span></span><span class="w">${x.agents}ag · ${x.skills}sk${x.dirty?` · ${T("uncommitted",{n:x.dirty})}`:""}${wt}</span></button>`;}).join("");
- document.querySelectorAll(".row").forEach(r=>r.onclick=()=>{S.sel=r.dataset.k;renderProjects();renderProjDetail();});
+ const lanes=laneCounts();
+ // with no measurable activity there is no activity column to sort by, so the view falls back to
+ // the alphabet rather than claiming a sort on a column nobody can see
+ const sortKey=(!lanes&&S.projSort.key==="activity")?"name":S.projSort.key;
+ const axis=`<span class="axis"><span>${esc(T("laneStart"))}</span><span>${esc(T("laneEnd"))}</span></span>`;
+ let head=`<div class="phead" role="row">`+sortHead("name",T("project"),"chName",sortKey)+
+  (lanes?sortHead("activity",T("colActivity"),"chLane",sortKey,`<span class="laneTotalH">${esc(T("colSessions"))}</span>`,axis):"")+
+  PROJ_COLS.map(([k,lk])=>sortHead(k,T(lk),"num ch"+k,sortKey)).join("")+`</div>`;
+ const rows=projSorted(a,sortKey,lanes).map(x=>{const dv=dotEval(x);
+  const cells=PROJ_COLS.map(([k])=>{const v=k==="memory_days"?(x.memory_days==null?esc(T("tokNa")):fmtNum(x.memory_days)):fmtNum(x[k]||0);
+   return `<span class="pc num pc${k}" role="gridcell">${v}</span>`;}).join("");
+  return `<div class="row proj ${S.sel===projKey(x)?"sel":""} ${S.focus===x.name?"focus":""}" role="row" tabindex="0" data-k="${esc(projKey(x))}">`+
+   `<span class="pc pcName" role="gridcell"><span class="dot d-${dv.cls}" title="${esc(dv.why)}"></span><span class="n">${esc(x.name)}</span><span class="muted">${esc(x.branch||"—")}</span>${mchip(x)}</span>`+
+   (lanes?`<span class="pc pcLane" role="gridcell">${laneHtml(lanes[projKey(x)]||Array(LANE_DAYS).fill(0),esc(x.name))}</span>`:"")+
+   cells+`</div>`;}).join("");
+ $("rows").innerHTML=`<div class="ptw">${lanes?laneKeyHtml():""}<div class="ptable" role="grid" aria-label="${esc(T("tabs").projects)}">${head}${rows}</div></div>`;
+ $("rows").querySelectorAll(".sortBtn").forEach(b=>b.onclick=()=>{const k=b.dataset.s;
+  S.projSort=sortKey===k?{key:k,dir:S.projSort.dir==="asc"?"desc":"asc"}:{key:k,dir:k==="name"?"asc":"desc"};
+  renderProjects();if(S.sel)renderProjDetail();});
+ const pick=r=>{S.sel=r.dataset.k;renderProjects();renderProjDetail();};
+ $("rows").querySelectorAll(".row.proj").forEach(r=>{r.onclick=()=>pick(r);
+  r.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();pick(r);}};});
  const wtProjects=a.filter(x=>x.worktrees);const wtMeasured=wtProjects.length>0&&wtProjects.every(x=>x.worktrees_mb_measured);
  const wtG=a.reduce((s,x)=>s+(x.worktrees_mb_measured?x.worktrees_mb:0),0)/1024;
- $("foot").textContent=`${a.length} · ${a.reduce((s,x)=>s+x.agents,0)} ${T("agentsN")} · ${a.reduce((s,x)=>s+x.skills,0)} ${T("skillsN")} · ${a.reduce((s,x)=>s+x.worktrees,0)} worktrees`+(wtProjects.length?` (${wtMeasured?wtG.toFixed(1)+" GB":"? GB"})`:"");
+ // the worktree half of the footer hides with its own column, so the footer never totals what the
+ // reader cannot see; an unmeasured total is said in words, never as a question mark and a unit
+ $("foot").innerHTML=`${a.length} · ${a.reduce((s,x)=>s+x.agents,0)} ${esc(T("agentsN"))} · ${a.reduce((s,x)=>s+x.skills,0)} ${esc(T("skillsN"))}`+
+  `<span class="fwt"> · ${a.reduce((s,x)=>s+x.worktrees,0)} worktrees`+(wtProjects.length?` (${wtMeasured?wtG.toFixed(1)+" GB":esc(T("wtSizeUnmeasured"))})`:"")+`</span>`;
+ renderLegend();watchProjWidth();
+ if(foldedSortFallback()){renderProjects();return;}   // name never folds, so this recurses at most once
  if(!S.sel)$("detail").innerHTML=`<div class="muted">${T("pickProject")}</div>`;}
+// The dot is a verdict, so it carries its rule: every threshold it crossed, named, in the row's
+// tooltip and again as a line in the detail. Colour and sentence come from ONE evaluation, so a
+// verdict can never disagree with the reason printed next to it. A size heuristic must never fire
+// on an unmeasured size -- worktrees_mb defaults to 0, so it is gated on worktrees_mb_measured.
+function dotEval(x){const why=[];let cls="valid";
+ if(x.worktrees_mb_measured&&x.worktrees_mb>5000){cls="invalid";why.push(T("dotWt",{gb:(x.worktrees_mb/1024).toFixed(1)}));}
+ if(x.dirty>20){if(cls!=="invalid")cls="warnings";why.push(T("dotDirty",{n:x.dirty}));}
+ if(x.memory_days!==null&&x.memory_days>30){if(cls!=="invalid")cls="warnings";why.push(T("dotMem",{n:x.memory_days}));}
+ return {cls,why:(why.length?why:[T("dotOk")]).join(" · ")};}
 function renderProjDetail(){const x=(S.projs?.projects||[]).find(y=>projKey(y)===S.sel);if(!x)return;const doc=k=>`<span class="pill ${x.docs[k]?"p-valid":"p-document"}">${k}</span>`;
- let h=`<div class="h">${esc(x.name)}${mchip(x)}${S.focus===x.name?` <span class="pill p-valid">${T("inFocus")}</span>`:""}</div><div class="meta"><span>${T("path")}</span><b><code>${wbr(esc(x.path))}</code></b><span>${T("git")}</span><b>${x.git?esc(x.branch||"—")+(x.dirty?` · <span style="color:var(--amber)">${T("uncommitted",{n:x.dirty})}</span>`:" · "+T("clean")):T("notRepo")}</b><span>${T("lastCommit")}</span><b>${esc(x.last_commit||"—")}</b>
+ let h=`<div class="h">${esc(x.name)}${mchip(x)}${S.focus===x.name?` <span class="pill p-valid">${T("inFocus")}</span>`:""}</div><div class="meta"><span>${T("path")}</span><b><code>${wbr(esc(x.path))}</code></b><span>${T("git")}</span><b>${x.git?esc(x.branch||"—")+(x.dirty?` · <span style="color:var(--amber)">${T("uncommitted",{n:x.dirty})}</span>`:" · "+T("clean")):T("notRepo")}</b><span>${T("lastCommit")}</span><b>${esc(x.last_commit||"—")}</b><span>${T("dotWhy")}</span><b><span class="pill p-${dotEval(x).cls}">${esc(dotEval(x).why)}</span></b>
   <span>${T("assets")}</span><b>${x.agents} ${T("agentsN")} · ${x.skills} ${T("skillsN")} · ${x.commands} ${T("commandsN")} · ${x.rules} ${T("rulesN")}</b><span>${T("harness")}</span><b>${x.hooks} ${T("hooksN")} · ${x.workflows} ${T("wfN")}</b><span>${T("docsN")}</span><b>${["CLAUDE.md","HARNESS.md","MEMORY.md","PROGRESS.md"].map(doc).join(" ")}</b>`+
   (x.memory_days!==null?`<span>${T("memDays")}</span><b>${x.memory_days===0?T("today"):T("daysUntouched",{n:x.memory_days})}${x.memory_days>30?` <span style="color:var(--amber)">${T("maybeDead")}</span>`:""}</b>`:"")+`</div>`;
  h+=(!HUB&&x.worktrees?`<div id="wtPanel" class="box info">${esc(T("loading"))}</div>`:"");

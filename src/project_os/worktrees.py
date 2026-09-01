@@ -23,6 +23,23 @@ def _is_unsafe(path):
     return any(ch in _UNSAFE_CHARS or ord(ch) < 32 for ch in path)
 
 
+def _comment(text):
+    """One line of the generated script that stays inert on every shell it might be pasted
+    into — including a raw paste into an interactive zsh, which by default has no
+    `setopt interactive_comments`: a bare "#" there is NOT a comment, it is parsed as a real
+    command. Worse, a ";" inside one splits it into a SECOND real command right after it (a
+    real production defect: a semicolon in a header comment invoked project-os itself with
+    garbage arguments after a raw paste). `:` is the POSIX no-op builtin; wrapping its argument
+    in single quotes makes the whole comment ONE inert argument on zsh and bash, and cmd.exe
+    silently reads the line as a `:label` and skips it too. An embedded single quote is escaped
+    with the standard POSIX close/escape/reopen trick so it can never break out of the quoting;
+    an embedded newline or carriage return (only ever possible via a path string — already
+    unsafe for the very same reason, see _is_unsafe) is flattened to a space so this can never
+    spill onto a second, un-prefixed line."""
+    text = text.replace("\r", " ").replace("\n", " ")
+    return ": '# " + text.replace("'", "'\\''") + "'"
+
+
 def _rows_from_data(data, project=None):
     out = []
     for p in data.get("projects", []):
@@ -58,15 +75,15 @@ def rows(cfg, data=None, project=None):
 def script(cfg, data=None, project=None):
     """A flat, loop-free, if-free plain-text script: one `git worktree prune` per repo that has
     a prunable worktree, then one `git worktree remove` per worktree that is both not prunable
-    and clean (dirty == 0). Never `--force`; branches are never touched. Everything else is
-    listed as a `#` comment explaining why it was skipped. Pastes identically into zsh, bash,
-    PowerShell and cmd."""
+    and clean (dirty == 0). Never `--force`; branches are never touched. Everything else is an
+    inert `_comment()` line explaining why it was skipped (never a bare `#` -- see _comment's
+    docstring). Pastes identically into zsh, bash, PowerShell and cmd."""
     rs = rows(cfg, data, project)
     if not rs:
-        return "# project-os worktrees: nothing to clean up.\n"
+        return _comment("project-os worktrees: nothing to clean up.") + "\n"
     lines = [
-        "# project-os worktree cleanup — review before running; project-os never executes these itself.",
-        "# Branches are kept; only worktree directories are affected.",
+        _comment("project-os worktree cleanup — review before running; project-os never executes these itself."),
+        _comment("Branches are kept; only worktree directories are affected."),
         "",
     ]
 
@@ -99,11 +116,11 @@ def script(cfg, data=None, project=None):
     if removable and (skipped_dirty or skipped_unknown or unsafe):
         lines.append("")
     for r in skipped_dirty:
-        lines.append(f'# skipped (uncommitted changes): {r["path"]}')
+        lines.append(_comment(f'skipped (uncommitted changes): {r["path"]}'))
     for r in skipped_unknown:
-        lines.append(f'# skipped (status unknown — run: project-os scan): {r["path"]}')
+        lines.append(_comment(f'skipped (status unknown — run: project-os scan): {r["path"]}'))
     for r in unsafe:
-        lines.append(f'# skipped (path needs manual handling — unusual characters): {r["path"]}')
+        lines.append(_comment(f'skipped (path needs manual handling — unusual characters): {r["path"]}'))
 
     return "\n".join(lines) + "\n"
 

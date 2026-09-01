@@ -233,8 +233,12 @@ def _worktrees(cfg, a):
         rs = worktrees.rows(cfg, data, a.project)
         print(json.dumps({"summary": s, "script": text, "rows": rs}, ensure_ascii=False, indent=1))
         return 0
-    mb = f"{s['mb']} MB" + ("" if s["mb_measured"] else "+ (some sizes unmeasured — run `project-os scan --worktrees`)")
-    print(f"{s['total']} worktrees · {s['clean']} clean · {s['dirty']} dirty · {s['unknown']} unknown status · {s['prunable']} prunable · {mb}\n")
+    # The summary line prints right before the pasteable script, so it must be just as safe to
+    # paste into an interactive zsh: no backticks (command substitution there) and routed
+    # through the same _comment() no-op wrapper as script()'s own lines -- a bare `#` line is
+    # not a comment in an interactive zsh without `setopt interactive_comments` either.
+    mb = f"{s['mb']} MB" + ("" if s["mb_measured"] else "+ (some sizes unmeasured — run project-os scan --worktrees)")
+    print(worktrees._comment(f"{s['total']} worktrees · {s['clean']} clean · {s['dirty']} dirty · {s['unknown']} unknown status · {s['prunable']} prunable · {mb}") + "\n")
     print(text)
     return 0
 
