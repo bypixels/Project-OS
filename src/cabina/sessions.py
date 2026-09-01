@@ -4,30 +4,38 @@ only, never prompt/response text (the one exception is `title`, the AI-generated
 title Claude Code itself already writes to the transcript as an `ai-title` line).
 
 Incremental by BYTE OFFSET: <state_dir>/sessions.json keyed by source_path -> {offset, size,
-mtime, partial_state, summary}. A refresh() only reads the bytes appended after `offset`; if
-the file is now shorter than `offset` (rotated/rewritten) it is re-parsed from scratch. The
-transcript format is internal and undocumented: parsing is best-effort per line — a bad line
-is skipped, never fatal.
+mtime, partial_state, summary, entrypoint_checked}. A refresh() only reads the bytes appended
+after `offset`; if the file is now shorter than `offset` (rotated/rewritten) it is re-parsed
+from scratch. `entrypoint_checked` is registry bookkeeping, not a session field — it is never
+in SUMMARY_FIELDS/PARTIAL_STATE_FIELDS and never reaches a consumer; it only remembers whether
+_backfill_entrypoint's head scan has already run for this file, so a miss is never retried
+(see _backfill_entrypoint). The transcript format is internal and undocumented: parsing is
+best-effort per line — a bad line is skipped, never fatal.
 
 Retention: summaries survive their source file disappearing (rotation is normal; history is
 the point, same as usage.py). They are pruned only once `ended` is older than
 cfg.activity.retention_days (default 365).
 """
-import json, os, re, time
+import json, os, re, tempfile, threading, time
 
 from . import scan, usage
 
 _COMMIT = re.compile(r"\bgit\s+commit\b")
 FILE_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 
+_HEAD_LINES = 40   # guard for _backfill_entrypoint: observed worst case is line 5, this is 8x that
+
 SUMMARY_FIELDS = ("session_id", "project", "cwd_changed", "cwd", "branch", "tool", "title",
                    "started", "ended", "duration_s", "turns", "tool_calls", "files_touched",
                    "agents", "skills", "commits", "tokens", "subagent_tokens", "subagents",
-                   "sidechain_lines", "version", "source_path", "size", "mtime", "offset")
+                   "sidechain_lines", "version", "source_path", "size", "mtime", "offset",
+                   "entrypoint")
 
 PARTIAL_STATE_FIELDS = ("session_id", "cwd_counts", "branch", "version", "title", "started",
                         "ended", "turns", "tool_calls", "files_touched", "agents", "skills",
-                        "commits", "tokens", "sidechain_lines", "subagent_files")
+                        "commits", "tokens", "sidechain_lines", "subagent_files", "entrypoint")
+
+_REFRESH_LOCK = threading.Lock()
 
 
 def _redact_unknown_fields(summary):
@@ -65,13 +73,30 @@ def _read_new_lines(path, offset):
 
 
 def _empty_tokens():
-    return {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0}
+    return {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0, "thinking": 0, "thinking_lines": 0}
+
+
+def _hydrate_tokens(tok):
+    """Back-compat: a tokens dict persisted before thinking/thinking_lines existed. Filled in
+    place, in ADDITION to whatever it already has (never overwrites a real accumulated value)."""
+    tok.setdefault("thinking", 0)
+    tok.setdefault("thinking_lines", 0)
+    return tok
+
+
+def _hydrate_state(state):
+    """Back-compat: a partial_state persisted before entrypoint/thinking existed. setdefault only
+    — never clobbers a value already parsed."""
+    state.setdefault("entrypoint", None)
+    _hydrate_tokens(state.setdefault("tokens", _empty_tokens()))
+    return state
 
 
 def _new_state():
     return {"session_id": None, "cwd_counts": {}, "branch": None, "version": None, "title": None,
             "started": None, "ended": None, "turns": 0, "tool_calls": {}, "files_touched": [],
-            "agents": {}, "skills": {}, "commits": 0, "tokens": _empty_tokens(), "sidechain_lines": 0}
+            "agents": {}, "skills": {}, "commits": 0, "tokens": _empty_tokens(), "sidechain_lines": 0,
+            "entrypoint": None}
 
 
 def _merge_lines(state, lines):
@@ -98,6 +123,8 @@ def _merge_lines(state, lines):
             cw = d["cwd"]; state["cwd_counts"][cw] = state["cwd_counts"].get(cw, 0) + 1
         if d.get("gitBranch") and not state["branch"]:
             state["branch"] = d["gitBranch"]
+        if d.get("entrypoint") and not state["entrypoint"]:
+            state["entrypoint"] = d["entrypoint"]
         msg = d.get("message") or {}
         content = msg.get("content")
         if d.get("type") == "user" and msg.get("role") == "user" and isinstance(content, list):
@@ -109,6 +136,11 @@ def _merge_lines(state, lines):
             state["tokens"]["out"] += usg.get("output_tokens", 0) or 0
             state["tokens"]["cache_read"] += usg.get("cache_read_input_tokens", 0) or 0
             state["tokens"]["cache_write"] += usg.get("cache_creation_input_tokens", 0) or 0
+            if "output_tokens_details" in usg:
+                state["tokens"]["thinking_lines"] += 1
+                otd = usg.get("output_tokens_details") or {}
+                if isinstance(otd, dict):
+                    state["tokens"]["thinking"] += otd.get("thinking_tokens", 0) or 0
             for b in content:
                 if not isinstance(b, dict) or b.get("type") != "tool_use":
                     continue
@@ -198,6 +230,7 @@ def _subagent_tokens(source_path, state):
         entry = files_state.get(fp)
         if entry is None or size < entry.get("offset", 0):
             entry = {"offset": 0, "tokens": _empty_tokens()}    # new, or shrunk/rotated: reparse from scratch
+        _hydrate_tokens(entry.setdefault("tokens", _empty_tokens()))
         try:
             lines, new_offset = _read_new_lines(fp, entry["offset"])
         except Exception:
@@ -214,6 +247,11 @@ def _subagent_tokens(source_path, state):
             entry["tokens"]["out"] += usg.get("output_tokens", 0) or 0
             entry["tokens"]["cache_read"] += usg.get("cache_read_input_tokens", 0) or 0
             entry["tokens"]["cache_write"] += usg.get("cache_creation_input_tokens", 0) or 0
+            if "output_tokens_details" in usg:
+                entry["tokens"]["thinking_lines"] += 1
+                otd = usg.get("output_tokens_details") or {}
+                if isinstance(otd, dict):
+                    entry["tokens"]["thinking"] += otd.get("thinking_tokens", 0) or 0
         entry["offset"] = new_offset
         files_state[fp] = entry
         for k in total:
@@ -245,10 +283,47 @@ def _load_registry(path):
 
 def _save_registry(path, reg):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(reg, f, ensure_ascii=False, indent=1, sort_keys=True)
-    os.replace(tmp, path)
+    fd, tmp = tempfile.mkstemp(prefix=".sessions-", suffix=".tmp", dir=os.path.dirname(path))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            fd = None
+            json.dump(reg, f, ensure_ascii=False, indent=1, sort_keys=True)
+        os.replace(tmp, path)
+    finally:
+        if fd is not None:
+            os.close(fd)
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+
+
+def _backfill_entrypoint(fp):
+    """Bounded scan of the first _HEAD_LINES lines of `fp` for a top-level `entrypoint` — for
+    records parsed before the field existed, whose byte offset already sits past it. This
+    function itself has no memory: it is refresh()'s `entrypoint_checked` marker that makes each
+    call to it one-time per file, including a MISS (never found within the bound) — without that
+    marker a file that genuinely never carries `entrypoint` would be rescanned on every refresh
+    forever. Completely independent of the incremental machinery: never touches offset, never
+    feeds _merge_lines, never moves a token/turn counter. Read-only, best-effort — any failure
+    (missing file, bad JSON) yields None, never raises."""
+    try:
+        with open(fp, encoding="utf-8") as f:
+            for i, line in enumerate(f):
+                if i >= _HEAD_LINES:
+                    break
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    d = json.loads(line)
+                except Exception:
+                    continue
+                if d.get("entrypoint"):
+                    return d["entrypoint"]
+    except Exception:
+        pass
+    return None
 
 
 def _iter_session_files(claude_home):
@@ -286,7 +361,7 @@ def _prune_by_retention(reg, retention_days, now_local):
             if _age_days((v.get("summary") or {}).get("ended"), now_local) <= retention_days}
 
 
-def refresh(cfg, days=30):
+def _refresh(cfg, days=30):
     """Parse new/changed bytes of every session file (bounded to `days` for files never seen
     before), merge into the registry, prune by retention, save, return every kept summary —
     newest first. Never call this on an HTTP request thread (see server.py, Fase 1b Tarea 22)."""
@@ -304,19 +379,31 @@ def refresh(cfg, days=30):
         if cached is None:
             if st.st_mtime < cutoff:
                 continue
-            offset, state = 0, _new_state()
+            offset, state, checked = 0, _new_state(), False
         elif st.st_mtime == cached.get("mtime") and st.st_size == cached.get("size"):
+            if not (cached.get("summary") or {}).get("entrypoint") and not cached.get("entrypoint_checked"):
+                ep = _backfill_entrypoint(fp)
+                cached["entrypoint_checked"] = True    # remember the LOOK, not just a hit -- a miss is never retried
+                if ep:
+                    cached.setdefault("summary", {})["entrypoint"] = ep
+                    cached.setdefault("partial_state", {})["entrypoint"] = ep
+                reg[fp] = cached
             continue
         elif st.st_size < cached.get("offset", 0):
-            offset, state = 0, _new_state()             # rotated/rewritten: reparse from scratch
+            offset, state, checked = 0, _new_state(), False   # rotated/rewritten: reparse from scratch, one fresh look
         else:
-            offset, state = cached["offset"], cached["partial_state"]
+            offset, state = cached["offset"], _hydrate_state(cached["partial_state"])
+            checked = cached.get("entrypoint_checked", False)
+            if not state.get("entrypoint") and not checked:
+                state["entrypoint"] = _backfill_entrypoint(fp)
+                checked = True
         try:
             new_lines, new_offset = _read_new_lines(fp, offset)
             state = _redact_partial_state(_merge_lines(state, new_lines))
             summary = _redact_unknown_fields(_finalize(state, fp, roots, new_offset, cfg_roots=cfg.get("roots") or []))
             reg[fp] = {"offset": new_offset, "size": st.st_size, "mtime": st.st_mtime,
-                       "partial_state": state, "summary": summary}
+                       "partial_state": state, "summary": summary,
+                       "entrypoint_checked": checked or bool(summary.get("entrypoint"))}
         except Exception:
             continue                                     # one unreadable/corrupt transcript never aborts the rest
     from datetime import datetime
@@ -324,6 +411,12 @@ def refresh(cfg, days=30):
     kept = _prune_by_retention(reg, retention_days, now_local)
     _save_registry(path, kept)
     return sorted((e["summary"] for e in kept.values()), key=lambda s: s.get("started") or "", reverse=True)
+
+
+def refresh(cfg, days=30):
+    """Refresh the registry while serializing the complete read/merge/write transaction."""
+    with _REFRESH_LOCK:
+        return _refresh(cfg, days)
 
 
 def load(cfg):
@@ -369,7 +462,8 @@ def _finalize(state, source_path, roots, offset, cfg_roots=()):
     return {
         "session_id": state["session_id"] or os.path.splitext(os.path.basename(source_path))[0],
         "project": project, "cwd_changed": cwd_changed, "cwd": cwd, "branch": state["branch"],
-        "tool": "claude", "title": state["title"], "started": started, "ended": ended,
+        "tool": "claude", "title": state["title"], "entrypoint": state["entrypoint"],
+        "started": started, "ended": ended,
         "duration_s": duration_s, "turns": state["turns"], "tool_calls": state["tool_calls"],
         "files_touched": files, "agents": state["agents"], "skills": state["skills"],
         "commits": state["commits"], "tokens": state["tokens"], "version": state["version"],

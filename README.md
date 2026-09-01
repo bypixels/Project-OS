@@ -26,7 +26,7 @@ contract, a real usage count, and a place in one window.
 
 | Command | What it does |
 |---|---|
-| `cabina` | Opens the UI in your browser (local server on 127.0.0.1) — seven tabs: Agents, Live, Skills, Projects, Harness, Docs, Activity |
+| `cabina` | Opens the UI in your browser (local server on 127.0.0.1) — nine tabs: Health, Agents, Live, Skills, Projects, Harness, MCP, Docs, Activity |
 | `cabina check` | Health check. 9 detectors, exit code 1 on critical. Run it from cron / launchd / a systemd timer |
 | `cabina check --repo .` | CI mode: validates one repository's agents against `.cabina.toml` on its own — no user home, no cache |
 | `cabina agents` | Agent roster with contract state and real usage. `--invalid`, `--unused`, `--project`, `archive` |
@@ -80,6 +80,20 @@ session title on top, and requires `--detail` (a usage error otherwise, never a 
 flag). Even with every flag on, it never exports the session's `cwd` or absolute file paths — a
 path outside the project root is counted, not named.
 
+The Activity tab also shows each session's `entrypoint` (the raw value a transcript carries — `cli`,
+`sdk-py`, `sdk-ts`, `sdk-cli`, …) as a filter chip, and a per-session token breakdown (in / cache
+read / cache write / out / reasoning, plus a cache-hit rate). Neither `entrypoint` nor reasoning
+tokens are exported, sent to `cabina hub`, or served over MCP — session activity there stays at the
+older, smaller field set.
+
+### MCP servers, at a glance
+
+`cabina scan --mcp` shells out to `claude mcp list`; the MCP tab (local only, not in `cabina hub`)
+shows exactly what it reported — name, target, status, detail — sorted so anything that needs
+attention (failed, needs auth, unverified) surfaces first. It does not show tool counts or which
+agents use which server: neither is derivable from `claude mcp list`'s output. (This is a different
+thing from `cabina mcp`, below, which is cabina acting as an MCP server *for* your agents.)
+
 ### The guards
 
 Cabina writes in exactly four places, each behind a guard:
@@ -88,10 +102,13 @@ Cabina writes in exactly four places, each behind a guard:
 - **Archive agent / skill** — refused if any file references it (unless you tick "force"). Moves to
   `_archive/<date>/`, never deletes. A symlinked skill is moved as a link; the target is untouched.
 - **Edit a document** — refused if the file changed on disk since you opened it (hash check), or if a
-  live agent is working in that project. Previous version is backed up; write is atomic.
+  live agent is working in that project. Previous version is backed up; write is atomic. The Docs
+  tab has a read-only version history for each document — a diff against the current file, and a
+  restore command you review and run yourself; cabina never runs it for you.
 - **Open** — hands a path to your OS.
 
-The server binds `127.0.0.1` only and every POST needs a per-session token.
+The server defaults to `127.0.0.1`; a configured bind address is accepted only when it is
+localhost or a loopback IP (never a LAN address), and every POST needs a per-session token.
 
 ### Claude Code and Codex, side by side
 

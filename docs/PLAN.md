@@ -3054,3 +3054,143 @@ Decisiones tomadas (interrogadas una por una antes de implementar):
 
 Fuera de alcance por decisión explícita: que cabina ejecute la limpieza (rompería la invariante),
 borrar ramas mergeadas, y dejar el comando tecleado en la terminal.
+
+# Fase 6 — pestaña MCP, historial de versiones de documentos, entrypoint/tokens de razonamiento (2026-08-19)
+
+> Cerrada (marcado retroactivo 2026-08-19): las cinco unidades de esta fase llegaron implementadas
+> y verificadas — `python3 -m unittest discover -s tests -v` pasó de 377 a 420 tests, las 420 en
+> verde. Este plan se escribió después, como registro, no antes.
+
+Analogía general de la fase: son cinco reformas chicas en el mismo edificio, cada una en un cuarto
+distinto — la pestaña MCP es un tablero nuevo, el historial de documentos es un archivero con
+copias fechadas, entrypoint/tokens es una etiqueta más detallada en el medidor de actividad, y el
+pulido es repintar los marcos de las ventanas que ya estaban.
+
+### Unidad 1: pestaña MCP (solo lectura)
+
+Analogía: es la pantalla de la centralita telefónica de la oficina — muestra qué líneas están
+conectadas, cuáles fallaron y cuáles piden autenticación, pero no dice quién llamó a quién.
+
+- [x] `App.api_mcp()` + `GET /api/mcp` leen `data["mcp"]` (ya recolectado por `scan.py` bajo
+      `--mcp`, sin cambios en `scan.py` mismo) — nunca disparan un scan ni llaman a `claude` por
+      su cuenta.
+- [x] Orden fijo por severidad: `failed` > `auth` > `unverified` > `ok`, con conteos.
+- [x] Panel de dos paneles (lista + detalle) en la UI, oculto en `cabina hub` por omisión —
+      `"mcp"` no está en la mitad de `VIEWS` que usa el modo hub.
+- [x] Decisión explícita de alcance: NO se muestra cuántas tools expone cada servidor ni qué
+      agentes lo usan. Verificado antes de escribir el texto de la UI: ningún agente real del
+      entorno de prueba declara tools `mcp__*`, así que esa relación no es derivable de los datos
+      disponibles hoy — mostrarla habría sido inventar un dato, no medirlo.
+- [x] Verificación: `test_mcp_endpoint_shape_ordering_and_counts`,
+      `test_mcp_endpoint_unchecked_returns_false_and_zeroed_counts_never_raises`,
+      `test_mcp_block_fields_always_escaped` (regex sobre el bloque `// ---------- MCP
+      ----------` del HTML — todo `x.name`/`x.target`/`x.detail` interpolado pasa por `esc()`).
+
+### Unidad 2: `entrypoint` y tokens de razonamiento en las sesiones
+
+Analogía: el medidor de actividad de una sesión antes solo mostraba "consumo total". Ahora también
+dice de qué llave salió el agua (`entrypoint`: `cli`, `sdk-py`, `sdk-ts`, `sdk-cli`) y cuánto de ese
+consumo fue "pensar antes de escribir" (tokens de razonamiento) — cuando el medidor viejo no tenía
+esa aguja, no se inventa una lectura.
+
+- [x] `sessions.py` guarda el `entrypoint` crudo de la transcripción y `tokens.thinking` /
+      `tokens.thinking_lines`, agregados a `SUMMARY_FIELDS` y `PARTIAL_STATE_FIELDS`.
+- [x] `entrypoint` y reasoning no llegan a `cabina export`, `cabina hub` ni al servidor MCP:
+      `snapshot._detail_row` mantiene una lista blanca exacta para los tokens exportables
+      (`in`, `out`, `cache_read`, `cache_write`) y omite `entrypoint`, `thinking` y
+      `thinking_lines`. Son contadores locales, no texto de transcript.
+- [x] Regla de honestidad: `thinking_lines == 0` significa "esta transcripción no lo puede decir"
+      (el campo no existía antes del 2026-08-12), NO "no hubo razonamiento". La UI muestra `n/a`,
+      nunca un `0` — un `0` ahí sería una mentira de medición, no una medición.
+- [x] Verificación: `TestFinalize` (session y subagent tokens llevan `thinking`/`thinking_lines`,
+      `summary["tokens"]["thinking"]` nunca suma lo de un subagente — R3), suite `es`/`en` de la UI
+      para las etiquetas nuevas (`tokIn`, `tokReasoning`, `tokNa`, …).
+
+### Unidad 3: UI de Activity — chips de entrypoint y composición de tokens
+
+- [x] Chips de filtro por `entrypoint`, con conteo, en la pestaña Activity; columna de entrypoint
+      por fila cuando al menos una sesión cargada lo trae.
+- [x] Detalle por sesión: composición de tokens (entrada / caché leído / caché escrito / salida /
+      razonamiento) más una tasa de caché.
+- [x] Contexto medido en una máquina real, para dimensionar el problema que resuelve esto: 604 de
+      737 sesiones tienen un `entrypoint` distinto de `cli`, y 592 de esas 604 no tienen ningún
+      turno humano — antes de esta unidad, la pestaña las mostraba todas juntas, sin forma de
+      distinguirlas.
+- [x] Decisión explícita de alcance: NO se afirma que `sdk-*` signifique "subagente" o
+      "automatizado". Se investigó esa hipótesis y no se pudo confirmar con evidencia — la UI
+      muestra el valor crudo y deja que la persona lo interprete, en vez de etiquetarlo mal con
+      seguridad falsa.
+- [x] Verificación: `test_activity_entrypoint_fields_always_escaped` (mismo patrón de regex que la
+      Unidad 1, aplicado al bloque de Activity).
+
+### Unidad 4: historial de versiones de documentos
+
+Analogía: antes, el respaldo de un documento se guardaba en un cajón compartido por nombre de
+archivo — si dos documentos en carpetas distintas se llamaban igual (`CLAUDE.md` en la raíz y
+`CLAUDE.md` en una subcarpeta), sus copias fechadas se mezclaban en el mismo cajón. Ahora cada
+documento tiene su propio cajón, calcado de su propia subcarpeta.
+
+- [x] Los backups ahora se guardan en `<state_dir>/doc-backups/<project>/<subcarpeta-del-doc>/`
+      en vez de una sola carpeta plana por proyecto — corrige una colisión real (dos documentos
+      con el mismo nombre base en subcarpetas distintas intercalaban su historial).
+- [x] `Docs.versions()` / `Docs.version_text()`: de solo lectura, sin ruta de restauración dentro
+      de `docs.py` — la restauración es un comando que la persona revisa y corre, cabina nunca lo
+      ejecuta.
+- [x] `GET /api/doc-versions`, `GET /api/doc-version` (este último arma también un diff unificado
+      contra el archivo actual y el comando de restauración) — ningún POST nuevo.
+- [x] Cuatro guardas nuevas, cada una con su break-test en `tests/test_breaks.py`: confinamiento de
+      la ruta de backup, regex del sello de versión (`^\d{8}-\d{6}$`, sin separadores de ruta
+      posibles), restricción del patrón de nombre de archivo en `_prune`, y el rechazo de rutas
+      inseguras al generar el comando de restauración (reutiliza `WT._is_unsafe`, no lo
+      reimplementa).
+- [x] El flag `ambiguous`: una lista de versiones que viene de la carpeta plana que los documentos
+      del mismo nombre compartían antes de este fix. Para un documento en la raíz del proyecto esa
+      carpeta plana ES su carpeta de backups para siempre (calcar una subcarpeta vacía es un
+      no-op), así que `ambiguous` sigue en `true` incluso para backups nuevos de documentos de
+      raíz — no es una marca de antigüedad, es una advertencia de posible contaminación que se
+      prefiere dejar prendida a apagarla sin poder probarlo.
+- [x] Panel en la pestaña Docs: lista de versiones más reciente primero, diff con líneas +/- en
+      color, comando de restauración con botón de copiar.
+- [x] Verificación: `test_backup_mirrors_subdir_no_collision` (el bug real, reproducido y
+      corregido), `test_versions_newest_first`, `test_ambiguous_flat_backups_root_only`,
+      `test_version_text_and_bad_stamp`, `test_versions_empty`, más los cuatro break-tests de
+      arriba y `test_doc_version_endpoint_unsafe_path_never_emits_a_command` del lado del
+      servidor.
+
+### Unidad 5: pulido de UI
+
+- [x] Marcador `n/a` para tokens de razonamiento no medibles (Unidad 2).
+- [x] Timestamps de versión legibles para humanos (`fmtDT`) en vez del sello crudo.
+- [x] Líneas de diff coloreadas (`.dl-add`, `.dl-del`, `.dl-hunk`) en el panel de versiones.
+- [x] Panel de dos columnas para MCP (Unidad 1).
+- [x] Franja compacta en la pestaña Health con "activo ahora" y "reciente", armada con datos que
+      la UI ya tenía cargados — sin endpoint nuevo.
+- [x] Eliminación de scroll anidado: el script de limpieza de worktrees, el diff de drift
+      CLAUDE.md↔AGENTS.md y el nuevo diff de versión de documento ya viven dentro de un panel que
+      hace scroll — ahora solo ese panel tiene su propia barra, no cada bloque interno además.
+
+### Defectos que la verificación encontró después de escrito el código
+
+Van en el registro a propósito — un plan que solo lista éxitos no le enseña nada al siguiente que
+lo lea.
+
+- [x] **Un test de presencia de pestaña que no podía dar rojo.** El test viejo para "existe la
+      pestaña Activity" hacía `assertIn('"activity"', html)` sobre el documento completo. Pero un
+      id de pestaña aparece también en la tabla de i18n, en `LOADERS`, en `render()` y en la
+      llamada `fetch` correspondiente, aunque se borre de `VIEWS` — así que ese `assertIn` nunca
+      podía fallar, sin importar qué se rompiera. El fix acota el test a la línea exacta
+      `const VIEWS=HUB?[...]:[...]` (`_views_parts`), separando el array de modo hub del de modo
+      completo, y de ahí salió el nuevo `test_index_has_mcp_tab` con la misma disciplina.
+- [x] **`entrypoint` invisible en datos reales, por el parser incremental.** El campo se agregó a
+      `_merge_lines` esperando que apareciera en cada sesión nueva — pero `refresh()` lee cada
+      transcripción de forma incremental, por byte offset, así que cualquier sesión ya parseada
+      ANTES de que `entrypoint` existiera había quedado con su offset apuntando después de la
+      línea que lo trae, y nunca la iba a volver a leer. En una máquina real, 735 sesiones se
+      quedaron con `entrypoint = None` para siempre. El fix es `_backfill_entrypoint()`: una
+      lectura acotada (`_HEAD_LINES = 40`), de una sola vez, de las primeras líneas del archivo,
+      completamente separada de la maquinaria incremental (nunca toca `offset`, nunca llama a
+      `_merge_lines`). Encontrado navegando la UI con datos reales, no por un test — de ahí salió
+      `TestEntrypointBackfill` con el caso de regresión explícito.
+
+Fuera de alcance por decisión explícita: la pestaña MCP no muestra qué agentes usan cada servidor
+ni cuántas tools expone; la Unidad 3 no interpreta `sdk-*` como "subagente" ni "automatizado".

@@ -39,7 +39,11 @@ after that everything reads the stale cache until `cabina scan` or the UI's `/ap
 project owns this path" map used by `usage.py`, `docs.py`, `live.py` and `guard.py`. Slow parts
 are opt-in (`--worktrees` runs `du`, `--mcp` shells out to `claude mcp list`) and gated by
 `cfg["scan"]`. If a feature needs new data about the environment, add it to the scan output rather
-than re-walking the disk in a consumer.
+than re-walking the disk in a consumer. The MCP tab (`App.api_mcp()`, `GET /api/mcp`) is a pure
+reader of `data["mcp"]` — the servers `scan.py`'s `mcp_servers()` already collected under
+`--mcp` — sorted failed > auth > unverified > ok with counts; it never triggers a scan or shells
+out itself, and it is absent from `cabina hub` by omission (`"mcp"` is simply not in the hub half
+of `VIEWS` in `static/index.html`), so there is no hub route to guard.
 
 **One contract, four consumers.** `contract.py` is the single validator for agent frontmatter
 (categories: `valid` / `warnings` / `invalid` / `document` / `error`; `document` = `.md` without
@@ -78,18 +82,53 @@ substring pre-filter before any regex) is the only reader on every platform, so 
 longer needs a Windows fallback. If the transcript format changes, usage becomes "unknown" —
 nothing else may break.
 
-**Server = thin HTTP over the same modules.** `server.py` binds `127.0.0.1`, serves
+**Sessions carry `entrypoint` and reasoning tokens, both backfilled once.** `sessions.py`'s
+per-session state also tracks the raw `entrypoint` string a transcript line carries (observed
+values `cli`, `sdk-py`, `sdk-ts`, `sdk-cli`) and `tokens.thinking` / `tokens.thinking_lines`, both
+in `SUMMARY_FIELDS` and `PARTIAL_STATE_FIELDS` alongside the older fields. Because `refresh()`
+reads each transcript incrementally by byte offset, a session already parsed past the line that
+carries `entrypoint` would keep it `None` forever — that was a real, measured defect (735 sessions
+stuck at `None`) before `_backfill_entrypoint()` was added: a bounded, one-time head scan
+(`_HEAD_LINES = 40`) that recovers it for exactly those pre-existing records, entirely outside the
+incremental machinery (it never touches `offset`, never calls `_merge_lines`, never moves a
+turn/token counter). Do not remove this backfill to "simplify" the parser — without it, every
+session recorded before the field existed stays blank forever, since its offset never revisits
+that line again. `entrypoint` does not reach `cabina export`, `cabina hub`, or the MCP server:
+  `snapshot._detail_row` is an explicit whitelist that omits both `entrypoint` and all reasoning
+  keys. The exported detail token object is itself restricted to the historical `in`, `out`,
+  `cache_read`, and `cache_write` counters. Therefore neither entrypoint nor reasoning reaches
+  `cabina export`, `cabina hub`, or the MCP server; these are local counters, never exported text.
+  `tokens.thinking_lines == 0`
+means the transcript predates the field (before 2026-08-12), not "no reasoning happened" —
+callers must render that as unknown (the UI's "n/a"), never as a bare zero.
+
+**Server = thin HTTP over the same modules.** `server.py` defaults to `127.0.0.1` and accepts only
+localhost or a configured loopback address (LAN addresses are rejected before server creation), serves
 `static/index.html` (single file, `__TOKEN__`/`__LANG__` substituted), and requires an
 `X-Cabina-Token` header (per-process `secrets.token_urlsafe`) on every POST. Every request (server
-and hub) must carry a loopback/bind-host `Host` header (`host_allowed`, 421 otherwise) and every
-POST a loopback/bind-host `Origin` when present (`origin_allowed`, 403) — the anti-DNS-rebinding
-guard, without which a malicious page could read the token off `/`. POST routes are the only write
+and hub) must carry a localhost/loopback `Host` header (`host_allowed`, 421 otherwise) and every
+POST a localhost/loopback `Origin` when present (`origin_allowed`, 403) — no other configured
+address is trusted. This is the anti-DNS-rebinding guard, without which a malicious page could
+read the token off `/`. POST routes are the only write
 paths in the whole program: archive agent/skill, create agent, save doc, open (confined to project
 roots + tool homes + state dir, `_open_allowed`), commit, rescan, hooks-install (`guard.hooks_write`
 only ever wires `cabina` itself — `_cmd_is_cabina`, never bypassed by `force`). `gitops.commit_path` only ever runs `git add -A -- <path>` + `git commit -- <path>` (never
 a bare `-A`) and refuses mid-merge/rebase. `docs.py` guards saves with a content hash taken at
 read time, an allowlist of roots (no `../`), a "live agent working here" check, and a backup +
-atomic write.
+atomic write — backups mirror the document's own subdirectory under
+`<state_dir>/doc-backups/<project>/` (`Docs._backup_loc`, confined inside the project's backups
+dir independently of `_resolve`'s own confinement to the project root), so two documents with the
+same basename in different subdirectories keep separate histories instead of interleaving one
+flat directory. `Docs.versions()` / `version_text()` are read-only siblings of `save()` — no
+restore path lives in `docs.py` itself. A version's `ambiguous` flag means its listing came from
+the flat directory that same-named documents once shared before this fix; it stays true for new
+backups of a root-level document too (mirroring an empty subdirectory is a no-op), so it is a
+warning about possible contamination, not an age marker. Three read-only GETs were added on top
+of this, no new POST: `GET /api/mcp` (above), and `GET /api/doc-versions` / `GET /api/doc-version`
+— the latter also builds a unified diff against the current file and a restore `command`, same
+discipline as `worktrees.py`'s `script()`: generated for the user to review and run, never
+executed by cabina, and `null` with a `command_reason` when either path is unsafe to embed in a
+shell argument (`WT._is_unsafe`, reused rather than reimplemented).
 
 **Codex + drift.** `scan.py` also reads `~/.codex` (agents `*.toml`, skills, sessions);
 `drift.py` compares the two tools: twin agents with different bodies, `CLAUDE.md` vs `AGENTS.md`

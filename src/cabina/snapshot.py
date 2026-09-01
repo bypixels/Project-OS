@@ -8,6 +8,7 @@ from .roster import Roster
 _PROJECT_DETAIL_FIELDS = ("name", "branch", "dirty", "worktrees", "docs", "memory_days", "last_commit", "agents", "skills")
 
 _LOCAL_ONLY_FIELDS = ("cwd", "source_path", "mtime", "size", "offset")
+_DETAIL_TOKEN_FIELDS = ("in", "out", "cache_read", "cache_write")
 
 
 def _strip_local_only(row):
@@ -34,11 +35,13 @@ def _detail_row(s, titles):
     relativas salen; las descartadas se cuentan en files_outside."""
     all_files = s.get("files_touched") or []
     kept = [f for f in all_files if isinstance(f, str) and not os.path.isabs(f) and not f.startswith("~")]
+    source_tokens = s.get("tokens") if isinstance(s.get("tokens"), dict) else {}
+    tokens = {k: source_tokens.get(k, 0) for k in _DETAIL_TOKEN_FIELDS}
     row = {"project": s.get("project"), "started": s.get("started"), "ended": s.get("ended"),
            "duration_s": s.get("duration_s"), "turns": s.get("turns"), "commits": s.get("commits"),
            "branch": s.get("branch"), "files_touched": kept, "files_outside": len(all_files) - len(kept),
            "agents": s.get("agents") or {}, "skills": s.get("skills") or {},
-           "tokens": s.get("tokens") or {"in": 0, "out": 0}, "subagents": s.get("subagents", 0)}
+           "tokens": tokens, "subagents": s.get("subagents", 0)}
     if titles:
         row["title"] = s.get("title")
     return row

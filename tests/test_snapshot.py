@@ -49,6 +49,14 @@ class TestExportActivity(unittest.TestCase):
         self.assertEqual(row["files_outside"], 1)
         self.assertNotIn("/Users/x", json.dumps(out))
 
+    def test_detail_row_tokens_are_exact_historical_whitelist(self):
+        row = SNAP._detail_row({"project": "alpha", "tokens": {
+            "in": 1, "out": 2, "cache_read": 3, "cache_write": 4,
+            "thinking": 99, "thinking_lines": 2, "future": "leak"
+        }}, titles=False)
+        self.assertEqual(set(row["tokens"]), {"in", "out", "cache_read", "cache_write"})
+        self.assertEqual(row["tokens"], {"in": 1, "out": 2, "cache_read": 3, "cache_write": 4})
+
 class TestExportActivityRefreshesRegistry(unittest.TestCase):
     # Review finding C: export_activity only ever READ the session registry (sessions.load) —
     # on a machine that never ran `cabina activity`, the registry is empty and export --activity

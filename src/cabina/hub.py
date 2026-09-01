@@ -5,7 +5,142 @@ aquí también) no tiene NINGUNA ruta de escritura.
 Known limitation: hardlinks to files outside DIR are not detected (no symlink to resolve); the
 shared folder must be trusted at the filesystem level — this is a read-only viewer, not a
 sandbox."""
-import json, os, stat, threading, webbrowser
+import json, os, stat, threading, webbrowser, math
+
+_AGENT_CATEGORIES = {"valid", "warnings", "invalid", "document"}
+_AGENT_TOOLS = {"claude", "codex"}
+_SKILL_STATES = {"ok", "no-frontmatter", "no-skill-md", "broken-link"}
+_HARNESS_LEVELS = {"complete", "partial", "none"}
+_TOKEN_FIELDS = ("in", "out", "cache_read", "cache_write")
+
+
+def _text(value, default="", limit=500):
+    return value[:limit] if isinstance(value, str) else default
+
+
+def _enum(value, allowed, default):
+    return value if isinstance(value, str) and value in allowed else default
+
+
+def _number(value, default=0):
+    if isinstance(value, bool):
+        return default
+    try:
+        n = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    if not math.isfinite(n) or n < 0:
+        return default
+    return int(n) if n.is_integer() else n
+
+
+def _list(value):
+    """Accept only JSON arrays for sections consumed as row collections."""
+    return value if isinstance(value, list) else []
+
+
+def _boolean(value, default=False):
+    return value if isinstance(value, bool) else default
+
+
+def _texts(value, limit=100):
+    if not isinstance(value, list):
+        return []
+    return [_text(item, limit=limit) for item in value if isinstance(item, str)]
+
+
+def _count_map(value):
+    if not isinstance(value, dict):
+        return {}
+    return {_text(k, limit=100): _number(v) for k, v in value.items() if isinstance(k, str)}
+
+
+def _token_map(value):
+    """Keep only the historical token counters; reasoning is never an export field."""
+    if not isinstance(value, dict):
+        return {}
+    return {key: _number(value.get(key)) for key in _TOKEN_FIELDS if key in value}
+
+
+def _safe_dict(value):
+    if not isinstance(value, dict):
+        return {}
+    return {"CLAUDE.md": _boolean(value.get("CLAUDE.md")),
+            "HARNESS.md": _boolean(value.get("HARNESS.md")),
+            "MEMORY.md": _boolean(value.get("MEMORY.md")),
+            "PROGRESS.md": _boolean(value.get("PROGRESS.md"))}
+
+
+def _agent_row(row, machine):
+    if not isinstance(row, dict) or not isinstance(row.get("name"), str) or not row["name"].strip():
+        return None
+    return {"name": _text(row["name"], limit=120), "project": _text(row.get("project"), limit=120),
+            "tool": _enum(row.get("tool"), _AGENT_TOOLS, "claude"),
+            "category": _enum(row.get("category"), _AGENT_CATEGORIES, "document"),
+            "model": _text(row.get("model"), limit=120), "tools": _text(row.get("tools"), limit=300),
+            "description": _text(row.get("description") or row.get("desc"), limit=300),
+            "desc": _text(row.get("desc") or row.get("description"), limit=300),
+            "uses": _number(row.get("uses")), "uses_here": _number(row.get("uses_here")),
+            "last": _text(row.get("last"), limit=80), "critical": _texts(row.get("critical")),
+            "warnings": _texts(row.get("warnings")), "attributed": _boolean(row.get("attributed"), True),
+            "homonyms": _number(row.get("homonyms")), "is_agent": _boolean(row.get("is_agent"), True),
+            "path": "", "machine": machine}
+
+
+def _skill_row(row, machine):
+    if not isinstance(row, dict) or not isinstance(row.get("name"), str) or not row["name"].strip():
+        return None
+    return {"name": _text(row["name"], limit=120), "project": _text(row.get("project"), limit=120),
+            "tool": _enum(row.get("tool"), _AGENT_TOOLS, "claude"),
+            "state": _enum(row.get("state"), _SKILL_STATES, "no-frontmatter"),
+            "symlink": _boolean(row.get("symlink")), "target": "", "path": "",
+            "desc": _text(row.get("desc"), limit=300), "lines": _number(row.get("lines")),
+            "uses": _number(row.get("uses")), "uses_here": _number(row.get("uses_here")),
+            "last": _text(row.get("last"), limit=80), "machine": machine}
+
+
+def _harness_row(row, machine):
+    if not isinstance(row, dict):
+        return None
+    name = row.get("project") or row.get("name")
+    if not isinstance(name, str) or not name.strip():
+        return None
+    return {"project": _text(name, limit=120), "level": _enum(row.get("level"), _HARNESS_LEVELS, "none"),
+            "hooks_dead": _texts(row.get("hooks_dead")), "hooks_broken": _texts(row.get("hooks_broken")),
+            "machine": machine}
+
+
+def _project_detail_row(row, machine):
+    if not isinstance(row, dict) or not isinstance(row.get("name"), str) or not row["name"].strip():
+        return None
+    return {"name": _text(row["name"], limit=120), "branch": _text(row.get("branch"), limit=200),
+            "dirty": _number(row.get("dirty")), "worktrees": _number(row.get("worktrees")),
+            "docs": _safe_dict(row.get("docs")), "memory_days": _number(row.get("memory_days"), None),
+            "last_commit": _text(row.get("last_commit"), limit=300), "agents": _number(row.get("agents")),
+            "skills": _number(row.get("skills")), "machine": machine}
+
+
+def _activity_aggregated_row(row, machine):
+    if not isinstance(row, dict) or not isinstance(row.get("project"), str) or not row["project"].strip():
+        return None
+    return {"project": _text(row["project"], limit=120), "sessions": _number(row.get("sessions")),
+            "hours": _number(row.get("hours")), "tokens": _token_map(row.get("tokens")),
+            "commits": _number(row.get("commits")), "files_touched": _number(row.get("files_touched")),
+            "tool_calls": _count_map(row.get("tool_calls")), "agents": _count_map(row.get("agents")),
+            "skills": _count_map(row.get("skills")), "machine": machine}
+
+
+def _activity_session_row(row, machine):
+    if not isinstance(row, dict) or not isinstance(row.get("project"), str) or not row["project"].strip():
+        return None
+    return {"project": _text(row["project"], limit=120), "started": _text(row.get("started"), limit=80),
+            "ended": _text(row.get("ended"), limit=80), "duration_s": _number(row.get("duration_s")),
+            "turns": _number(row.get("turns")), "commits": _number(row.get("commits")),
+            "branch": _text(row.get("branch"), limit=200), "files_touched": _texts(row.get("files_touched"), 300),
+            "files_outside": _number(row.get("files_outside")), "agents": _count_map(row.get("agents")),
+            "skills": _count_map(row.get("skills")), "tokens": _token_map(row.get("tokens")),
+            "subagents": _number(row.get("subagents")), "title": _text(row.get("title"), limit=300),
+            "machine": machine}
 
 
 def _confined(real_path, real_dir):
@@ -75,22 +210,34 @@ def load_dir(dir_, max_mb=5):
                 entry["status"] = "too-large"; files.append(entry); continue
             try:
                 d = _read_export(real_path)
+                if not isinstance(d, dict):
+                    raise ValueError("export root must be an object")
             except Exception as e:
                 entry["status"] = "unreadable"; entry["error"] = str(e); files.append(entry); continue
-            machine = d.get("machine") or name
-            entry["machine"], entry["os"], entry["when"] = machine, d.get("os"), d.get("when")
+            machine = _text(d.get("machine"), name)
+            entry["machine"], entry["os"], entry["when"] = machine, _text(d.get("os"), limit=80), _text(d.get("when"), limit=80)
             files.append(entry)
-            for a in d.get("agents") or []: agents.append({**a, "machine": machine})
-            for s in d.get("skills") or []: skills.append({**s, "machine": machine})
-            for h in d.get("harness") or []: harness.append({**h, "machine": machine})
-            for p in d.get("projects") or []: projects_set.add(p)
-            for pd in d.get("projects_detail") or []:
-                projects_detail.append({**pd, "machine": machine})
-            act = d.get("activity") or {}
-            for row in act.get("aggregated") or []:
-                agg_by_key[(row.get("project"), machine)] = {**row, "machine": machine}
-            for row in act.get("sessions") or []:
-                detail_rows.append({**row, "machine": machine})
+            for a in _list(d.get("agents")):
+                clean = _agent_row(a, machine)
+                if clean: agents.append(clean)
+            for s in _list(d.get("skills")):
+                clean = _skill_row(s, machine)
+                if clean: skills.append(clean)
+            for h in _list(d.get("harness")):
+                clean = _harness_row(h, machine)
+                if clean: harness.append(clean)
+            for p in _list(d.get("projects")):
+                if isinstance(p, str) and p.strip(): projects_set.add(_text(p, limit=120))
+            for pd in _list(d.get("projects_detail")):
+                clean = _project_detail_row(pd, machine)
+                if clean: projects_detail.append(clean)
+            act = d.get("activity") if isinstance(d.get("activity"), dict) else {}
+            for row in _list(act.get("aggregated")):
+                clean = _activity_aggregated_row(row, machine)
+                if clean: agg_by_key[(clean["project"], machine)] = clean
+            for row in _list(act.get("sessions")):
+                clean = _activity_session_row(row, machine)
+                if clean: detail_rows.append(clean)
     # Orchestrator amendment: always carry BOTH aggregated and per-session detail — a file that
     # ships one shape must never push another file's rows of the other shape out of the merge.
     activity = {"aggregated": list(agg_by_key.values()), "sessions": detail_rows}
