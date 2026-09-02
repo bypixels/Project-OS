@@ -286,6 +286,28 @@ class TestHealthlogDiff(unittest.TestCase):
         findings = [{"sev": "warn", "title": "t", "id": "check.dead_hooks"}]
         self.assertIsNone(HL.diff(last, findings))
 
+    def test_diff_none_when_ids_is_int(self):
+        # A hand-edited health.jsonl can carry "ids": 1 -- a valid JSON value, wrong shape. Must
+        # not crash `set(last["ids"])`/the dict-membership checks that assume a mapping.
+        last = {"when": "2026-01-01T00:00:00-06:00", "ids": 1}
+        findings = [{"sev": "warn", "title": "t", "id": "check.dead_hooks"}]
+        self.assertIsNone(HL.diff(last, findings))
+
+    def test_diff_none_when_ids_is_list(self):
+        last = {"when": "2026-01-01T00:00:00-06:00", "ids": ["check.dead_hooks"]}
+        findings = [{"sev": "warn", "title": "t", "id": "check.dead_hooks"}]
+        self.assertIsNone(HL.diff(last, findings))
+
+    def test_diff_coerces_non_str_titles_to_str(self):
+        # A hand-edited "ids" dict can carry a non-str title value (e.g. an int) -- diff() must
+        # not leak that non-str value into a renderer expecting [id, title] pairs of strings.
+        last = {"when": "2026-01-01T00:00:00-06:00", "ids": {"check.dead_hooks": 42}}
+        findings = []
+        d = HL.diff(last, findings)
+        self.assertIsNotNone(d)
+        self.assertEqual(d["resolved"], [["check.dead_hooks", "42"]])
+        self.assertIsInstance(d["resolved"][0][1], str)
+
 
 if __name__ == "__main__":
     unittest.main()

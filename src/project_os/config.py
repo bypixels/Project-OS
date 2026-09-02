@@ -28,7 +28,16 @@ DEFAULTS = {
     "activity": {"retention_days": 365},
     "hub": {"max_file_mb": 5},
     "docs": {"backup_retention_days": 30, "max_per_dir": 60},
-    "check": {"worktree_stale_days": 14, "memory_stale_days": 30, "history_days": 180},
+    "check": {
+        "worktree_stale_days": 14, "memory_stale_days": 30, "history_days": 180,
+        # Tools the harness itself injects into every subagent invocation that no frontmatter
+        # ever declares (SendMessage, task-list plumbing, Skill/ToolSearch, ...) -- detector #8c
+        # (observed vs. declared tools) subtracts this set from what it reports as "drift", or
+        # every subagent would falsely "drift" on tools it never actually asked for.
+        "ambient_tools": ["SendMessage", "TaskCreate", "TaskUpdate", "TaskGet", "TaskList",
+                           "TodoWrite", "Skill", "ToolSearch", "AskUserQuestion", "BashOutput",
+                           "KillShell", "SlashCommand", "ListAgents"],
+    },
 }
 
 
@@ -108,4 +117,5 @@ max_per_dir = 60                 # cap on documents listed per folder in the Doc
 worktree_stale_days = 14
 memory_stale_days = 30
 history_days = 180               # how long project-os check's health.jsonl trend is kept
+ambient_tools = ["SendMessage", "TaskCreate", "TaskUpdate", "TaskGet", "TaskList", "TodoWrite", "Skill", "ToolSearch", "AskUserQuestion", "BashOutput", "KillShell", "SlashCommand", "ListAgents"]   # harness-injected tools #8c never counts as drift
 '''

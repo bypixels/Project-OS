@@ -96,12 +96,14 @@ def _should_append(last, counts, ids, now):
 def diff(last, findings):
     """Compares a previous health.jsonl line's identity map against `findings`' own: which
     identities are new (present now, absent from `last`) and which resolved (present in `last`,
-    absent now). Returns None when there is no previous line, it predates the "ids" field, or its
-    "when" cannot be parsed (missing or hand-edited into something invalid) — unknown must never
-    render as "nothing changed" (same doctrine as tokens.thinking_lines == 0 elsewhere in this
-    codebase: an absent measurement is not a zero). `new`/`resolved` are lists of [id, title]
-    pairs, sorted for determinism."""
-    if last is None or "ids" not in last:
+    absent now). Returns None when there is no previous line, it predates the "ids" field, its
+    "ids" is not itself a dict (hand-edited into a bare int/list -- a valid JSON value, wrong
+    shape), or its "when" cannot be parsed (missing or hand-edited into something invalid) —
+    unknown must never render as "nothing changed" (same doctrine as tokens.thinking_lines == 0
+    elsewhere in this codebase: an absent measurement is not a zero). `new`/`resolved` are lists
+    of [id, title] pairs, titles coerced via str() so a hand-edited non-str value in "ids" can't
+    leak a non-str into renderers expecting a plain string, sorted for determinism."""
+    if last is None or "ids" not in last or not isinstance(last["ids"], dict):
         return None
     try:
         datetime.fromisoformat(last["when"])
@@ -109,8 +111,8 @@ def diff(last, findings):
         return None  # unparseable/missing "when" (e.g. hand-edited) -- unknown, not "no changes"
     prev = last["ids"]
     cur = identities(findings)
-    new = sorted([i, cur[i]] for i in cur if i not in prev)
-    resolved = sorted([i, prev[i]] for i in prev if i not in cur)
+    new = sorted([i, str(cur[i])] for i in cur if i not in prev)
+    resolved = sorted([i, str(prev[i])] for i in prev if i not in cur)
     return {"prev_when": last.get("when"), "new": new, "resolved": resolved}
 
 

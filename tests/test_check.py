@@ -623,6 +623,45 @@ class TestCheckDesiredState(unittest.TestCase):
         finally:
             env.cleanup()
 
+    def test_top_level_desired_false_is_bad_value_not_silent_optout(self):
+        # `desired = false` is valid TOML but the wrong type -- `desired = 1` (above) correctly
+        # reports bad_value, so a falsy wrong type must not be swallowed into the silent
+        # "no [desired] table" opt-out by a bare `or {}` in desired.load().
+        env = Env()
+        try:
+            self._write(env.alpha, "desired = false\n")
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)   # must not raise
+            f = self._desired_finding(findings)
+            self.assertIsNotNone(f, findings)
+            self.assertIn("wrong type", f["detail"])
+        finally:
+            env.cleanup()
+
+    def test_top_level_desired_empty_string_is_bad_value_not_silent_optout(self):
+        env = Env()
+        try:
+            self._write(env.alpha, 'desired = ""\n')
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)
+            f = self._desired_finding(findings)
+            self.assertIsNotNone(f, findings)
+            self.assertIn("wrong type", f["detail"])
+        finally:
+            env.cleanup()
+
+    def test_top_level_desired_empty_list_is_bad_value_not_silent_optout(self):
+        env = Env()
+        try:
+            self._write(env.alpha, "desired = []\n")
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)
+            f = self._desired_finding(findings)
+            self.assertIsNotNone(f, findings)
+            self.assertIn("wrong type", f["detail"])
+        finally:
+            env.cleanup()
+
     def test_genuinely_malformed_toml_still_reports_malformed(self):
         """Contrast with the case above: TOML that does NOT parse at all must keep the
         `malformed` wording -- that one really is a syntax error."""
@@ -964,6 +1003,74 @@ class TestCheckToolDrift(unittest.TestCase):
             findings = check.run(env.cfg, quick=False)
             f = self._find(findings)
             self.assertIsNone(f, f)
+        finally:
+            env.cleanup()
+
+    def test_ambient_tools_alone_are_filtered_and_never_drift(self):
+        # The harness injects tools into every subagent that no frontmatter declares (SendMessage,
+        # TodoWrite, Skill, ...). An agent observed calling ONLY ambient tools outside its
+        # declared boundary must not be reported -- that isn't drift, it's harness noise.
+        env = Env()
+        try:
+            open(os.path.join(env.alpha, ".claude", "agents", "worker.md"), "w").write(AGENT.format(n="worker"))
+            scan.save(env.cfg, scan.run(env.cfg))
+            self._seed(env.cfg, [{"agent_names": {"exec-w": "worker"},
+                                   "subagent_tool_names": {"exec-w": {"SendMessage": 4, "TodoWrite": 2}}}])
+            findings = check.run(env.cfg, quick=False)
+            f = self._find(findings)
+            self.assertIsNone(f, f)
+        finally:
+            env.cleanup()
+
+    def test_ambient_tools_are_stripped_from_a_mixed_drift_line_leaving_the_real_one(self):
+        env = Env()
+        try:
+            open(os.path.join(env.alpha, ".claude", "agents", "worker.md"), "w").write(AGENT.format(n="worker"))
+            scan.save(env.cfg, scan.run(env.cfg))
+            self._seed(env.cfg, [{"agent_names": {"exec-w": "worker"},
+                                   "subagent_tool_names": {"exec-w": {"Bash": 91, "TodoWrite": 2}}}])
+            findings = check.run(env.cfg, quick=False)
+            f = self._find(findings)
+            self.assertIsNotNone(f, findings)
+            self.assertIn("Bash (91x)", f["detail"])
+            self.assertNotIn("TodoWrite", f["detail"])
+        finally:
+            env.cleanup()
+
+    def test_drift_detail_is_capped_at_eight_lines_with_a_tail(self):
+        # Unlike #8/#8b (which cap their name lists at 14), #8c concatenated every drift line
+        # unbounded -- a project with many drifting agents produced an unreadably long finding.
+        env = Env()
+        try:
+            summaries = []
+            agent_names, tool_names = {}, {}
+            for i in range(10):
+                name = f"worker{i}"
+                open(os.path.join(env.alpha, ".claude", "agents", f"{name}.md"), "w").write(AGENT.format(n=name))
+                agent_names[f"exec-{i}"] = name
+                tool_names[f"exec-{i}"] = {"Bash": 1}
+            scan.save(env.cfg, scan.run(env.cfg))
+            self._seed(env.cfg, [{"agent_names": agent_names, "subagent_tool_names": tool_names}])
+            findings = check.run(env.cfg, quick=False)
+            f = self._find(findings)
+            self.assertIsNotNone(f, findings)
+            lines = [l for l in f["detail"].split("\n") if "declared" in l]
+            self.assertEqual(len(lines), 8)
+            self.assertIn("… +2", f["detail"])
+        finally:
+            env.cleanup()
+
+    def test_ambient_tools_list_is_configurable(self):
+        env = Env()
+        try:
+            open(os.path.join(env.alpha, ".claude", "agents", "worker.md"), "w").write(AGENT.format(n="worker"))
+            scan.save(env.cfg, scan.run(env.cfg))
+            self._seed(env.cfg, [{"agent_names": {"exec-w": "worker"},
+                                   "subagent_tool_names": {"exec-w": {"Bash": 91}}}])
+            cfg = dict(env.cfg); cfg["check"] = dict(env.cfg["check"]); cfg["check"]["ambient_tools"] = ["Bash"]
+            findings = check.run(cfg, quick=False)
+            f = self._find(findings)
+            self.assertIsNone(f, f)   # "Bash" reclassified as ambient by config override -- no longer drift
         finally:
             env.cleanup()
 

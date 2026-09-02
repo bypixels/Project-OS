@@ -265,6 +265,22 @@ class TestAgentNameFromId(unittest.TestCase):
         self.assertIsNone(S._agent_name_from_id(""))
         self.assertIsNone(S._agent_name_from_id("no-leading-a-marker-0123456789abcdef"))
 
+    def test_non_conforming_id_that_merely_starts_with_a_returns_none(self):
+        # "admin" starts with "a" (the old check's ONLY test) but is not the real shape at all
+        # -- must not be misread as name "dmin".
+        self.assertIsNone(S._agent_name_from_id("admin"))
+
+    def test_unnamed_hash_only_id_returns_none(self):
+        # An unnamed invocation's agentId is "a" + 16 hex chars, no name/"-" part at all -- after
+        # requiring the full "a" + name + "-" + 16hex shape, there is no name to recover.
+        self.assertIsNone(S._agent_name_from_id("a0123456789abcdef"))
+
+    def test_full_conforming_shape_with_short_name(self):
+        self.assertEqual(S._agent_name_from_id("aalpha-0123456789abcdef"), "alpha")
+
+    def test_full_conforming_shape_with_hyphenated_name(self):
+        self.assertEqual(S._agent_name_from_id("afix-0123456789abcdef-8c90eac07a24bee4"), "fix-0123456789abcdef")
+
 
 class TestMergeLinesAgentNamesJoin(unittest.TestCase):
     """F3 join, half 1: `_merge_lines` must record, per session, the invocation `name` ->
@@ -546,6 +562,43 @@ class TestObservedToolsEndToEnd(unittest.TestCase):
         observed_b = S.observed_tools(self.env.cfg)
         self.assertEqual(observed_a, observed_b)
         self.assertEqual(observed_b["worker"], {"Bash": 1, "Grep": 1})
+
+
+class TestObservedToolsTypeGuards(unittest.TestCase):
+    """Defensive: a corrupt registry entry (hand-edited, or from a bug in an earlier version)
+    must never raise up into check.run() -- same doctrine as _hydrate_state's last_tools/
+    agent_names guards and _subagent_tool_names's `isinstance(entry, dict)` check. A corrupt
+    summary contributes nothing observable, never a crash."""
+    def setUp(self):
+        self.env = Env()
+    def tearDown(self):
+        self.env.cleanup()
+
+    def _seed(self, summaries):
+        reg = {}
+        for i, s in enumerate(summaries):
+            reg[f"/fake/session-{i}.jsonl"] = {"offset": 0, "size": 0, "mtime": 0,
+                                                "partial_state": {}, "summary": s}
+        S._save_registry(S.registry_path(self.env.cfg), reg)
+
+    def test_agent_names_as_a_list_contributes_nothing(self):
+        self._seed([{"agent_names": ["exec-w"], "subagent_tool_names": {"exec-w": {"Bash": 1}}}])
+        self.assertEqual(S.observed_tools(self.env.cfg), {})
+
+    def test_subagent_tool_names_as_a_list_contributes_nothing(self):
+        self._seed([{"agent_names": {"exec-w": "worker"}, "subagent_tool_names": ["exec-w"]}])
+        self.assertEqual(S.observed_tools(self.env.cfg), {})
+
+    def test_non_dict_tool_bucket_contributes_nothing(self):
+        self._seed([{"agent_names": {"exec-w": "worker"}, "subagent_tool_names": {"exec-w": ["Bash"]}}])
+        self.assertEqual(S.observed_tools(self.env.cfg), {})
+
+    def test_corrupt_summary_does_not_block_a_clean_one(self):
+        self._seed([
+            {"agent_names": ["exec-bad"], "subagent_tool_names": {"exec-bad": {"Bash": 1}}},
+            {"agent_names": {"exec-w": "worker"}, "subagent_tool_names": {"exec-w": {"Bash": 2}}},
+        ])
+        self.assertEqual(S.observed_tools(self.env.cfg), {"worker": {"Bash": 2}})
 
 
 class TestGitProjectFallback(unittest.TestCase):

@@ -35,11 +35,13 @@ def load(root):
     file is not even valid TOML (a genuine syntax error), this must not raise: it returns
     `{"_malformed": True}` so `gaps()` can surface it as a single `malformed` gap instead of
     `check` crashing on a broken file. The `[desired]` key itself can also be present in
-    otherwise-VALID TOML but not be a table at all (e.g. `desired = 1` or `desired = "x"`) --
-    that is returned as-is (not coerced to `{}` and not treated as `_malformed`, since the file
-    parsed fine) so `gaps()` can flag it as a `bad_value` instead, a different diagnosis from a
-    syntax error; only a genuinely ABSENT or empty table collapses to `{}`, the silent opt-out
-    case."""
+    otherwise-VALID TOML but not be a table at all (e.g. `desired = 1`, `desired = "x"`, or a
+    FALSY wrong type like `desired = false` / `""` / `[]`) -- that is returned as-is (not coerced
+    to `{}` and not treated as `_malformed`, since the file parsed fine) so `gaps()` can flag it
+    as a `bad_value` instead, a different diagnosis from a syntax error; a bare `doc.get("desired")
+    or {}` would silently swallow a falsy wrong type into this same opt-out, which is why the
+    dict-type check happens BEFORE the emptiness check below. Only a genuinely ABSENT key, or a
+    present key whose value actually IS a dict (empty or not), reaches the opt-out/normal path."""
     p = os.path.join(root, ".project-os.toml")
     if not os.path.isfile(p):
         return {}
@@ -48,7 +50,9 @@ def load(root):
             doc = tomllib.load(f)
     except Exception:
         return {"_malformed": True}
-    return doc.get("desired") or {}
+    if "desired" not in doc:
+        return {}
+    return doc["desired"]
 
 
 def _agent_names(rows):
@@ -89,12 +93,15 @@ def gaps(cfg, project_entry, data):
     never disappear silently."""
     root = project_entry["path"]
     desired = load(root)
-    if not desired:
-        return []
-    if isinstance(desired, dict) and desired.get("_malformed"):
-        return [{"kind": "malformed"}]
+    # The type check MUST run before the emptiness check: a FALSY wrong type (`desired = false`
+    # / `""` / `[]`) must reach `bad_value` below, not the silent opt-out that only genuinely
+    # applies to an absent key or an (empty or non-empty) TABLE.
     if not isinstance(desired, dict):
         return [{"kind": "bad_value", "field": "desired"}]
+    if not desired:
+        return []
+    if desired.get("_malformed"):
+        return [{"kind": "malformed"}]
 
     out = []
     unknown = set(desired) - _KNOWN_TABLES

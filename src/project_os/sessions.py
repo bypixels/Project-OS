@@ -361,18 +361,25 @@ def _subagent_tokens(source_path, state):
 
 
 _HASH_SUFFIX_RE = re.compile(r"-[0-9a-f]{16}$", re.IGNORECASE)
+_AGENT_ID_RE = re.compile(r"a(?P<name>.+)-[0-9a-f]{16}", re.IGNORECASE)
 
 
 def _agent_name_from_id(agent_id):
     """F3 join, the derivation step: a subagent transcript's `agentId` is always
     "a" + <invocation name> + "-" + <16 hex char suffix> (verified against real transcripts --
     e.g. "aexec-f1-8c90eac07a24bee4" -> "exec-f1", matching that invocation's own meta.json
-    "name" exactly). Reuses the same hash-suffix shape _subagent_display_name already strips.
-    Returns None for anything that doesn't look like that shape -- never guesses."""
-    if not agent_id or not isinstance(agent_id, str) or not agent_id.startswith("a"):
+    "name" exactly). Requires the FULL shape via a fullmatch, not merely an "a" prefix --
+    "admin" starting with "a" is not this shape at all, and must not be misread as name "dmin".
+    An unnamed invocation's id is "a" + 16 hex chars with no "-"-separated name part; after
+    requiring the "-" + 16hex suffix, that leaves no name to recover, so it also returns None
+    (already the contract, not a special case). Returns None for anything that doesn't fully
+    match -- never guesses."""
+    if not agent_id or not isinstance(agent_id, str):
         return None
-    name = _HASH_SUFFIX_RE.sub("", agent_id[1:])
-    return name or None
+    m = _AGENT_ID_RE.fullmatch(agent_id)
+    if not m:
+        return None
+    return m.group("name") or None
 
 
 def _subagent_display_name(fp):
@@ -616,16 +623,22 @@ def observed_tools(cfg):
     conflicting subagent_type -- ambiguous, dropped rather than guessed) against
     `subagent_tool_names` (invocation name -> observed tool counts from that subagent's own
     transcript). A session with no subagents/ data at all, or one recorded before this field
-    existed, simply contributes nothing -- absence of observation, never "used no tools"."""
+    existed, simply contributes nothing -- absence of observation, never "used no tools".
+    Defensive, same doctrine as `_hydrate_state`/`_subagent_tool_names`: a corrupt registry entry
+    (`agent_names` persisted as a list, `subagent_tool_names` as a list, or an individual tool
+    bucket that isn't a dict -- hand-edited, or a bug in an earlier version) is skipped rather
+    than raising up into `check.run()`."""
     result = {}
     for summary in load(cfg):
         agent_names = summary.get("agent_names") or {}
         tool_names = summary.get("subagent_tool_names") or {}
+        if not isinstance(agent_names, dict) or not isinstance(tool_names, dict):
+            continue
         for name, subagent_type in agent_names.items():
             if not subagent_type:
                 continue                          # ambiguous within this session -- never guess
             calls = tool_names.get(name)
-            if not calls:
+            if not calls or not isinstance(calls, dict):
                 continue
             bucket = result.setdefault(subagent_type, {})
             for tool, n in calls.items():

@@ -8,6 +8,8 @@ from .i18n import t
 from . import host
 
 SEV_ORDER = {"crit": 0, "warn": 1, "info": 2}
+_DRIFT_DETAIL_CAP = 8   # #8c's own detail lines, unlike #8/#8b's [:14] name-list cap, run one
+                        # per agent (declared vs. observed) -- much wider per line, so a lower cap
 
 
 def _warn_kind(w):
@@ -272,8 +274,13 @@ def run(cfg, quick=False, upstream=False):
     # no `tools` declared (or "*", i.e. no boundary to drift from), and any agent NAME defined in
     # more than one place (global + project, or two projects) -- observed_tools() is keyed by
     # subagent_type alone, so a homonym's observed calls can't be told apart between its copies.
+    # `cfg["check"]["ambient_tools"]` is also subtracted from the observed side before comparing:
+    # the harness itself injects those tools into every subagent invocation regardless of its
+    # frontmatter, so without this every agent would falsely "drift" on tools it never asked for
+    # (measured on real data: 25 findings, 0 actionable, before this filter existed).
     if not quick and data:
         observed = SS.observed_tools(cfg)
+        ambient = set((cfg.get("check") or {}).get("ambient_tools") or ())
         tool_rows = [(p, r) for p, r in rows if r.is_agent]
         name_places = {}
         for p, r in tool_rows:
@@ -289,14 +296,17 @@ def run(cfg, quick=False, upstream=False):
             seen = observed.get(r.name)
             if not seen:
                 continue                                   # no observation at all -- silent, not clean
-            extra = {tool: n for tool, n in seen.items() if tool not in declared}
+            extra = {tool: n for tool, n in seen.items() if tool not in declared and tool not in ambient}
             if extra:
                 top = ", ".join(f"{tool} ({n}x)" for tool, n in sorted(extra.items(), key=lambda x: -x[1]))
                 drift_lines.append(f"{r.name}: declared {', '.join(sorted(declared)) or '(none)'}; observed outside: {top}")
                 drift_projects.append(p)
         if drift_lines:
+            shown = drift_lines[:_DRIFT_DETAIL_CAP]
+            if len(drift_lines) > _DRIFT_DETAIL_CAP:
+                shown = shown + [f"… +{len(drift_lines) - _DRIFT_DETAIL_CAP}"]
             add("info", t(L, "check.tool_drift", n=len(drift_lines)),
-                t(L, "check.tool_drift.d") + "\n    " + "\n    ".join(drift_lines),
+                t(L, "check.tool_drift.d") + "\n    " + "\n    ".join(shown),
                 t(L, "fix.tool_drift"), projects=drift_projects, id="check.tool_drift")
 
     # 9. scan freshness
