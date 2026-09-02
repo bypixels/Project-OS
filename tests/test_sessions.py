@@ -600,6 +600,27 @@ class TestObservedToolsTypeGuards(unittest.TestCase):
         ])
         self.assertEqual(S.observed_tools(self.env.cfg), {"worker": {"Bash": 2}})
 
+    def test_non_str_subagent_type_value_contributes_nothing(self):
+        # A `subagent_type` value that survived as a list (not a plain str, not the ambiguous-None
+        # sentinel) is unhashable -- `result.setdefault(subagent_type, {})` must not raise.
+        self._seed([{"agent_names": {"exec-w": ["worker"]}, "subagent_tool_names": {"exec-w": {"Bash": 1}}}])
+        self.assertEqual(S.observed_tools(self.env.cfg), {})
+
+    def test_non_numeric_tool_count_is_skipped_not_summed(self):
+        # A tool count persisted as a str (or a bool, which is an int subclass and would silently
+        # pass a bare `isinstance(n, int)` check) must not reach `bucket.get(tool, 0) + n` -- that
+        # raises TypeError (int + str) or, for bool, corrupts the count with True/False math.
+        self._seed([{"agent_names": {"exec-w": "worker"},
+                      "subagent_tool_names": {"exec-w": {"Bash": "5", "Read": True, "Grep": 3}}}])
+        self.assertEqual(S.observed_tools(self.env.cfg), {"worker": {"Grep": 3}})
+
+    def test_one_corrupt_summary_does_not_block_another_summarys_valid_entries(self):
+        self._seed([
+            {"agent_names": {"exec-bad": ["worker"]}, "subagent_tool_names": {"exec-bad": {"Bash": 1}}},
+            {"agent_names": {"exec-w": "worker"}, "subagent_tool_names": {"exec-w": {"Bash": "5", "Grep": 2}}},
+        ])
+        self.assertEqual(S.observed_tools(self.env.cfg), {"worker": {"Grep": 2}})
+
 
 class TestGitProjectFallback(unittest.TestCase):
     """A session whose cwd is a git repo WITHOUT a .claude/ dir (so scan.py never registers it

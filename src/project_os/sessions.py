@@ -625,8 +625,11 @@ def observed_tools(cfg):
     transcript). A session with no subagents/ data at all, or one recorded before this field
     existed, simply contributes nothing -- absence of observation, never "used no tools".
     Defensive, same doctrine as `_hydrate_state`/`_subagent_tool_names`: a corrupt registry entry
-    (`agent_names` persisted as a list, `subagent_tool_names` as a list, or an individual tool
-    bucket that isn't a dict -- hand-edited, or a bug in an earlier version) is skipped rather
+    (`agent_names` persisted as a list, `subagent_tool_names` as a list, an individual tool
+    bucket that isn't a dict, a `subagent_type` value that isn't a plain str (unhashable as a
+    dict key -- e.g. a list), or a tool count that isn't a real number (a str, or a bool, which
+    is an int subclass and would otherwise pass a bare `isinstance(n, int)` check and corrupt the
+    sum with True/False math) -- hand-edited, or a bug in an earlier version -- is skipped rather
     than raising up into `check.run()`."""
     result = {}
     for summary in load(cfg):
@@ -637,12 +640,18 @@ def observed_tools(cfg):
         for name, subagent_type in agent_names.items():
             if not subagent_type:
                 continue                          # ambiguous within this session -- never guess
+            if not isinstance(subagent_type, str):
+                continue                          # corrupt: not a hashable, meaningful key
             calls = tool_names.get(name)
             if not calls or not isinstance(calls, dict):
                 continue
             bucket = result.setdefault(subagent_type, {})
             for tool, n in calls.items():
-                bucket[tool] = bucket.get(tool, 0) + (n or 0)
+                if n is None:
+                    continue
+                if not isinstance(n, (int, float)) or isinstance(n, bool):
+                    continue                      # corrupt: not a real count -- never guess/sum it
+                bucket[tool] = bucket.get(tool, 0) + n
     return result
 
 
