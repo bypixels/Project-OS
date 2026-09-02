@@ -1009,6 +1009,17 @@ class TestServer(unittest.TestCase):
         self.assertIn("series", d)
         d2 = self.get("/api/health-history?days=999999")
         self.assertIn("series", d2)   # never errors out on an out-of-range days value
+    def test_health_history_endpoint_drops_ids_map(self):
+        # The sparkline only ever reads when/crit/warn/info -- a stored line's "ids" map is what
+        # makes it large (~2.5MB/request at 30 projects of findings history), so the endpoint
+        # must project it away rather than shipping the raw health.jsonl line.
+        from project_os import healthlog as HL
+        self.assertTrue(HL.append(self.env.cfg, [{"sev": "warn", "title": "x", "id": "check.no_scan"}]))
+        d = self.get("/api/health-history?days=30")
+        self.assertTrue(d["series"])
+        for s in d["series"]:
+            self.assertNotIn("ids", s)
+            self.assertEqual(set(s.keys()), {"when", "crit", "warn", "info"})
     # ---------- Fase 3: /api/tiles (R13 project dashboard) ----------
     def test_project_tiles_shape(self):
         d = self.get("/api/tiles")

@@ -96,12 +96,17 @@ def _should_append(last, counts, ids, now):
 def diff(last, findings):
     """Compares a previous health.jsonl line's identity map against `findings`' own: which
     identities are new (present now, absent from `last`) and which resolved (present in `last`,
-    absent now). Returns None when there is no previous line, or it predates the "ids" field —
-    unknown must never render as "nothing changed" (same doctrine as tokens.thinking_lines == 0
-    elsewhere in this codebase: an absent measurement is not a zero). `new`/`resolved` are lists
-    of [id, title] pairs, sorted for determinism."""
+    absent now). Returns None when there is no previous line, it predates the "ids" field, or its
+    "when" cannot be parsed (missing or hand-edited into something invalid) — unknown must never
+    render as "nothing changed" (same doctrine as tokens.thinking_lines == 0 elsewhere in this
+    codebase: an absent measurement is not a zero). `new`/`resolved` are lists of [id, title]
+    pairs, sorted for determinism."""
     if last is None or "ids" not in last:
         return None
+    try:
+        datetime.fromisoformat(last["when"])
+    except Exception:
+        return None  # unparseable/missing "when" (e.g. hand-edited) -- unknown, not "no changes"
     prev = last["ids"]
     cur = identities(findings)
     new = sorted([i, cur[i]] for i in cur if i not in prev)

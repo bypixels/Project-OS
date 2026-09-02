@@ -313,7 +313,14 @@ function healthStrip(){const live=S.live,active=(live&&live.ok?live.agents.filte
 // F2 "since last check": rendered only when the API's `changes` is non-null (no baseline yet, or
 // the baseline predates the "ids" field, both read as "nothing to compare" -- see healthlog.py).
 function healthChangesHtml(){const ch=S.health&&S.health.changes;if(!ch)return"";
- const cap=5,fmt=list=>{const shown=list.slice(0,cap).map(([,title])=>esc(title)).join(", ");
+ // A multi-project finding's identity is "<i18n-key>@<project>" (healthlog.identities()); the
+ // i18n key itself never contains "@", so splitting on the FIRST "@" always isolates the
+ // project. Without this, two projects sharing the same finding id render the identical title
+ // twice with no way to tell them apart.
+ const cap=5,fmt=list=>{const shown=list.slice(0,cap).map(([id,title])=>{
+   const at=id.indexOf("@"),proj=at>=0?id.slice(at+1):null;
+   return esc(title)+(proj?` <span class="muted">— ${esc(proj)}</span>`:"");
+  }).join(", ");
   const more=list.length>cap?` <span class="muted">${T("changesMore",{n:list.length-cap})}</span>`:"";
   return shown+more;};
  if(!ch.new.length&&!ch.resolved.length)return `<div class="box info" style="margin-bottom:8px;padding:8px 10px;font-size:var(--fs-2)">${T("changesNone")}</div>`;

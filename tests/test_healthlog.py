@@ -273,6 +273,19 @@ class TestHealthlogDiff(unittest.TestCase):
         finally:
             env.cleanup()
 
+    def test_diff_none_when_when_is_unparseable(self):
+        # A last line can carry "ids" but an unparseable "when" (hand-edited, or truncated by a
+        # crash mid-write) -- rendering that as "no changes since None" would be a lie: there is
+        # no reliable baseline to compare against, same doctrine as a missing "ids" field.
+        last = {"when": "not-a-date", "ids": {"check.dead_hooks": "t"}}
+        findings = [{"sev": "warn", "title": "t", "id": "check.dead_hooks"}]
+        self.assertIsNone(HL.diff(last, findings))
+
+    def test_diff_none_when_when_is_missing(self):
+        last = {"ids": {"check.dead_hooks": "t"}}
+        findings = [{"sev": "warn", "title": "t", "id": "check.dead_hooks"}]
+        self.assertIsNone(HL.diff(last, findings))
+
 
 if __name__ == "__main__":
     unittest.main()

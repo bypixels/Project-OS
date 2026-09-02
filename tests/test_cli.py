@@ -430,5 +430,110 @@ class TestCheckRepoRejectsUpstream(unittest.TestCase):
             self.assertIn(t("en", "cli.error.upstream_repo"), buf_err.getvalue())
 
 
+class TestCheckSinceLastCheckProjectQualifier(unittest.TestCase):
+    """A multi-project finding's identities are "<id>@<project1>", "<id>@<project2>" (same title
+    for both -- healthlog.identities()). Without a project qualifier in the rendered "since last
+    check" line, both would print the IDENTICAL title with no way to tell which project appeared
+    or resolved. cli.py's check branch must render "+ <title> — <project>" for a qualified
+    identity, and the bare "+ <title>" for one without an "@"."""
+
+    def _cfg_file(self, env):
+        f = tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False)
+        f.write(f"claude_home = '{env.claude}'\ncodex_home = '{env.codex}'\nroots = ['{env.projects}']\nstate_dir = '{env.state}'\n[live]\nprovider = \"none\"\n[scan]\nmeasure_worktrees = false\ncheck_mcp = false\n")
+        f.close()
+        return f.name
+
+    def test_new_multi_project_finding_renders_distinct_lines_per_project(self):
+        from project_os import cli as CLI, check as CHECK
+        env = Env()
+        cfgp = self._cfg_file(env)
+        try:
+            scan.save(env.cfg, scan.run(env.cfg))
+            with mock.patch.object(CHECK, "run", return_value=[]):
+                with redirect_stdout(io.StringIO()):
+                    CLI.main(["--config", cfgp, "check"])
+            multi = {"id": "check.invalid_agents", "sev": "crit", "title": "3 invalid agents",
+                     "detail": "", "fix": "", "projects": ["alpha", "beta"]}
+            with mock.patch.object(CHECK, "run", return_value=[multi]):
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    CLI.main(["--config", cfgp, "check"])
+            out = buf.getvalue()
+            self.assertIn("  + 3 invalid agents — alpha", out)
+            self.assertIn("  + 3 invalid agents — beta", out)
+        finally:
+            os.unlink(cfgp); env.cleanup()
+
+
+class TestCheckSinceLastCheckOrdering(unittest.TestCase):
+    """healthlog.changes(cfg, findings) must run BEFORE healthlog.append(cfg, findings) in cli.py's
+    check branch (per cli.py's own comment). Swapping the two makes changes() diff a run's
+    findings against the line it JUST wrote -- itself -- which is always empty and prints "no
+    changes" even though the finding set actually changed between the two runs."""
+
+    def _cfg_file(self, env):
+        f = tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False)
+        f.write(f"claude_home = '{env.claude}'\ncodex_home = '{env.codex}'\nroots = ['{env.projects}']\nstate_dir = '{env.state}'\n[live]\nprovider = \"none\"\n[scan]\nmeasure_worktrees = false\ncheck_mcp = false\n")
+        f.close()
+        return f.name
+
+    def test_second_run_reports_the_new_finding_not_no_changes(self):
+        from project_os import cli as CLI, check as CHECK
+        env = Env()
+        cfgp = self._cfg_file(env)
+        try:
+            scan.save(env.cfg, scan.run(env.cfg))
+            alpha = {"id": "check.no_scan", "sev": "warn", "title": "Alpha finding", "detail": "", "fix": ""}
+            beta = {"id": "check.stale_scan", "sev": "warn", "title": "Beta finding", "detail": "", "fix": ""}
+            with mock.patch.object(CHECK, "run", return_value=[alpha]):
+                with redirect_stdout(io.StringIO()):
+                    CLI.main(["--config", cfgp, "check"])
+            with mock.patch.object(CHECK, "run", return_value=[beta]):
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    CLI.main(["--config", cfgp, "check"])
+            out = buf.getvalue()
+            self.assertIn("Since last check (", out)
+            self.assertIn("  + Beta finding", out)
+            self.assertNotIn("no changes since", out.lower())
+        finally:
+            os.unlink(cfgp); env.cleanup()
+
+
+class TestCheckSinceLastCheckUpstreamFilter(unittest.TestCase):
+    """`healthlog.changes(cfg, upstream_filtered)` must diff the SAME filtered list that
+    `healthlog.append` writes -- an --upstream finding (check.py's `add(..., upstream=True)`) is
+    about project-os itself, not the environment, and must never show up as a "new"/"resolved"
+    entry in the "since last check" block (companion to TestCheckUpstreamHealthlogExclusion,
+    which covers the append side of this same rule)."""
+
+    def _cfg_file(self, env):
+        f = tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False)
+        f.write(f"claude_home = '{env.claude}'\ncodex_home = '{env.codex}'\nroots = ['{env.projects}']\nstate_dir = '{env.state}'\n[live]\nprovider = \"none\"\n[scan]\nmeasure_worktrees = false\ncheck_mcp = false\n")
+        f.close()
+        return f.name
+
+    def test_upstream_finding_never_appears_as_a_change(self):
+        from project_os import cli as CLI, check as CHECK
+        env = Env()
+        cfgp = self._cfg_file(env)
+        try:
+            scan.save(env.cfg, scan.run(env.cfg))
+            normal = {"id": "check.no_scan", "sev": "warn", "title": "Normal finding", "detail": "", "fix": ""}
+            up = {"id": "check.upstream_extra", "sev": "info", "title": "Upstream finding", "detail": "", "fix": "", "upstream": True}
+            with mock.patch.object(CHECK, "run", return_value=[normal]):
+                with redirect_stdout(io.StringIO()):
+                    CLI.main(["--config", cfgp, "check"])
+            with mock.patch.object(CHECK, "run", return_value=[normal, up]):
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    CLI.main(["--config", cfgp, "check"])
+            out = buf.getvalue()
+            self.assertNotIn("+ Upstream finding", out)
+            self.assertIn("no changes since", out.lower())
+        finally:
+            os.unlink(cfgp); env.cleanup()
+
+
 if __name__ == "__main__":
     unittest.main()

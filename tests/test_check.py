@@ -1,7 +1,9 @@
 import os
+import re
 import shutil
 import time
 import unittest
+from collections import Counter
 from unittest import mock
 import _helpers  # noqa
 from _env import Env, AGENT
@@ -739,6 +741,29 @@ class TestCheckDesiredState(unittest.TestCase):
             self.assertTrue(any(x.get("projects") == ["alpha"] and "desired" not in x["title"].lower() for x in findings), findings)
         finally:
             env.cleanup()
+
+
+class TestCheckDetectorIdsAreUnique(unittest.TestCase):
+    """Every `add(..., id="...")` call in check.py feeds healthlog.identities() (F2, "since last
+    check"): if two DIFFERENT detectors ever pass the same id, identities() silently merges them
+    into one dict entry, and one of the two findings becomes permanently invisible to
+    "appeared"/"resolved" tracking -- a detector could start or stop firing and health.jsonl
+    would never notice. This scans check.py's own source for every id="..." literal and asserts
+    they are distinct, with one documented exception: "check.stale_worktrees" is reused between
+    the measured-size and unmeasured-size (.nogb title) branches of the SAME `add()` call site --
+    both describe the identical underlying condition (this project's stale worktrees), so sharing
+    an id there is correct, not a bug. Any OTHER id appearing more than once must fail this test."""
+
+    def test_no_duplicate_detector_ids_except_the_known_stale_worktrees_alias(self):
+        src_path = os.path.join(os.path.dirname(check.__file__), "check.py")
+        with open(src_path, encoding="utf-8") as f:
+            src = f.read()
+        ids = re.findall(r'id="([a-zA-Z0-9_.]+)"', src)
+        self.assertTrue(ids, "no id=\"...\" literals found -- regex or source layout changed")
+        counts = Counter(ids)
+        offenders = {i: n for i, n in counts.items() if n > 1 and i != "check.stale_worktrees"}
+        self.assertEqual(offenders, {}, f"duplicate detector ids (would silently merge in healthlog.identities()): {offenders}")
+        self.assertLessEqual(counts.get("check.stale_worktrees", 0), 2)
 
 
 if __name__ == "__main__":

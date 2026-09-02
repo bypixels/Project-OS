@@ -301,13 +301,18 @@ class App:
         return {"findings": findings, "ran_at": datetime.now().isoformat(timespec="seconds"), "quick": False, "changes": changes}
 
     def api_health_history(self, q):
-        """R12/Fase 3: the health.jsonl series for the Health tab's sparkline."""
+        """R12/Fase 3: the health.jsonl series for the Health tab's sparkline. Projects each raw
+        line down to {when, crit, warn, info} -- the sparkline never reads a line's "ids" map,
+        and that map alone is what makes each stored line large (~2.5MB/request at 30 projects
+        of findings history), so shipping it here would be pure bloat."""
         try:
             days = int((q.get("days") or ["30"])[0])
         except Exception:
             days = 30
         days = max(1, min(days, 365))
-        return {"series": HEALTHLOG.read(self.cfg, days)}
+        series = [{"when": d.get("when"), "crit": d.get("crit"), "warn": d.get("warn"), "info": d.get("info")}
+                  for d in HEALTHLOG.read(self.cfg, days)]
+        return {"series": series}
 
     def api_tiles(self):
         """R13: read-only "project dashboard" -- one tile per project with last_session,

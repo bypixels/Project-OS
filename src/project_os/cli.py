@@ -47,6 +47,16 @@ def _help_language(argv):
         return "en"
 
 
+def _changes_line(L, base_key, project_key, identity, title):
+    """Renders one "since last check" line. A multi-project finding's identity is
+    "<i18n-key>@<project>" (healthlog.identities()); the i18n key itself never contains "@", so
+    splitting on the FIRST "@" always isolates the project. Without this, two projects sharing
+    the same finding id render the identical title twice with no way to tell them apart."""
+    if "@" in identity:
+        return t(L, project_key, title=title, project=identity.split("@", 1)[1])
+    return t(L, base_key, title=title)
+
+
 def main(argv=None):
     arglist = sys.argv[1:] if argv is None else argv
     L = _help_language(arglist)
@@ -140,9 +150,9 @@ def main(argv=None):
                 else:
                     print(t(L, "check.changes.header", when=since["prev_when"]))
                     for _id, title in since["new"]:
-                        print("  " + t(L, "check.changes.new_line", title=title))
+                        print("  " + _changes_line(L, "check.changes.new_line", "check.changes.new_line_project", _id, title))
                     for _id, title in since["resolved"]:
-                        print("  " + t(L, "check.changes.resolved_line", title=title))
+                        print("  " + _changes_line(L, "check.changes.resolved_line", "check.changes.resolved_line_project", _id, title))
             print(check.render(cfg, F, color=sys.stdout.isatty()))
         if a.notify: check.notify(cfg, F)
         return 1 if any(f["sev"] == "crit" for f in F) else 0
