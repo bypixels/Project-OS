@@ -1,7 +1,8 @@
 """`project-os check --repo PATH` — validate ONE repository on its own, for CI.
 Needs no user home, no cache, no history: only the repo. The contract can be tuned per repo in
 `.project-os.toml` at the repo root; without it, defaults apply. Exit 1 on invalid agents (or on
-warnings too when `[check] strict = true`)."""
+warnings too when `[check] strict = true`). `.project-os.toml`'s `[desired]` table (see
+desired.py) is ignored here: it compares against the local scan cache, which CI mode never has."""
 import os, tomllib
 from .contract import Contract
 from . import drift
@@ -56,6 +57,19 @@ warn = ["model", "tools"]
 
 [check]
 strict = false        # true: warnings also fail the check
+
+# [desired]             # optional, ignored by `check --repo` (CI mode has no scan cache); read
+#                        # by plain `project-os check` against your local environment scan.
+# [desired.agents]
+# required = ["code-reviewer"]
+# [desired.skills]
+# required = ["deploy"]
+# [desired.mcp]
+# required = ["postgres"]
+# [desired.memory]
+# max_age_days = 14
+# [desired.docs]
+# agents_md = "linked"
 '''
 
 CI_YAML = '''# .github/workflows/project-os.yml

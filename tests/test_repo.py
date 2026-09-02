@@ -1,4 +1,4 @@
-import os, json, subprocess, tempfile, unittest
+import os, json, subprocess, tempfile, tomllib, unittest
 import _helpers  # noqa
 from project_os import repo as RP, snapshot as SN, gitops as GO
 
@@ -48,6 +48,20 @@ class TestRepoCheck(unittest.TestCase):
             self.assertIn("does not exist", r.get("error", ""))
             self.assertIn(missing, r.get("error", ""))
             self.assertNotEqual(RP.render(r).strip().splitlines()[-1].strip(), "result: ok")
+    def test_repo_check_ignores_desired_table(self):
+        """`[desired]` (see desired.py) depends on the local scan cache, which CI mode never
+        has -- check_repo must not touch it, so an unmet [desired] requirement here changes
+        nothing: same result as if the table were absent."""
+        with tempfile.TemporaryDirectory() as d:
+            toml = '[desired.agents]\nrequired = ["nonexistent-agent"]\n'
+            mkrepo(d, [("a", "sonnet")], project_os_toml=toml)
+            r = RP.check_repo(d)
+            self.assertEqual(r["invalid"], []); self.assertEqual(r["warnings"], [])
+            self.assertEqual(r["exit"], 0)
+    def test_example_toml_is_valid_and_mentions_desired(self):
+        parsed = tomllib.loads(RP.EXAMPLE_TOML)
+        self.assertIn("contract", parsed)
+        self.assertIn("[desired", RP.EXAMPLE_TOML)
 
 class TestSnapshot(unittest.TestCase):
     def test_export_compare(self):

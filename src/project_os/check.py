@@ -2,7 +2,7 @@
 Every detector encodes a failure that once went unnoticed for weeks."""
 import os, re, json, sys, time
 from datetime import datetime
-from . import scan, harness as HAR, usage, drift as DR, skills as SK
+from . import scan, harness as HAR, usage, drift as DR, skills as SK, desired as DS
 from .contract import Contract
 from .i18n import t
 from . import host
@@ -259,6 +259,17 @@ def run(cfg, quick=False, upstream=False):
             add("info", t(L, "check.stale_scan", days=int(age)), "", t(L, "fix.rescan"))
     else:
         add("warn", t(L, "check.no_scan"), "", t(L, "fix.rescan"))
+
+    # 9b. desired state: a project's own .project-os.toml can declare what its agent
+    # environment SHOULD have ([desired].agents/skills/mcp/memory/docs) -- compare against what
+    # the scan observed. No [desired] table -> silent (most projects never opt in).
+    if data:
+        for p in (data.get("projects") or []):
+            gp = DS.gaps(cfg, p, data)
+            if gp:
+                det = "\n    ".join(t(L, f"desired.gap.{g['kind']}", **{k: (", ".join(v) if k == "keys" else v) for k, v in g.items() if k != "kind"}) for g in gp)
+                add("warn", t(L, "check.desired_gaps", n=len(gp), project=p["name"]),
+                    t(L, "check.desired_gaps.d") + "\n    " + det, t(L, "fix.desired"), projects=[p["name"]])
 
     # 10. upstream drift (opt-in only -- see upstream.py; never emits "crit", so this can never
     # change check's exit code, and never runs unless the caller explicitly asked for it)

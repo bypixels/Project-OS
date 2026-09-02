@@ -1,5 +1,6 @@
 import os
 import shutil
+import time
 import unittest
 from unittest import mock
 import _helpers  # noqa
@@ -371,6 +372,169 @@ class TestCheckUnusedProjectInstanceRequiresFullAttribution(unittest.TestCase):
             findings = check.run(env.cfg, quick=False)
             f = next(x for x in findings if "solo-skill" in (x["detail"] or ""))
             self.assertIn("alpha", f["projects"])
+        finally:
+            env.cleanup()
+
+
+class TestCheckDesiredState(unittest.TestCase):
+    """A project can declare in its own `.project-os.toml` ([desired] table) what its agent
+    environment SHOULD have; `check` compares that against the scan and reports gaps as ONE
+    warn finding per project. Read-only: it never creates the missing asset itself."""
+
+    def _write(self, root, text):
+        open(os.path.join(root, ".project-os.toml"), "w").write(text)
+
+    def test_no_desired_table_is_silent(self):
+        env = Env()
+        try:
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)
+            self.assertFalse(any("alpha" in (f.get("projects") or []) and "desired" in f["title"].lower() for f in findings))
+        finally:
+            env.cleanup()
+
+    def test_missing_agent_and_skill_are_reported_not_the_satisfied_ones(self):
+        env = Env()
+        try:
+            # "reviewer" and "deploy" already exist in alpha's own .claude/ (see _env.py);
+            # "ghost-agent"/"ghost-skill" do not exist anywhere.
+            self._write(env.alpha, '[desired.agents]\nrequired = ["reviewer", "ghost-agent"]\n'
+                                    '[desired.skills]\nrequired = ["deploy", "ghost-skill"]\n')
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)
+            f = next(x for x in findings if x.get("projects") == ["alpha"] and "ghost-agent" in (x["detail"] or ""))
+            self.assertEqual(f["sev"], "warn")
+            self.assertIn("ghost-skill", f["detail"])
+            self.assertNotIn("`reviewer`", f["detail"])
+            self.assertNotIn("`deploy`", f["detail"])
+        finally:
+            env.cleanup()
+
+    def test_agent_satisfied_by_global_copy_when_project_has_none_of_its_own(self):
+        env = Env()
+        try:
+            os.remove(os.path.join(env.alpha, ".claude", "agents", "reviewer.md"))  # only the global one remains
+            self._write(env.alpha, '[desired.agents]\nrequired = ["reviewer"]\n')
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)
+            self.assertIsNone(next((x for x in findings if x.get("projects") == ["alpha"] and "reviewer" in (x["detail"] or "")), None))
+        finally:
+            env.cleanup()
+
+    def test_mcp_not_checked_is_unverifiable_not_a_missing_accusation(self):
+        env = Env()   # env.cfg has scan.check_mcp = False -> data["mcp"]["checked"] is False
+        try:
+            self._write(env.alpha, '[desired.mcp]\nrequired = ["postgres"]\n')
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)
+            f = next(x for x in findings if x.get("projects") == ["alpha"] and "postgres" in (x["detail"] or ""))
+            self.assertIn("scan --mcp", f["detail"])
+            self.assertNotIn("not found", f["detail"].lower())
+        finally:
+            env.cleanup()
+
+    def test_mcp_checked_and_missing_server_is_flagged(self):
+        env = Env()
+        try:
+            self._write(env.alpha, '[desired.mcp]\nrequired = ["postgres"]\n')
+            data = scan.run(env.cfg)
+            data["mcp"] = {"checked": True, "servers": [{"name": "other", "target": "x", "status": "ok", "detail": ""}]}
+            scan.save(env.cfg, data)
+            findings = check.run(env.cfg, quick=True)
+            f = next(x for x in findings if x.get("projects") == ["alpha"] and "postgres" in (x["detail"] or ""))
+            self.assertNotIn("scan --mcp", f["detail"])
+        finally:
+            env.cleanup()
+
+    def _desired_finding(self, findings):
+        """alpha's fixture already carries an unrelated contract-warning finding with
+        projects==["alpha"] (the shadowing `reviewer` agent) -- select ours by title."""
+        return next((x for x in findings if x.get("projects") == ["alpha"] and "desired" in x["title"].lower()), None)
+
+    def test_memory_missing_is_a_gap(self):
+        env = Env()
+        try:
+            os.remove(os.path.join(env.alpha, ".claude", "MEMORY.md"))
+            self._write(env.alpha, '[desired.memory]\nmax_age_days = 14\n')
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)
+            f = self._desired_finding(findings)
+            self.assertIsNotNone(f, findings)
+            self.assertIn("MEMORY.md", f["detail"])
+        finally:
+            env.cleanup()
+
+    def test_memory_older_than_max_age_reports_actual_age(self):
+        env = Env()
+        try:
+            mem = os.path.join(env.alpha, ".claude", "MEMORY.md")
+            old = time.time() - 20 * 86400
+            os.utime(mem, (old, old))
+            self._write(env.alpha, '[desired.memory]\nmax_age_days = 14\n')
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)
+            f = self._desired_finding(findings)
+            self.assertIsNotNone(f, findings)
+            self.assertIn("20", f["detail"])
+        finally:
+            env.cleanup()
+
+    def test_memory_within_max_age_is_silent(self):
+        env = Env()
+        try:
+            self._write(env.alpha, '[desired.memory]\nmax_age_days = 14\n')   # MEMORY.md is fresh by default
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)
+            self.assertIsNone(self._desired_finding(findings))
+        finally:
+            env.cleanup()
+
+    def test_docs_status_mismatch_reports_expected_and_actual(self):
+        env = Env()   # alpha's AGENTS.md is a real copy that diverged from CLAUDE.md (see _env.py)
+        try:
+            self._write(env.alpha, '[desired.docs]\nagents_md = "linked"\n')
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)
+            f = self._desired_finding(findings)
+            self.assertIsNotNone(f, findings)
+            self.assertIn("linked", f["detail"])
+            self.assertIn("diverged", f["detail"])
+        finally:
+            env.cleanup()
+
+    def test_docs_invalid_configured_value_is_a_gap(self):
+        env = Env()
+        try:
+            self._write(env.alpha, '[desired.docs]\nagents_md = "not-a-real-status"\n')
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)
+            f = self._desired_finding(findings)
+            self.assertIsNotNone(f, findings)
+            self.assertIn("not-a-real-status", f["detail"])
+        finally:
+            env.cleanup()
+
+    def test_unknown_desired_key_is_a_gap(self):
+        env = Env()
+        try:
+            self._write(env.alpha, '[desired.typo]\nrequired = ["x"]\n')
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)
+            f = self._desired_finding(findings)
+            self.assertIsNotNone(f, findings)
+            self.assertIn("typo", f["detail"])
+        finally:
+            env.cleanup()
+
+    def test_malformed_toml_does_not_crash_and_is_reported(self):
+        env = Env()
+        try:
+            self._write(env.alpha, "this is not [ valid toml at all\n===")
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)   # must not raise
+            f = self._desired_finding(findings)
+            self.assertIsNotNone(f, findings)
+            self.assertEqual(f["sev"], "warn")
         finally:
             env.cleanup()
 
