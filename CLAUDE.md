@@ -104,6 +104,28 @@ that line again. `entrypoint` does not reach `project-os export`, `project-os hu
 means the transcript predates the field (before 2026-08-12), not "no reasoning happened" —
 callers must render that as unknown (the UI's "n/a"), never as a bare zero.
 
+**Three comparison features, all read-only (2026-09).** (1) *Desired state*: a project's own
+`.project-os.toml` may carry a `[desired]` table (agents/skills/mcp required, memory
+max_age_days, docs agents_md strategy — see `repo.EXAMPLE_TOML`); `desired.gaps()` compares it
+against the scan and check's detector 9b emits ONE warn finding per project. `gaps()` must never
+raise on ANY file content: syntax errors -> `malformed`, wrong-TYPED values (including falsy ones
+like `desired = false` and non-finite `max_age_days`) -> `bad_value` with the dotted key, typos
+inside subtables -> `unknown_key`. `check --repo` ignores `[desired]` (CI has no scan cache).
+(2) *Since last check*: every finding carries a stable `id` (its i18n key — a source-scan test
+enforces uniqueness across detectors), `healthlog.append` stores the per-line identity map
+(`"ids"`, expanded `id@project`), and `healthlog.changes()` diffs a run against the previous line
+— callers MUST diff before appending (break-tested in cli and server). A baseline that is missing,
+predates `ids`, or is corrupt reads as unknown, never "no changes". `api_health_history` projects
+lines down to `{when,crit,warn,info}` — the `ids` map never ships to the sparkline. (3)
+*Permission drift*: `sessions.py` joins each Agent invocation's `name -> subagent_type` (parent
+transcript) with the subagent's own tool_use counts (`subagents/*.jsonl`; `agentId` must fullmatch
+`a<name>-<16hex>` or it is dropped), `sessions.observed_tools()` aggregates registry-wide, and
+check's detector 8c (info) reports tools observed outside a declared frontmatter `tools` set —
+skipping `*`/undeclared, homonym names, ambiguous reused names, and the harness-injected
+`check.ambient_tools` (config default; without that subtraction the detector cried wolf: 25
+findings, 0 actionable, measured). Absence of observation is silence, never "clean"; the new
+session fields stay out of export/hub/MCP via `snapshot._detail_row`'s whitelist (tested).
+
 **Server = thin HTTP over the same modules.** `server.py` defaults to `127.0.0.1` and accepts only
 localhost or a configured loopback address (LAN addresses are rejected before server creation), serves
 `static/index.html` (single file, `__TOKEN__`/`__LANG__` substituted), and requires an
