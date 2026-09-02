@@ -35,8 +35,12 @@ def run(cfg, quick=False, upstream=False):
     finding to every networked run and the trend would measure the flag, not the environment."""
     L = cfg["language"]; ch = cfg["claude_home"]
     F = []
-    def add(sev, title, detail="", fix="", projects=None, upstream=False):
-        d = {"sev": sev, "title": title, "detail": detail, "fix": fix}
+    def add(sev, title, detail="", fix="", projects=None, upstream=False, *, id):
+        """`id` is the i18n KEY of the finding (e.g. "check.dead_hooks"), stored as a stable
+        identity used by healthlog to diff runs -- keyword-only and required so no call site can
+        silently omit it. Two variants of the same detector (e.g. stale-worktrees with/without a
+        measured size) MUST pass the same id: identity, not title text, is what healthlog compares."""
+        d = {"sev": sev, "title": title, "detail": detail, "fix": fix, "id": id}
         if projects:
             d["projects"] = sorted(set(projects))
         if upstream:
@@ -54,13 +58,13 @@ def run(cfg, quick=False, upstream=False):
                 if os.path.islink(p) and not os.path.exists(p):
                     broken.append(p)
     if broken:
-        add("crit", t(L, "check.broken_links", n=len(broken)), t(L, "check.broken_links.d") + "\n    " + "\n    ".join(broken[:8]))
+        add("crit", t(L, "check.broken_links", n=len(broken)), t(L, "check.broken_links.d") + "\n    " + "\n    ".join(broken[:8]), id="check.broken_links")
 
     # 2. skill dirs without SKILL.md
     shells = [e for e in os.listdir(skills_dir) if not e.startswith(".") and os.path.isdir(os.path.join(skills_dir, e))
               and not os.path.isfile(os.path.join(skills_dir, e, "SKILL.md"))] if os.path.isdir(skills_dir) else []
     if shells:
-        add("crit", t(L, "check.shell_skills", n=len(shells)), t(L, "check.shell_skills.d", names=", ".join(shells)))
+        add("crit", t(L, "check.shell_skills", n=len(shells)), t(L, "check.shell_skills.d", names=", ".join(shells)), id="check.shell_skills")
 
     # 3. agents referencing missing skills  (rubric delegation: "skill `x`")
     present = set(os.listdir(skills_dir)) if os.path.isdir(skills_dir) else set()
@@ -81,7 +85,7 @@ def run(cfg, quick=False, upstream=False):
                     orphans.setdefault(m.group(1), []).append(os.path.join(d, f))
     if orphans:
         det = "\n    ".join(f"{k} <- {', '.join(v)}" for k, v in orphans.items())
-        add("crit", t(L, "check.orphan_skill_refs", n=len(orphans)), t(L, "check.orphan_skill_refs.d") + "\n    " + det, t(L, "fix.archive_or_restore"))
+        add("crit", t(L, "check.orphan_skill_refs", n=len(orphans)), t(L, "check.orphan_skill_refs.d") + "\n    " + det, t(L, "fix.archive_or_restore"), id="check.orphan_skill_refs")
 
     # 4. agent contract (severity from config)
     C = Contract(cfg)
@@ -95,15 +99,15 @@ def run(cfg, quick=False, upstream=False):
     docs = [(p, r) for p, r in rows if r.category == "document"]
     if inv:
         det = "\n    ".join(f"{p}/{r.name}: {r.critical[0]}" for p, r in inv[:8]) + (f"\n    … +{len(inv)-8}" if len(inv) > 8 else "")
-        add("crit", t(L, "check.invalid_agents", n=len(inv)), t(L, "check.invalid_agents.d") + "\n    " + det, t(L, "fix.agents_invalid"), projects=[p for p, _ in inv])
+        add("crit", t(L, "check.invalid_agents", n=len(inv)), t(L, "check.invalid_agents.d") + "\n    " + det, t(L, "fix.agents_invalid"), projects=[p for p, _ in inv], id="check.invalid_agents")
     if wrn:
         kinds = {}
         for _, r in wrn:
             for w in r.warnings:
                 k = _warn_kind(w); kinds[k] = kinds.get(k, 0) + 1
-        add("warn", t(L, "check.warn_agents", n=len(wrn)), t(L, "check.warn_agents.d", kinds=", ".join(f"{v} {k}" for k, v in sorted(kinds.items(), key=lambda x: -x[1]))), t(L, "fix.agents_invalid"), projects=[p for p, _ in wrn])
+        add("warn", t(L, "check.warn_agents", n=len(wrn)), t(L, "check.warn_agents.d", kinds=", ".join(f"{v} {k}" for k, v in sorted(kinds.items(), key=lambda x: -x[1]))), t(L, "fix.agents_invalid"), projects=[p for p, _ in wrn], id="check.warn_agents")
     if docs:
-        add("info", t(L, "check.docs_in_agents", n=len(docs)), t(L, "check.docs_in_agents.d") + "\n    " + ", ".join(f"{p}/{r.name}" for p, r in docs[:6]) + (" …" if len(docs) > 6 else ""), projects=[p for p, _ in docs])
+        add("info", t(L, "check.docs_in_agents", n=len(docs)), t(L, "check.docs_in_agents.d") + "\n    " + ", ".join(f"{p}/{r.name}" for p, r in docs[:6]) + (" …" if len(docs) > 6 else ""), projects=[p for p, _ in docs], id="check.docs_in_agents")
 
     # 4b. Codex agents (TOML) against the codex contract
     cx = cfg.get("codex_home") or ""
@@ -111,23 +115,23 @@ def run(cfg, quick=False, upstream=False):
         cres = Contract(cfg, tool="codex").validate_dir(os.path.join(cx, "agents"))
         cinv = [r for r in cres if r.category in ("invalid", "error")]
         if cinv:
-            add("crit", t(L, "check.codex_invalid", n=len(cinv)), "\n    ".join(f"{r.name}: {(r.critical or ['?'])[0]}" for r in cinv[:8]))
+            add("crit", t(L, "check.codex_invalid", n=len(cinv)), "\n    ".join(f"{r.name}: {(r.critical or ['?'])[0]}" for r in cinv[:8]), id="check.codex_invalid")
 
     # 4c. drift between Claude Code and Codex
     if data and os.path.isdir(cx):
         dr = DR.report(cfg, data)
         tw = [x for x in dr["twins"] if x["status"] == "diverged"]
         if tw:
-            add("warn", t(L, "check.twins", n=len(tw)), "\n    ".join(f"{x['name']}  similarity {x['similarity']}" for x in tw), t(L, "fix.twins"))
+            add("warn", t(L, "check.twins", n=len(tw)), "\n    ".join(f"{x['name']}  similarity {x['similarity']}" for x in tw), t(L, "fix.twins"), id="check.twins")
         dv = [x for x in dr["rules"] if x["status"] == "diverged"]
         cp = [x for x in dr["rules"] if x["status"] == "copy"]
         if dv:
-            add("warn", t(L, "check.rules_diverged", n=len(dv)), "\n    ".join(f"{x['project']}: {x.get('diff_lines', '?')} lines differ" for x in dv), t(L, "fix.rules"), projects=[x["project"] for x in dv])
+            add("warn", t(L, "check.rules_diverged", n=len(dv)), "\n    ".join(f"{x['project']}: {x.get('diff_lines', '?')} lines differ" for x in dv), t(L, "fix.rules"), projects=[x["project"] for x in dv], id="check.rules_diverged")
         if cp:
-            add("info", t(L, "check.rules_copy", n=len(cp)), ", ".join(x["project"] for x in cp), t(L, "fix.rules"), projects=[x["project"] for x in cp])
+            add("info", t(L, "check.rules_copy", n=len(cp)), ", ".join(x["project"] for x in cp), t(L, "fix.rules"), projects=[x["project"] for x in cp], id="check.rules_copy")
         sk = [x for x in dr["skills"] if x["status"] == "diverged"]
         if sk:
-            add("warn", t(L, "check.skill_copies", n=len(sk)), ", ".join(x["name"] for x in sk))
+            add("warn", t(L, "check.skill_copies", n=len(sk)), ", ".join(x["name"] for x in sk), id="check.skill_copies")
 
     # 5. harness hooks
     if data:
@@ -139,9 +143,9 @@ def run(cfg, quick=False, upstream=False):
             if e["hooks_broken"]:
                 brk += [f"{e['name']}/{h}" for h in e["hooks_broken"]]; broken_projects.append(e["name"])
         if brk:
-            add("crit", t(L, "check.broken_hooks", n=len(brk)), t(L, "check.broken_hooks.d") + "\n    " + "\n    ".join(brk), t(L, "fix.remove_wire"), projects=broken_projects)
+            add("crit", t(L, "check.broken_hooks", n=len(brk)), t(L, "check.broken_hooks.d") + "\n    " + "\n    ".join(brk), t(L, "fix.remove_wire"), projects=broken_projects, id="check.broken_hooks")
         if dead:
-            add("warn", t(L, "check.dead_hooks", n=len(dead)), t(L, "check.dead_hooks.d") + "\n    " + "\n    ".join(dead), t(L, "fix.wire_or_archive"), projects=dead_projects)
+            add("warn", t(L, "check.dead_hooks", n=len(dead)), t(L, "check.dead_hooks.d") + "\n    " + "\n    ".join(dead), t(L, "fix.wire_or_archive"), projects=dead_projects, id="check.dead_hooks")
 
     # 6. stale clean worktrees (prunable rows have no directory: they belong to
     # `git worktree prune`, not to this warning; unmeasured sizes must not render as "0.0 GB")
@@ -167,16 +171,16 @@ def run(cfg, quick=False, upstream=False):
             title = t(L, "check.stale_worktrees", n=len(stale), days=days, gb=f"{mb/1024:.1f}")
         else:
             title = t(L, "check.stale_worktrees.nogb", n=len(stale), days=days)
-        add("warn", title, t(L, "check.stale_worktrees.d") + "\n    " + top, t(L, "fix.worktree"), projects=[a for a, b, c, d in stale])
+        add("warn", title, t(L, "check.stale_worktrees.d") + "\n    " + top, t(L, "fix.worktree"), projects=[a for a, b, c, d in stale], id="check.stale_worktrees")
 
     # 7. MCP (only if the scan checked it)
     if data and data.get("mcp", {}).get("checked"):
         srv = data["mcp"]["servers"]
         auth = [s["name"] for s in srv if s["status"] == "auth"]; failed = [f"{s['name']} ({s['detail'][:40]})" for s in srv if s["status"] == "failed"]
         unv = [s["name"] for s in srv if s["status"] == "unverified"]
-        if auth: add("warn", t(L, "check.mcp_auth", n=len(auth)), ", ".join(auth))
-        if failed: add("crit", t(L, "check.mcp_failed", n=len(failed)), "\n    ".join(failed))
-        if unv: add("info", t(L, "check.mcp_unverified", n=len(unv)), t(L, "check.mcp_unverified.d") + "\n    " + ", ".join(unv))
+        if auth: add("warn", t(L, "check.mcp_auth", n=len(auth)), ", ".join(auth), id="check.mcp_auth")
+        if failed: add("crit", t(L, "check.mcp_failed", n=len(failed)), "\n    ".join(failed), id="check.mcp_failed")
+        if unv: add("info", t(L, "check.mcp_unverified", n=len(unv)), t(L, "check.mcp_unverified.d") + "\n    " + ", ".join(unv), id="check.mcp_unverified")
 
     # 8. never-invoked agents (slow-ish: reads history). A by-NAME comparison mixes homonyms:
     # if global `deploy` was used, a project's own never-used `deploy` was never reported. Usage
@@ -217,7 +221,7 @@ def run(cfg, quick=False, upstream=False):
         if never and items:
             names = sorted({r.name for _, r in never})
             add("info", t(L, "check.unused_agents", n=len(never)), ", ".join(names[:14]) + (" …" if len(names) > 14 else ""),
-                projects=[p for p, _ in never])
+                projects=[p for p, _ in never], id="check.unused_agents")
 
     # 8b. never-invoked skills (Claude only: skills.load() reads only claude_home + project
     # .claude dirs, so Codex skills never reach `valid_skills` -- Codex transcripts carry no
@@ -249,16 +253,16 @@ def run(cfg, quick=False, upstream=False):
         if never_sk and sitems:
             names = sorted({r["name"] for r in never_sk})
             add("info", t(L, "check.unused_skills", n=len(never_sk)), ", ".join(names[:14]) + (" …" if len(names) > 14 else ""),
-                t(L, "fix.archive_skill"), projects=[r["project"] for r in never_sk])
+                t(L, "fix.archive_skill"), projects=[r["project"] for r in never_sk], id="check.unused_skills")
 
     # 9. scan freshness
     cp = scan.cache_path(cfg)
     if os.path.exists(cp):
         age = (time.time() - os.path.getmtime(cp)) / 86400
         if age > 7:
-            add("info", t(L, "check.stale_scan", days=int(age)), "", t(L, "fix.rescan"))
+            add("info", t(L, "check.stale_scan", days=int(age)), "", t(L, "fix.rescan"), id="check.stale_scan")
     else:
-        add("warn", t(L, "check.no_scan"), "", t(L, "fix.rescan"))
+        add("warn", t(L, "check.no_scan"), "", t(L, "fix.rescan"), id="check.no_scan")
 
     # 9b. desired state: a project's own .project-os.toml can declare what its agent
     # environment SHOULD have ([desired].agents/skills/mcp/memory/docs) -- compare against what
@@ -269,7 +273,7 @@ def run(cfg, quick=False, upstream=False):
             if gp:
                 det = "\n    ".join(t(L, f"desired.gap.{g['kind']}", **{k: (", ".join(v) if k == "keys" else v) for k, v in g.items() if k != "kind"}) for g in gp)
                 add("warn", t(L, "check.desired_gaps", n=len(gp), project=p["name"]),
-                    t(L, "check.desired_gaps.d") + "\n    " + det, t(L, "fix.desired"), projects=[p["name"]])
+                    t(L, "check.desired_gaps.d") + "\n    " + det, t(L, "fix.desired"), projects=[p["name"]], id="check.desired_gaps")
 
     # 10. upstream drift (opt-in only -- see upstream.py; never emits "crit", so this can never
     # change check's exit code, and never runs unless the caller explicitly asked for it)
@@ -278,16 +282,16 @@ def run(cfg, quick=False, upstream=False):
         cmp = UP.compare(cfg)
         if cmp["unavailable"]:
             if cmp.get("reason") == "ssl":
-                add("info", t(L, "check.upstream_unavailable_ssl"), "", t(L, "fix.upstream_ssl"), upstream=True)
+                add("info", t(L, "check.upstream_unavailable_ssl"), "", t(L, "fix.upstream_ssl"), upstream=True, id="check.upstream_unavailable_ssl")
             else:
-                add("info", t(L, "check.upstream_unavailable"), upstream=True)
+                add("info", t(L, "check.upstream_unavailable"), upstream=True, id="check.upstream_unavailable")
         else:
             if cmp["missing"]:
                 add("warn", t(L, "check.upstream_missing", n=len(cmp["missing"])),
-                    t(L, "check.upstream_missing.d") + "\n    " + ", ".join(cmp["missing"]), t(L, "fix.upstream_missing"), upstream=True)
+                    t(L, "check.upstream_missing.d") + "\n    " + ", ".join(cmp["missing"]), t(L, "fix.upstream_missing"), upstream=True, id="check.upstream_missing")
             if cmp["extra"]:
                 add("info", t(L, "check.upstream_extra", n=len(cmp["extra"])),
-                    t(L, "check.upstream_extra.d") + "\n    " + ", ".join(cmp["extra"]), upstream=True)
+                    t(L, "check.upstream_extra.d") + "\n    " + ", ".join(cmp["extra"]), upstream=True, id="check.upstream_extra")
 
     F.sort(key=lambda h: SEV_ORDER.get(h["sev"], 9))
     return F

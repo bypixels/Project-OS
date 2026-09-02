@@ -973,6 +973,19 @@ class TestServer(unittest.TestCase):
             d = self.get("/api/health")
         self.assertEqual(d["findings"], [])
         self.assertIn("boom", d["error"])
+    def test_health_endpoint_includes_changes(self):
+        # F2 "since last check": seed a baseline whose only identity cannot appear in a real run
+        # ("check.nonexistent_marker"), so this call is guaranteed to report it resolved and to
+        # report at least one new item (the fixture's real findings), regardless of test order.
+        from project_os import healthlog as HL
+        self.assertTrue(HL.append(self.env.cfg, [{"sev": "warn", "title": "x", "id": "check.nonexistent_marker"}]))
+        d = self.get("/api/health")
+        self.assertIn("changes", d)
+        ch = d["changes"]
+        self.assertIsNotNone(ch)
+        resolved_ids = [i for i, _ in ch["resolved"]]
+        self.assertIn("check.nonexistent_marker", resolved_ids)
+        self.assertTrue(len(ch["new"]) > 0)
     # ---------- Fase 3: /api/health-history ----------
     def test_health_history_endpoint(self):
         from project_os import healthlog as HL

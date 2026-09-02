@@ -124,9 +124,26 @@ def main(argv=None):
         # health -- `extra` ALWAYS includes overrides/version by design, so logging it would add
         # an info finding to every networked run and the 30-day trend would measure the flag,
         # not the environment (see check.py's `add(..., upstream=True)`).
-        if not a.quick: healthlog.append(cfg, [f for f in F if not f.get("upstream")])
+        upstream_filtered = [f for f in F if not f.get("upstream")]
+        since = None
+        if not a.quick:
+            # F2 "since last check": compute BEFORE append, or the diff would be against the
+            # very line this run is about to write.
+            since = healthlog.changes(cfg, upstream_filtered)
+            healthlog.append(cfg, upstream_filtered)
         if a.json: print(json.dumps(F, ensure_ascii=False, indent=1))
-        else: print(check.render(cfg, F, color=sys.stdout.isatty()))
+        else:
+            L = cfg["language"]
+            if since is not None:
+                if not since["new"] and not since["resolved"]:
+                    print(t(L, "check.changes.none", when=since["prev_when"]))
+                else:
+                    print(t(L, "check.changes.header", when=since["prev_when"]))
+                    for _id, title in since["new"]:
+                        print("  " + t(L, "check.changes.new_line", title=title))
+                    for _id, title in since["resolved"]:
+                        print("  " + t(L, "check.changes.resolved_line", title=title))
+            print(check.render(cfg, F, color=sys.stdout.isatty()))
         if a.notify: check.notify(cfg, F)
         return 1 if any(f["sev"] == "crit" for f in F) else 0
     if a.cmd == "agents":

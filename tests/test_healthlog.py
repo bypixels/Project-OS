@@ -166,5 +166,113 @@ class TestHealthlog(unittest.TestCase):
             env.cleanup()
 
 
+class TestHealthlogIdentities(unittest.TestCase):
+    """F2 "since last check": health.jsonl lines now carry an "ids" map (identity string ->
+    title) alongside the counts, so a later run can diff what appeared/resolved. A finding
+    carrying `projects` expands to one identity per project ("<id>@<project>"); a finding
+    without one keeps the bare id; a finding lacking "id" entirely (defensive: an older or
+    foreign caller) is skipped rather than crashing the log."""
+
+    def test_identities_bare_id_without_projects(self):
+        findings = [{"sev": "warn", "title": "no scan cache", "id": "check.no_scan"}]
+        self.assertEqual(HL.identities(findings), {"check.no_scan": "no scan cache"})
+
+    def test_identities_expands_per_project(self):
+        findings = [{"sev": "warn", "title": "dead hooks", "id": "check.dead_hooks", "projects": ["alpha", "beta"]}]
+        self.assertEqual(HL.identities(findings), {"check.dead_hooks@alpha": "dead hooks", "check.dead_hooks@beta": "dead hooks"})
+
+    def test_identities_skips_findings_without_id(self):
+        findings = [{"sev": "warn", "title": "no id here"}]
+        self.assertEqual(HL.identities(findings), {})
+
+    def test_should_append_true_on_composition_change_with_equal_counts(self):
+        # Two runs with the SAME (crit, warn, info) totals but a different finding underneath
+        # must not collapse into a no-op -- the old counts-only dedup would have missed this.
+        env = Env()
+        try:
+            f1 = [{"sev": "warn", "title": "A", "id": "check.dead_hooks"}]
+            f2 = [{"sev": "warn", "title": "B", "id": "check.twins"}]
+            self.assertTrue(HL.append(env.cfg, f1))
+            self.assertTrue(HL.append(env.cfg, f2))
+            self.assertEqual(len(HL.read(env.cfg)), 2)
+        finally:
+            env.cleanup()
+
+    def test_old_format_last_line_forces_append_and_changes_is_none(self):
+        # A last line written before "ids" existed must not be compared for composition (there
+        # is nothing to compare) -- append once as a baseline migration, but `changes()` must
+        # report "unknown", never a false "nothing changed".
+        env = Env()
+        try:
+            p = HL.path(env.cfg)
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, "w", encoding="utf-8") as f:
+                f.write(json.dumps({"when": HL._now().isoformat(timespec="seconds"), "crit": 0, "warn": 0, "info": 0}) + "\n")
+            findings = [{"sev": "warn", "title": "A", "id": "check.dead_hooks"}]
+            self.assertIsNone(HL.changes(env.cfg, findings))
+            self.assertTrue(HL.append(env.cfg, findings))
+            self.assertEqual(len(HL.read(env.cfg)), 2)
+        finally:
+            env.cleanup()
+
+    def test_appended_line_carries_ids(self):
+        env = Env()
+        try:
+            HL.append(env.cfg, [{"sev": "warn", "title": "dead hooks", "id": "check.dead_hooks", "projects": ["alpha"]}])
+            lines = HL.read(env.cfg)
+            self.assertEqual(lines[0]["ids"], {"check.dead_hooks@alpha": "dead hooks"})
+        finally:
+            env.cleanup()
+
+
+class TestHealthlogDiff(unittest.TestCase):
+    """`diff()` is the pure comparison; `changes()` reads the last stored line off disk and
+    calls it. Both must treat "no baseline yet" the same as "baseline predates ids": unknown,
+    never a false "nothing changed" (same doctrine as tokens.thinking_lines == 0 elsewhere)."""
+
+    def test_diff_none_when_no_last_line(self):
+        self.assertIsNone(HL.diff(None, []))
+
+    def test_diff_none_when_last_has_no_ids(self):
+        last = {"when": "2026-01-01T00:00:00-06:00", "crit": 0, "warn": 0, "info": 0}
+        self.assertIsNone(HL.diff(last, []))
+
+    def test_diff_new_and_resolved(self):
+        last = {"when": "2026-01-01T00:00:00-06:00",
+                "ids": {"check.dead_hooks": "old dead hooks", "check.no_scan": "no scan cache"}}
+        findings = [{"sev": "warn", "title": "still dead hooks", "id": "check.dead_hooks"},
+                    {"sev": "crit", "title": "brand new twins", "id": "check.twins"}]
+        d = HL.diff(last, findings)
+        self.assertEqual(d["prev_when"], "2026-01-01T00:00:00-06:00")
+        self.assertEqual(d["new"], [["check.twins", "brand new twins"]])
+        self.assertEqual(d["resolved"], [["check.no_scan", "no scan cache"]])
+
+    def test_diff_empty_when_identical(self):
+        last = {"when": "2026-01-01T00:00:00-06:00", "ids": {"check.dead_hooks": "t"}}
+        findings = [{"sev": "warn", "title": "t", "id": "check.dead_hooks"}]
+        d = HL.diff(last, findings)
+        self.assertEqual(d["new"], [])
+        self.assertEqual(d["resolved"], [])
+
+    def test_changes_reads_last_line_from_disk(self):
+        env = Env()
+        try:
+            HL.append(env.cfg, [{"sev": "warn", "title": "old", "id": "check.no_scan"}])
+            findings = [{"sev": "warn", "title": "new", "id": "check.dead_hooks"}]
+            ch = HL.changes(env.cfg, findings)
+            self.assertIsNotNone(ch)
+            self.assertEqual(ch["new"], [["check.dead_hooks", "new"]])
+            self.assertEqual(ch["resolved"], [["check.no_scan", "old"]])
+        finally:
+            env.cleanup()
+
+    def test_changes_none_when_no_last_line(self):
+        env = Env()
+        try:
+            self.assertIsNone(HL.changes(env.cfg, [{"sev": "warn", "title": "x", "id": "check.no_scan"}]))
+        finally:
+            env.cleanup()
+
+
 if __name__ == "__main__":
     unittest.main()

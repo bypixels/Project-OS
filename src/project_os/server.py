@@ -289,13 +289,16 @@ class App:
     def api_health(self):
         """S1: the same findings `project-os check` prints, for the Health tab. Never lets the
         tab render blank — any exception from check.run() becomes an empty findings list plus
-        an `error` string, still 200."""
+        an `error` string, still 200. F2 "since last check": `changes` is computed BEFORE
+        HEALTHLOG.append (same order as cli.py's check branch), or the diff would be against
+        this very run's own line."""
         try:
             findings = CHECK.run(self.cfg, quick=False)
         except Exception as e:
             return {"findings": [], "error": str(e)}
+        changes = HEALTHLOG.changes(self.cfg, findings)
         HEALTHLOG.append(self.cfg, findings)
-        return {"findings": findings, "ran_at": datetime.now().isoformat(timespec="seconds"), "quick": False}
+        return {"findings": findings, "ran_at": datetime.now().isoformat(timespec="seconds"), "quick": False, "changes": changes}
 
     def api_health_history(self, q):
         """R12/Fase 3: the health.jsonl series for the Health tab's sparkline."""

@@ -107,6 +107,58 @@ class TestCheckProjectAttribution(unittest.TestCase):
             env.cleanup()
 
 
+class TestCheckFindingIdentity(unittest.TestCase):
+    """F2 "since last check": healthlog diffs runs by a stable per-finding identity (the i18n
+    KEY of the finding, e.g. "check.dead_hooks"), stored as "id" on every finding `add()`
+    produces. Every finding, from every detector, must carry a non-empty one -- a finding
+    silently missing "id" would vanish from the diff instead of raising."""
+    def test_every_finding_carries_a_non_empty_id(self):
+        env = Env()
+        try:
+            open(os.path.join(env.alpha, ".claude", "agents", "broken.md"), "w").write(
+                "---\nname: broken\nmodel: sonnet\n---\nBody without a description.\n")
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=False)
+            self.assertTrue(findings)
+            for f in findings:
+                self.assertIn("id", f, f"finding missing id: {f}")
+                self.assertTrue(f["id"], f"finding has an empty id: {f}")
+        finally:
+            env.cleanup()
+
+    def test_stale_worktrees_id_is_stable_across_measured_and_unmeasured_variants(self):
+        # The title text differs (".nogb" vs the GB-bearing variant), but the identity used to
+        # diff runs must not -- otherwise a worktree finding that merely gained/lost a size
+        # measurement would read as "resolved" + "new" instead of "unchanged".
+        env = Env()
+        try:
+            data = scan.run(env.cfg)
+            alpha = next(p for p in data["projects"] if p["name"] == "alpha")
+            alpha["git"] = {"branch": "main", "commit": "abc1234", "dirty": 0,
+                             "worktrees": [{"path": "/wt/clean-wt", "name": "clean-wt", "mb": None,
+                                            "mtime": "2025-07-14", "dirty": 0, "branch": "feature", "prunable": False}],
+                             "worktree_mb": 0, "worktree_mb_measured": False, "last": "2026-08-01"}
+            scan.save(env.cfg, data)
+            findings_nogb = check.run(env.cfg, quick=True)
+            stale_nogb = next(f for f in findings_nogb if "worktree" in f["title"].lower() and f["sev"] == "warn")
+
+            data2 = scan.run(env.cfg)
+            alpha2 = next(p for p in data2["projects"] if p["name"] == "alpha")
+            alpha2["git"] = {"branch": "main", "commit": "abc1234", "dirty": 0,
+                              "worktrees": [{"path": "/wt/clean-wt", "name": "clean-wt", "mb": 2048,
+                                             "mtime": "2025-07-14", "dirty": 0, "branch": "feature", "prunable": False}],
+                              "worktree_mb": 2048, "worktree_mb_measured": True, "last": "2026-08-01"}
+            scan.save(env.cfg, data2)
+            findings_gb = check.run(env.cfg, quick=True)
+            stale_gb = next(f for f in findings_gb if "worktree" in f["title"].lower() and f["sev"] == "warn")
+
+            self.assertNotEqual(stale_nogb["title"], stale_gb["title"])
+            self.assertEqual(stale_nogb["id"], stale_gb["id"])
+            self.assertEqual(stale_nogb["id"], "check.stale_worktrees")
+        finally:
+            env.cleanup()
+
+
 class TestCheckStaleWorktrees(unittest.TestCase):
     """dirty/branch are now always real (see scan._git_info); the stale-clean-worktree
     finding must (a) skip prunable rows — they have no directory, they belong to

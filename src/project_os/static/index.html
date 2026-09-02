@@ -109,6 +109,7 @@ en:{tabs:{health:"Health",agents:"Agents",live:"Live",skills:"Skills",projects:"
  recheck:"Re-check",checking:"checking…",ranAt:"last run: {t}",copy:"Copy",copied:"Copied",healthOk:"All clear.",sevCrit:"critical",sevWarn:"warnings",sevInfo:"info",
  healthTrend:"30-day trend",healthTrendNone:"not enough history yet",healthTrendAria:"critical, warning and info counts over time",
  healthActiveNow:"active now",healthNoActive:"Nothing running right now.",healthRecent:"recent",healthNoRecent:"No recent sessions.",
+ sinceLastCheck:"since last check",changesNew:"new",changesResolved:"resolved",changesNone:"No changes since last check.",changesMore:"+{n} more",
  pickSession:"Select a session.",noSessions:"No sessions in this window.",untitled:"(untitled)",topFiles:"Most-touched files",topFilesN:"{n} session(s)",
  sessStarted:"started",sessDuration:"duration",sessTurns:"turns",sessFiles:"files touched",
  sessAgents:"agents used",sessSkills:"skills used",sessCommits:"commits",sessSubagents:"subagents",subagentTokens:"Subagent tokens",
@@ -160,6 +161,7 @@ es:{tabs:{health:"Salud",agents:"Agentes",live:"En vivo",skills:"Skills",project
  recheck:"Volver a chequear",checking:"comprobando…",ranAt:"última corrida: {t}",copy:"Copiar",copied:"Copiado",healthOk:"Todo en orden.",sevCrit:"críticos",sevWarn:"avisos",sevInfo:"info",
  healthTrend:"Tendencia de 30 días",healthTrendNone:"todavía no hay suficiente historial",healthTrendAria:"conteo de críticos, avisos e info a lo largo del tiempo",
  healthActiveNow:"activo ahora",healthNoActive:"Nada corriendo en este momento.",healthRecent:"reciente",healthNoRecent:"Sin sesiones recientes.",
+ sinceLastCheck:"desde la última revisión",changesNew:"nuevos",changesResolved:"resueltos",changesNone:"Sin cambios desde la última revisión.",changesMore:"+{n} más",
  pickSession:"Seleccioná una sesión.",noSessions:"No hay sesiones en esta ventana.",
  untitled:"(sin título)",topFiles:"Archivos más tocados",topFilesN:"{n} sesión(es)",sessStarted:"inicio",sessDuration:"duración",sessTurns:"turnos",
  sessFiles:"archivos tocados",sessAgents:"agentes usados",sessSkills:"skills usados",
@@ -308,6 +310,17 @@ function healthStrip(){const live=S.live,active=(live&&live.ok?live.agents.filte
   html+=`<div style="margin-top:4px"><b>${T("healthRecent")}</b> ${recentHtml}</div>`;}
  if(S.healthHistory)html+=`<div style="margin-top:4px">${healthTrendHtml()}</div>`;
  return html+"</div>";}
+// F2 "since last check": rendered only when the API's `changes` is non-null (no baseline yet, or
+// the baseline predates the "ids" field, both read as "nothing to compare" -- see healthlog.py).
+function healthChangesHtml(){const ch=S.health&&S.health.changes;if(!ch)return"";
+ const cap=5,fmt=list=>{const shown=list.slice(0,cap).map(([,title])=>esc(title)).join(", ");
+  const more=list.length>cap?` <span class="muted">${T("changesMore",{n:list.length-cap})}</span>`:"";
+  return shown+more;};
+ if(!ch.new.length&&!ch.resolved.length)return `<div class="box info" style="margin-bottom:8px;padding:8px 10px;font-size:var(--fs-2)">${T("changesNone")}</div>`;
+ let html=`<div class="box info" style="margin-bottom:8px;padding:8px 10px;font-size:var(--fs-2)"><b>${T("sinceLastCheck")}</b>`;
+ if(ch.new.length)html+=`<div style="margin-top:4px"><b>${T("changesNew")}:</b> ${fmt(ch.new)}</div>`;
+ if(ch.resolved.length)html+=`<div style="margin-top:4px"><b>${T("changesResolved")}:</b> ${fmt(ch.resolved)}</div>`;
+ return html+"</div>";}
 // The finding list should inform without a click: one dim line of the finding's own evidence.
 const subOf=d=>{const l=String(d||"").split("\n").map(t=>t.trim()).find(Boolean)||"";return l.length>90?l.slice(0,90)+"\u2026":l;};
 function renderHealth(){if(!S.health){$("filters").innerHTML="";$("rows").innerHTML=`<div class="empty">${T("loading")}</div>`;$("detail").innerHTML="";return;}
@@ -321,7 +334,7 @@ function renderHealth(){if(!S.health){$("filters").innerHTML="";$("rows").innerH
  if(fs.length&&!fs.some((f,i)=>S.sel==="h"+i))S.sel="h0";
  let body=H.error?`<div class="box bad">${esc(H.error)}</div>`:"";
  body+=fs.length?fs.map((f,i)=>`<button class="row stack ${S.sel==="h"+i?"sel":""}" data-k="h${i}"><span class="dot d-${healthSevPill(f.sev)}"></span><span class="nn"><span class="n" style="font-family:var(--sans)">${esc(f.title)}</span><span class="sub">${esc(subOf(f.detail))}</span></span><span class="w">${healthSevLabel(f.sev)}</span></button>`).join(""):(H.error?"":`<div class="empty">${T("healthOk")}</div>`);
- $("rows").innerHTML=healthStrip()+body;
+ $("rows").innerHTML=healthChangesHtml()+healthStrip()+body;
  $("foot").textContent=`${fs.length} · ${n.crit} ${T("sevCrit")} · ${n.warn} ${T("sevWarn")} · ${n.info} ${T("sevInfo")}`;
  document.querySelectorAll(".row[data-k]").forEach(r=>r.onclick=()=>{S.sel=r.dataset.k;renderHealth();});
  renderHealthDetail(fs);}
