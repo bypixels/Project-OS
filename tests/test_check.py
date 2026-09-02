@@ -845,6 +845,129 @@ class TestCheckDesiredState(unittest.TestCase):
             env.cleanup()
 
 
+class TestCheckToolDrift(unittest.TestCase):
+    """F3, detector #8c: an agent's declared `tools` frontmatter vs. what its subagent
+    invocations' own transcripts actually show it calling (sessions.observed_tools). Info only,
+    same doctrine as #8/#8b -- measure and warn, never guess. `sessions.py`'s own parsing/join is
+    covered in test_sessions.py; these tests seed the registry directly (a session summary's
+    `agent_names`/`subagent_tool_names`, already exercised elsewhere) to isolate the detector's
+    own skip/normalize/report logic."""
+
+    def _seed(self, cfg, summaries):
+        from project_os import sessions as S
+        reg = {}
+        for i, s in enumerate(summaries):
+            fp = f"/fake/session-{i}.jsonl"
+            row = {"agent_names": {}, "subagent_tool_names": {}, "started": None}
+            row.update(s)
+            reg[fp] = {"offset": 0, "size": 0, "mtime": 0, "partial_state": {},
+                       "summary": row, "entrypoint_checked": True}
+        S._save_registry(S.registry_path(cfg), reg)
+
+    def _find(self, findings):
+        return next((f for f in findings if f["id"] == "check.tool_drift"), None)
+
+    def test_drift_found_lists_tools_outside_the_declared_boundary(self):
+        env = Env()
+        try:
+            open(os.path.join(env.alpha, ".claude", "agents", "worker.md"), "w").write(AGENT.format(n="worker"))
+            scan.save(env.cfg, scan.run(env.cfg))
+            self._seed(env.cfg, [{"agent_names": {"exec-w": "worker"},
+                                   "subagent_tool_names": {"exec-w": {"Bash": 91, "Read": 3}}}])
+            findings = check.run(env.cfg, quick=False)
+            f = self._find(findings)
+            self.assertIsNotNone(f, findings)
+            self.assertEqual(f["sev"], "info")
+            self.assertIn("worker: declared Grep, Read; observed outside: Bash (91x)", f["detail"])
+            self.assertNotIn("Read (", f["detail"])           # Read was declared -- never listed as drift
+            self.assertIn("alpha", f.get("projects", []))
+        finally:
+            env.cleanup()
+
+    def test_declared_star_is_skipped(self):
+        env = Env()
+        try:
+            open(os.path.join(env.alpha, ".claude", "agents", "wildcard.md"), "w").write(
+                "---\nname: wildcard\ndescription: full access\nmodel: sonnet\ntools: \"*\"\n---\nBody.\n")
+            scan.save(env.cfg, scan.run(env.cfg))
+            self._seed(env.cfg, [{"agent_names": {"exec-a": "wildcard"},
+                                   "subagent_tool_names": {"exec-a": {"Bash": 5}}}])
+            findings = check.run(env.cfg, quick=False)
+            f = self._find(findings)
+            self.assertIsNone(f, f)
+        finally:
+            env.cleanup()
+
+    def test_missing_tools_field_is_skipped(self):
+        env = Env()
+        try:
+            open(os.path.join(env.alpha, ".claude", "agents", "notools.md"), "w").write(
+                "---\nname: notools\ndescription: no boundary declared\nmodel: sonnet\n---\nBody.\n")
+            scan.save(env.cfg, scan.run(env.cfg))
+            self._seed(env.cfg, [{"agent_names": {"exec-a": "notools"},
+                                   "subagent_tool_names": {"exec-a": {"Bash": 5}}}])
+            findings = check.run(env.cfg, quick=False)
+            f = self._find(findings)
+            self.assertIsNone(f, f)
+        finally:
+            env.cleanup()
+
+    def test_homonym_defined_in_two_places_is_skipped(self):
+        env = Env()
+        try:
+            open(os.path.join(env.claude, "agents", "worker.md"), "w").write(AGENT.format(n="worker"))
+            open(os.path.join(env.alpha, ".claude", "agents", "worker.md"), "w").write(AGENT.format(n="worker"))
+            scan.save(env.cfg, scan.run(env.cfg))
+            self._seed(env.cfg, [{"agent_names": {"exec-w": "worker"},
+                                   "subagent_tool_names": {"exec-w": {"Bash": 91}}}])
+            findings = check.run(env.cfg, quick=False)
+            f = self._find(findings)
+            self.assertIsNone(f, f)
+        finally:
+            env.cleanup()
+
+    def test_bash_scoped_declaration_normalizes_to_its_base_tool(self):
+        env = Env()
+        try:
+            open(os.path.join(env.alpha, ".claude", "agents", "scoped.md"), "w").write(
+                "---\nname: scoped\ndescription: scoped bash only\nmodel: sonnet\ntools: \"Bash(git diff *), Read\"\n---\nBody.\n")
+            scan.save(env.cfg, scan.run(env.cfg))
+            self._seed(env.cfg, [{"agent_names": {"exec-s": "scoped"},
+                                   "subagent_tool_names": {"exec-s": {"Bash": 5}}}])
+            findings = check.run(env.cfg, quick=False)
+            f = self._find(findings)
+            self.assertIsNone(f, f)   # "Bash(git diff *)" declares the base tool "Bash" -- not drift
+        finally:
+            env.cleanup()
+
+    def test_no_observation_at_all_is_silent(self):
+        env = Env()
+        try:
+            open(os.path.join(env.alpha, ".claude", "agents", "worker.md"), "w").write(AGENT.format(n="worker"))
+            scan.save(env.cfg, scan.run(env.cfg))
+            self._seed(env.cfg, [])   # empty registry: never observed, never "used no tools"
+            findings = check.run(env.cfg, quick=False)
+            f = self._find(findings)
+            self.assertIsNone(f, f)
+        finally:
+            env.cleanup()
+
+    def test_ambiguous_name_in_registry_never_reaches_the_detector(self):
+        # sessions.observed_tools already drops a name ambiguous WITHIN one session (None
+        # subagent_type); this confirms the detector doesn't somehow still report it.
+        env = Env()
+        try:
+            open(os.path.join(env.alpha, ".claude", "agents", "worker.md"), "w").write(AGENT.format(n="worker"))
+            scan.save(env.cfg, scan.run(env.cfg))
+            self._seed(env.cfg, [{"agent_names": {"exec-w": None},
+                                   "subagent_tool_names": {"exec-w": {"Bash": 91}}}])
+            findings = check.run(env.cfg, quick=False)
+            f = self._find(findings)
+            self.assertIsNone(f, f)
+        finally:
+            env.cleanup()
+
+
 class TestCheckDetectorIdsAreUnique(unittest.TestCase):
     """Every `add(..., id="...")` call in check.py feeds healthlog.identities() (F2, "since last
     check"): if two DIFFERENT detectors ever pass the same id, identities() silently merges them

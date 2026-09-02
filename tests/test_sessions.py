@@ -253,6 +253,124 @@ class TestSubagentDisplayName(unittest.TestCase):
             rows = S._subagent_rows({fp: {"offset": 0, "tokens": S._empty_tokens()}})
             self.assertEqual(rows[0]["name"], "bench")     # the hash never reaches the user
 
+class TestAgentNameFromId(unittest.TestCase):
+    """F3 join, the derivation step verified against real transcripts: agentId is always
+    "a" + <invocation name> + "-" + <16 hex char suffix>."""
+    def test_derives_name_stripping_the_a_prefix_and_hash_suffix(self):
+        self.assertEqual(S._agent_name_from_id("aexec-f1-8c90eac07a24bee4"), "exec-f1")
+        self.assertEqual(S._agent_name_from_id("askeptic-f2-f5ee8e421520b674"), "skeptic-f2")
+
+    def test_none_or_empty_or_not_a_prefixed_returns_none(self):
+        self.assertIsNone(S._agent_name_from_id(None))
+        self.assertIsNone(S._agent_name_from_id(""))
+        self.assertIsNone(S._agent_name_from_id("no-leading-a-marker-0123456789abcdef"))
+
+
+class TestMergeLinesAgentNamesJoin(unittest.TestCase):
+    """F3 join, half 1: `_merge_lines` must record, per session, the invocation `name` ->
+    `subagent_type` mapping from parent Agent tool_use blocks -- and mark it ambiguous (None)
+    the moment the SAME name is reused for a conflicting subagent_type."""
+    def _agent_line(self, name, subagent_type):
+        return ('{"type":"assistant","timestamp":"t","message":{"role":"assistant","content":'
+                '[{"type":"tool_use","name":"Agent","input":{"subagent_type":"%s","name":"%s"}}],"usage":{}}}'
+                % (subagent_type, name))
+
+    def test_records_name_to_subagent_type(self):
+        state = S._merge_lines(S._new_state(), [self._agent_line("exec-f1", "general-purpose")])
+        self.assertEqual(state["agent_names"], {"exec-f1": "general-purpose"})
+
+    def test_no_name_in_input_leaves_agent_names_untouched(self):
+        # the shared fixture's own Agent tool_use never carries a "name" -- this is the
+        # existing/legacy shape, must not raise or fabricate an entry.
+        line = ('{"type":"assistant","timestamp":"t","message":{"role":"assistant","content":'
+                '[{"type":"tool_use","name":"Agent","input":{"subagent_type":"reviewer"}}],"usage":{}}}')
+        state = S._merge_lines(S._new_state(), [line])
+        self.assertEqual(state["agent_names"], {})
+        self.assertEqual(state["agents"], {"reviewer": 1})   # unaffected
+
+    def test_same_name_same_type_repeated_stays_unambiguous(self):
+        lines = [self._agent_line("exec-f1", "general-purpose"), self._agent_line("exec-f1", "general-purpose")]
+        state = S._merge_lines(S._new_state(), lines)
+        self.assertEqual(state["agent_names"], {"exec-f1": "general-purpose"})
+
+    def test_same_name_different_type_becomes_ambiguous(self):
+        lines = [self._agent_line("fix-f1", "general-purpose"), self._agent_line("fix-f1", "code-reviewer")]
+        state = S._merge_lines(S._new_state(), lines)
+        self.assertIsNone(state["agent_names"]["fix-f1"])
+
+    def test_ambiguity_is_sticky_across_further_lines(self):
+        lines = [self._agent_line("fix-f1", "general-purpose"), self._agent_line("fix-f1", "code-reviewer"),
+                 self._agent_line("fix-f1", "general-purpose")]
+        state = S._merge_lines(S._new_state(), lines)
+        self.assertIsNone(state["agent_names"]["fix-f1"])   # once ambiguous, stays ambiguous
+
+    def test_different_names_do_not_interfere(self):
+        lines = [self._agent_line("exec-f1", "general-purpose"), self._agent_line("skeptic-f1", "code-reviewer")]
+        state = S._merge_lines(S._new_state(), lines)
+        self.assertEqual(state["agent_names"], {"exec-f1": "general-purpose", "skeptic-f1": "code-reviewer"})
+
+
+class TestSubagentTokensCapturesAgentIdAndToolCalls(unittest.TestCase):
+    """F3 join, half 2: `_subagent_tokens` must also capture the subagent transcript's own
+    `agentId` (from its first line) and a per-tool tool_use count -- both read in the SAME pass
+    that already reads tokens, never a second file walk."""
+    def test_agent_id_and_tool_calls_captured_from_a_subagent_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            sdir = os.path.join(d, "sess", "subagents")
+            os.makedirs(sdir)
+            fp = os.path.join(sdir, "agent-aexec-f1-8c90eac07a24bee4.jsonl")
+            open(fp, "w").write(
+                '{"agentId":"aexec-f1-8c90eac07a24bee4","isSidechain":true,"message":{"role":"user","content":[]}}\n'
+                '{"isSidechain":true,"message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{}}],"usage":{}}}\n'
+                '{"isSidechain":true,"message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{}},{"type":"tool_use","name":"Read","input":{}}],"usage":{}}}\n'
+            )
+            source_path = os.path.join(d, "sess.jsonl")
+            state = S._new_state()
+            S._subagent_tokens(source_path, state)
+            entry = state["subagent_files"][fp]
+            self.assertEqual(entry["agent_id"], "aexec-f1-8c90eac07a24bee4")
+            self.assertEqual(entry["tool_calls"], {"Bash": 2, "Read": 1})
+
+    def test_agent_id_captured_only_once_even_across_incremental_reads(self):
+        with tempfile.TemporaryDirectory() as d:
+            sdir = os.path.join(d, "sess", "subagents")
+            os.makedirs(sdir)
+            fp = os.path.join(sdir, "agent-aexec-f2-786cf1f1f994415e.jsonl")
+            open(fp, "w").write('{"agentId":"aexec-f2-786cf1f1f994415e","isSidechain":true,"message":{"role":"user","content":[]}}\n')
+            source_path = os.path.join(d, "sess.jsonl")
+            state = S._new_state()
+            S._subagent_tokens(source_path, state)
+            open(fp, "a").write('{"isSidechain":true,"message":{"role":"assistant","content":[{"type":"tool_use","name":"Grep","input":{}}],"usage":{}}}\n')
+            S._subagent_tokens(source_path, state)
+            entry = state["subagent_files"][fp]
+            self.assertEqual(entry["agent_id"], "aexec-f2-786cf1f1f994415e")
+            self.assertEqual(entry["tool_calls"], {"Grep": 1})   # accumulated, not reset
+
+
+class TestSubagentToolNames(unittest.TestCase):
+    """`_subagent_tool_names` derives {name: {tool: count}} from files_state -- purely derived,
+    no new state, same pattern as `_subagent_rows`."""
+    def test_derives_name_via_agent_id(self):
+        files_state = {"/x/agent-aexec-f1-hash.jsonl": {"agent_id": "aexec-f1-8c90eac07a24bee4",
+                                                          "tool_calls": {"Bash": 91, "Read": 3}}}
+        self.assertEqual(S._subagent_tool_names(files_state), {"exec-f1": {"Bash": 91, "Read": 3}})
+
+    def test_entry_without_agent_id_contributes_nothing(self):
+        files_state = {"/x/agent-1.jsonl": {"tool_calls": {"Bash": 5}}}   # no agent_id captured
+        self.assertEqual(S._subagent_tool_names(files_state), {})
+
+    def test_entry_without_tool_calls_contributes_nothing(self):
+        files_state = {"/x/agent-aexec-f1-hash.jsonl": {"agent_id": "aexec-f1-8c90eac07a24bee4"}}
+        self.assertEqual(S._subagent_tool_names(files_state), {})
+
+    def test_two_files_deriving_the_same_name_sum_their_counts(self):
+        files_state = {
+            "/x/a.jsonl": {"agent_id": "aexec-f1-8c90eac07a24bee4", "tool_calls": {"Bash": 1}},
+            "/x/b.jsonl": {"agent_id": "aexec-f1-1111111111111111", "tool_calls": {"Bash": 2}},
+        }
+        self.assertEqual(S._subagent_tool_names(files_state), {"exec-f1": {"Bash": 3}})
+
+
 class TestSessionsRegistry(unittest.TestCase):
     def test_save_load_roundtrip_and_missing(self):
         with tempfile.TemporaryDirectory() as d:
@@ -354,6 +472,81 @@ class TestSessionsRefresh(unittest.TestCase):
         self.assertTrue(any(s["session_id"] == "sess-1" for s in items))
         self.assertFalse(any(s["session_id"] == "sess-2" for s in items))
         self.assertTrue(os.path.isfile(S.registry_path(self.env.cfg)))
+
+class TestObservedToolsEndToEnd(unittest.TestCase):
+    """Full F3 join through `refresh()` + `observed_tools()`: a parent Agent tool_use (name +
+    subagent_type) joined against its subagents/agent-a<name>-<hash>.jsonl transcript's own
+    tool_use calls, read INCREMENTALLY (offset-by-offset, same as everything else in this
+    module) -- and the ambiguity rule (a name reused for a conflicting subagent_type is dropped,
+    never guessed) holds end to end, not just at the `_merge_lines` unit level."""
+    def setUp(self):
+        self.env = Env()
+    def tearDown(self):
+        self.env.cleanup()
+
+    def _add_agent_invocation(self, env, name, subagent_type):
+        open(env.session_file, "a").write(
+            '{"type":"assistant","timestamp":"2026-08-10T09:04:00Z","cwd":"%s","message":{"role":"assistant","content":'
+            '[{"type":"tool_use","name":"Agent","input":{"subagent_type":"%s","name":"%s"}}],"usage":{}}}\n'
+            % (env.alpha, subagent_type, name))
+
+    def _new_subagent_file(self, env, agent_id, extra_lines=()):
+        sdir = os.path.join(os.path.dirname(env.session_file), env.session_id, "subagents")
+        fp = os.path.join(sdir, "agent-%s.jsonl" % agent_id)
+        content = '{"agentId":"%s","isSidechain":true,"message":{"role":"user","content":[]}}\n' % agent_id
+        content += "".join(l + "\n" for l in extra_lines)
+        open(fp, "w").write(content)
+        return fp
+
+    def _bash_line(self):
+        return '{"isSidechain":true,"message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{}}],"usage":{}}}'
+
+    def _grep_line(self):
+        return '{"isSidechain":true,"message":{"role":"assistant","content":[{"type":"tool_use","name":"Grep","input":{}}],"usage":{}}}'
+
+    def test_full_join_end_to_end_through_refresh(self):
+        self._add_agent_invocation(self.env, "exec-w", "worker")
+        self._new_subagent_file(self.env, "aexec-w-8c90eac07a24bee4", [self._bash_line(), self._bash_line()])
+        items = S.refresh(self.env.cfg, days=30)
+        s = next(x for x in items if x["session_id"] == "sess-1")
+        self.assertEqual(s["agent_names"]["exec-w"], "worker")
+        self.assertEqual(s["subagent_tool_names"]["exec-w"], {"Bash": 2})
+        observed = S.observed_tools(self.env.cfg)
+        self.assertEqual(observed["worker"], {"Bash": 2})
+
+    def test_ambiguous_name_excluded_from_observed_tools(self):
+        self._add_agent_invocation(self.env, "fix-f1", "general-purpose")
+        self._add_agent_invocation(self.env, "fix-f1", "code-reviewer")   # same name, conflicting type
+        self._new_subagent_file(self.env, "afix-f1-1111111111111111", [self._bash_line()])
+        S.refresh(self.env.cfg, days=30)
+        observed = S.observed_tools(self.env.cfg)
+        self.assertNotIn("general-purpose", observed)
+        self.assertNotIn("code-reviewer", observed)
+
+    def test_incremental_resume_two_refresh_passes_equals_one_pass(self):
+        # Same final content, built two ways: env A gets everything before a SINGLE refresh; env
+        # B (self.env) gets the subagent's tool_use lines appended and refreshed in a SECOND
+        # pass, after a first refresh already ran with just the agentId line on disk. Final
+        # observed_tools() must agree either way, proving the join survives incremental resume.
+        envA = Env()
+        try:
+            self._add_agent_invocation(envA, "exec-w", "worker")
+            self._new_subagent_file(envA, "aexec-w-8c90eac07a24bee4", [self._bash_line(), self._grep_line()])
+            S.refresh(envA.cfg, days=30)
+            observed_a = S.observed_tools(envA.cfg)
+        finally:
+            envA.cleanup()
+
+        self._add_agent_invocation(self.env, "exec-w", "worker")
+        fp = self._new_subagent_file(self.env, "aexec-w-8c90eac07a24bee4")   # agentId line only
+        S.refresh(self.env.cfg, days=30)                                      # pass 1: no tool_use yet
+        open(fp, "a").write(self._bash_line() + "\n")
+        open(fp, "a").write(self._grep_line() + "\n")
+        S.refresh(self.env.cfg, days=30)                                      # pass 2: picked up incrementally
+        observed_b = S.observed_tools(self.env.cfg)
+        self.assertEqual(observed_a, observed_b)
+        self.assertEqual(observed_b["worker"], {"Bash": 1, "Grep": 1})
+
 
 class TestGitProjectFallback(unittest.TestCase):
     """A session whose cwd is a git repo WITHOUT a .claude/ dir (so scan.py never registers it

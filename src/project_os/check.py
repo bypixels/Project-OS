@@ -2,8 +2,8 @@
 Every detector encodes a failure that once went unnoticed for weeks."""
 import os, re, json, sys, time
 from datetime import datetime
-from . import scan, harness as HAR, usage, drift as DR, skills as SK, desired as DS
-from .contract import Contract
+from . import scan, harness as HAR, usage, drift as DR, skills as SK, desired as DS, sessions as SS
+from .contract import Contract, _clean
 from .i18n import t
 from . import host
 
@@ -18,6 +18,16 @@ def _warn_kind(w):
     masked = re.sub(r"`[^`]*`", lambda m: "`" * len(m.group(0)), w)
     stops = [i for i in (masked.find("("), masked.find(":")) if i != -1]
     return w[:min(stops)].strip() if stops else w.strip()
+
+
+def _tool_base(declared_tool):
+    """One declared `tools` entry -> its base tool name: a scoped permission like
+    "Bash(git diff *)" declares (and therefore permits) the base tool "Bash", same as a plain
+    "Bash" entry would. Used by detector #8c (observed vs. declared tools) to normalize the
+    declared side before comparing it against observed tool_use `name`s, which are always bare."""
+    t = declared_tool.strip()
+    idx = t.find("(")
+    return t[:idx].strip() if idx != -1 else t
 
 
 def run(cfg, quick=False, upstream=False):
@@ -254,6 +264,40 @@ def run(cfg, quick=False, upstream=False):
             names = sorted({r["name"] for r in never_sk})
             add("info", t(L, "check.unused_skills", n=len(never_sk)), ", ".join(names[:14]) + (" …" if len(names) > 14 else ""),
                 t(L, "fix.archive_skill"), projects=[r["project"] for r in never_sk], id="check.unused_skills")
+
+    # 8c. observed vs declared tools ("permission drift"): an agent's frontmatter `tools` is
+    # what it's ALLOWED to call; sessions.observed_tools(cfg) is what its subagent invocations'
+    # own transcripts actually show it calling. Info only, same doctrine as #8/#8b -- a false
+    # accusation is worse than staying silent, so this skips anything it can't attribute cleanly:
+    # no `tools` declared (or "*", i.e. no boundary to drift from), and any agent NAME defined in
+    # more than one place (global + project, or two projects) -- observed_tools() is keyed by
+    # subagent_type alone, so a homonym's observed calls can't be told apart between its copies.
+    if not quick and data:
+        observed = SS.observed_tools(cfg)
+        tool_rows = [(p, r) for p, r in rows if r.is_agent]
+        name_places = {}
+        for p, r in tool_rows:
+            name_places.setdefault(r.name, set()).add(p)
+        drift_lines, drift_projects = [], []
+        for p, r in tool_rows:
+            if len(name_places.get(r.name, set())) > 1:
+                continue                                   # homonym: attribution ambiguous
+            declared_raw = _clean(r.fields.get("tools"))
+            if not declared_raw or declared_raw == "*":
+                continue                                   # no boundary declared -- nothing to drift from
+            declared = {_tool_base(x) for x in declared_raw.split(",") if x.strip()}
+            seen = observed.get(r.name)
+            if not seen:
+                continue                                   # no observation at all -- silent, not clean
+            extra = {tool: n for tool, n in seen.items() if tool not in declared}
+            if extra:
+                top = ", ".join(f"{tool} ({n}x)" for tool, n in sorted(extra.items(), key=lambda x: -x[1]))
+                drift_lines.append(f"{r.name}: declared {', '.join(sorted(declared)) or '(none)'}; observed outside: {top}")
+                drift_projects.append(p)
+        if drift_lines:
+            add("info", t(L, "check.tool_drift", n=len(drift_lines)),
+                t(L, "check.tool_drift.d") + "\n    " + "\n    ".join(drift_lines),
+                t(L, "fix.tool_drift"), projects=drift_projects, id="check.tool_drift")
 
     # 9. scan freshness
     cp = scan.cache_path(cfg)

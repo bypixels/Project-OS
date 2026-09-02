@@ -65,6 +65,24 @@ class TestExportActivity(unittest.TestCase):
         self.assertNotIn("subagent_rows", dumped)
         self.assertNotIn("rm -rf", dumped)
 
+    def test_export_activity_detail_never_leaks_agent_names_or_subagent_tool_names(self):
+        # F3 "permission drift" fields (sessions.py): local-only, same discipline as
+        # last_tools/subagent_rows above -- _detail_row is an explicit whitelist and must not
+        # grow to include them, or a subagent's per-invocation tool_use activity would leave
+        # the machine through `project-os export` / hub / the MCP server.
+        fake_session = {"project": "alpha", "started": "2026-08-10T09:00", "ended": None,
+                         "duration_s": 60, "turns": 1, "commits": 0, "branch": "main",
+                         "files_touched": [], "agents": {}, "skills": {},
+                         "tokens": {"in": 1, "out": 1}, "subagents": 0,
+                         "agent_names": {"exec-w": "worker"},
+                         "subagent_tool_names": {"exec-w": {"Bash": 91}}}
+        with mock.patch.object(SESS, "load", return_value=[fake_session]):
+            out = SNAP.export_activity(self.env.cfg, detail=True)
+        dumped = json.dumps(out)
+        self.assertNotIn("agent_names", dumped)
+        self.assertNotIn("subagent_tool_names", dumped)
+        self.assertNotIn("exec-w", dumped)
+
     def test_detail_row_tokens_are_exact_historical_whitelist(self):
         row = SNAP._detail_row({"project": "alpha", "tokens": {
             "in": 1, "out": 2, "cache_read": 3, "cache_write": 4,

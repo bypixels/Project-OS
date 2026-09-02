@@ -15,6 +15,15 @@ best-effort per line — a bad line is skipped, never fatal.
 Retention: summaries survive their source file disappearing (rotation is normal; history is
 the point, same as usage.py). They are pruned only once `ended` is older than
 cfg.activity.retention_days (default 365).
+
+F3 "permission drift": each summary also carries `agent_names` (the session's own Agent
+invocations, joined by their user-chosen `name` to the `subagent_type` that was actually
+launched -- None where a name was reused within the session for conflicting subagent_types, i.e.
+ambiguous) and `subagent_tool_names` (per invocation `name`, the tool_use calls observed in that
+subagent's own transcript, derived from its `agentId`). `observed_tools(cfg)` joins the two
+across the whole registry into {subagent_type: {tool: count}} -- read-only, no rescan. Both are
+observation-only: a session recorded before this existed, or with no subagents/ data, simply
+carries nothing here, never a fabricated "no tools used".
 """
 import json, os, re, tempfile, threading, time
 
@@ -29,12 +38,12 @@ SUMMARY_FIELDS = ("session_id", "project", "cwd_changed", "cwd", "branch", "tool
                    "started", "ended", "duration_s", "turns", "tool_calls", "files_touched",
                    "agents", "skills", "commits", "tokens", "subagent_tokens", "subagents",
                    "sidechain_lines", "version", "source_path", "size", "mtime", "offset",
-                   "entrypoint", "last_tools", "subagent_rows")
+                   "entrypoint", "last_tools", "subagent_rows", "agent_names", "subagent_tool_names")
 
 PARTIAL_STATE_FIELDS = ("session_id", "cwd_counts", "branch", "version", "title", "started",
                         "ended", "turns", "tool_calls", "files_touched", "agents", "skills",
                         "commits", "tokens", "sidechain_lines", "subagent_files", "entrypoint",
-                        "last_tools")
+                        "last_tools", "agent_names")
 
 _LAST_TOOLS_CAP = 8
 _TOOL_DETAIL_CAP = 120
@@ -101,6 +110,8 @@ def _hydrate_state(state):
     state.setdefault("entrypoint", None)
     if not isinstance(state.get("last_tools"), list):
         state["last_tools"] = []
+    if not isinstance(state.get("agent_names"), dict):
+        state["agent_names"] = {}
     _hydrate_tokens(state.setdefault("tokens", _empty_tokens()))
     return state
 
@@ -109,7 +120,7 @@ def _new_state():
     return {"session_id": None, "cwd_counts": {}, "branch": None, "version": None, "title": None,
             "started": None, "ended": None, "turns": 0, "tool_calls": {}, "files_touched": [],
             "agents": {}, "skills": {}, "commits": 0, "tokens": _empty_tokens(), "sidechain_lines": 0,
-            "entrypoint": None, "last_tools": []}
+            "entrypoint": None, "last_tools": [], "agent_names": {}}
 
 
 def _tool_detail(name, inp):
@@ -179,6 +190,17 @@ def _merge_lines(state, lines):
                 inp = b.get("input") or {}
                 if name == "Agent" and inp.get("subagent_type"):
                     k = inp["subagent_type"]; state["agents"][k] = state["agents"].get(k, 0) + 1
+                    # F3 join, half 1: the user-chosen `name` of THIS invocation -> its subagent_type
+                    # ("exec-f1" -> "general-purpose"). A `name` reused within this SAME session
+                    # for a DIFFERENT subagent_type is ambiguous -- which of the two the matching
+                    # subagents/agent-a<name>-<hash>.jsonl transcript belongs to can't be told apart
+                    # by name alone, so it is marked None (never guessed) and stays None once set.
+                    an = inp.get("name")
+                    if an:
+                        if an not in state["agent_names"]:
+                            state["agent_names"][an] = k
+                        elif state["agent_names"][an] not in (None, k):
+                            state["agent_names"][an] = None
                 if name == "Skill" and inp.get("skill"):
                     k = inp["skill"]; state["skills"][k] = state["skills"].get(k, 0) + 1
                 if name in FILE_TOOLS and inp.get("file_path") and inp["file_path"] not in state["files_touched"]:
@@ -292,6 +314,8 @@ def _subagent_tokens(source_path, state):
         if entry is None or size < entry.get("offset", 0):
             entry = {"offset": 0, "tokens": _empty_tokens()}    # new, or shrunk/rotated: reparse from scratch
         _hydrate_tokens(entry.setdefault("tokens", _empty_tokens()))
+        entry.setdefault("tool_calls", {})
+        entry.setdefault("agent_id", None)
         try:
             lines, new_offset = _read_new_lines(fp, entry["offset"])
         except Exception:
@@ -301,6 +325,13 @@ def _subagent_tokens(source_path, state):
                 d2 = json.loads(raw)
             except Exception:
                 continue
+            # F3 join, half 2: a subagent transcript's very first line carries its own agentId
+            # ("aexec-f1-8c90eac07a24bee4") -- captured once and kept, same idea as `offset`. A
+            # file whose entry already advanced past its first line before this field existed
+            # never gets a retroactive look (no backfill, by design): it simply stays unobserved,
+            # same honesty rule as entrypoint would need WITHOUT _backfill_entrypoint.
+            if entry["agent_id"] is None and d2.get("agentId"):
+                entry["agent_id"] = d2["agentId"]
             # Asymmetry, deliberate: the PARENT transcript's R6 skip excludes isSidechain lines
             # because they duplicate work already counted elsewhere in that same transcript. A
             # SUBAGENT transcript carries no such duplication -- every line in it is marked
@@ -312,6 +343,11 @@ def _subagent_tokens(source_path, state):
             entry["tokens"]["out"] += usg.get("output_tokens", 0) or 0
             entry["tokens"]["cache_read"] += usg.get("cache_read_input_tokens", 0) or 0
             entry["tokens"]["cache_write"] += usg.get("cache_creation_input_tokens", 0) or 0
+            content2 = (d2.get("message") or {}).get("content")
+            if isinstance(content2, list):
+                for b in content2:
+                    if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name"):
+                        tn = b["name"]; entry["tool_calls"][tn] = entry["tool_calls"].get(tn, 0) + 1
             if "output_tokens_details" in usg:
                 entry["tokens"]["thinking_lines"] += 1
                 otd = usg.get("output_tokens_details") or {}
@@ -325,6 +361,18 @@ def _subagent_tokens(source_path, state):
 
 
 _HASH_SUFFIX_RE = re.compile(r"-[0-9a-f]{16}$", re.IGNORECASE)
+
+
+def _agent_name_from_id(agent_id):
+    """F3 join, the derivation step: a subagent transcript's `agentId` is always
+    "a" + <invocation name> + "-" + <16 hex char suffix> (verified against real transcripts --
+    e.g. "aexec-f1-8c90eac07a24bee4" -> "exec-f1", matching that invocation's own meta.json
+    "name" exactly). Reuses the same hash-suffix shape _subagent_display_name already strips.
+    Returns None for anything that doesn't look like that shape -- never guesses."""
+    if not agent_id or not isinstance(agent_id, str) or not agent_id.startswith("a"):
+        return None
+    name = _HASH_SUFFIX_RE.sub("", agent_id[1:])
+    return name or None
 
 
 def _subagent_display_name(fp):
@@ -363,6 +411,29 @@ def _subagent_rows(files_state):
         rows.append({"name": name, "tokens": total})
     rows.sort(key=lambda r: (r["tokens"] is None, -(r["tokens"] or 0)))
     return rows
+
+
+def _subagent_tool_names(files_state):
+    """{invocation name: {tool_base_name: count}} -- F3 join, half 2's output: one bucket per
+    subagent transcript whose `agentId` was captured, keyed by the invocation `name` derived from
+    it (_agent_name_from_id), purely derived like _subagent_rows (no new state). A file whose
+    agent_id was never captured (offset already past its first line before this field existed, or
+    a malformed transcript) contributes nothing for that file -- absence of observation, never a
+    fabricated empty entry. Two subagent files can legitimately derive the SAME name (e.g. the
+    same invocation name used twice in one session, or a rotated/reparsed file) -- their tool
+    counts are summed, not overwritten."""
+    result = {}
+    for entry in (files_state or {}).values():
+        if not isinstance(entry, dict):
+            continue
+        name = _agent_name_from_id(entry.get("agent_id"))
+        calls = entry.get("tool_calls")
+        if not name or not calls:
+            continue
+        bucket = result.setdefault(name, {})
+        for tool, n in calls.items():
+            bucket[tool] = bucket.get(tool, 0) + (n or 0)
+    return result
 
 
 def _to_local_iso(ts):
@@ -537,6 +608,31 @@ def load(cfg):
     return sorted((e["summary"] for e in reg.values()), key=lambda s: s.get("started") or "", reverse=True)
 
 
+def observed_tools(cfg):
+    """{subagent_type: {tool_base_name: count}} -- what a subagent invocation ACTUALLY called,
+    aggregated across every session in the registry (F3, "permission drift"). Registry read only:
+    no rescan, no network (same contract as `load`). Per session, joins `agent_names` (invocation
+    name -> subagent_type, or None when that name was reused within the SAME session for a
+    conflicting subagent_type -- ambiguous, dropped rather than guessed) against
+    `subagent_tool_names` (invocation name -> observed tool counts from that subagent's own
+    transcript). A session with no subagents/ data at all, or one recorded before this field
+    existed, simply contributes nothing -- absence of observation, never "used no tools"."""
+    result = {}
+    for summary in load(cfg):
+        agent_names = summary.get("agent_names") or {}
+        tool_names = summary.get("subagent_tool_names") or {}
+        for name, subagent_type in agent_names.items():
+            if not subagent_type:
+                continue                          # ambiguous within this session -- never guess
+            calls = tool_names.get(name)
+            if not calls:
+                continue
+            bucket = result.setdefault(subagent_type, {})
+            for tool, n in calls.items():
+                bucket[tool] = bucket.get(tool, 0) + (n or 0)
+    return result
+
+
 def _finalize(state, source_path, roots, offset, cfg_roots=()):
     from datetime import datetime
     roots = roots or {}
@@ -584,4 +680,6 @@ def _finalize(state, source_path, roots, offset, cfg_roots=()):
         "subagent_tokens": subagent_tokens, "subagents": _subagents_count(source_path),
         "last_tools": state.get("last_tools") or [],
         "subagent_rows": _subagent_rows(state.get("subagent_files")),
+        "agent_names": state.get("agent_names") or {},
+        "subagent_tool_names": _subagent_tool_names(state.get("subagent_files")),
     }
