@@ -464,6 +464,34 @@ class TestCheckSinceLastCheckProjectQualifier(unittest.TestCase):
         finally:
             os.unlink(cfgp); env.cleanup()
 
+    def test_resolved_multi_project_finding_renders_distinct_lines_per_project(self):
+        """Same "@"-qualified identity split as the `new` path above, but for `since["resolved"]`
+        (cli.py's second `_changes_line` call, ~line 155): a multi-project finding that
+        disappears must render one "resolved: ... — <project>" line per project, not a single
+        unqualified line that can't say which project resolved."""
+        from project_os import cli as CLI, check as CHECK
+        env = Env()
+        cfgp = self._cfg_file(env)
+        try:
+            scan.save(env.cfg, scan.run(env.cfg))
+            with mock.patch.object(CHECK, "run", return_value=[]):
+                with redirect_stdout(io.StringIO()):
+                    CLI.main(["--config", cfgp, "check"])
+            multi = {"id": "check.invalid_agents", "sev": "crit", "title": "3 invalid agents",
+                     "detail": "", "fix": "", "projects": ["alpha", "beta"]}
+            with mock.patch.object(CHECK, "run", return_value=[multi]):
+                with redirect_stdout(io.StringIO()):
+                    CLI.main(["--config", cfgp, "check"])
+            with mock.patch.object(CHECK, "run", return_value=[]):
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    CLI.main(["--config", cfgp, "check"])
+            out = buf.getvalue()
+            self.assertIn("resolved: 3 invalid agents — alpha", out)
+            self.assertIn("resolved: 3 invalid agents — beta", out)
+        finally:
+            os.unlink(cfgp); env.cleanup()
+
 
 class TestCheckSinceLastCheckOrdering(unittest.TestCase):
     """healthlog.changes(cfg, findings) must run BEFORE healthlog.append(cfg, findings) in cli.py's

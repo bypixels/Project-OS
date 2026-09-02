@@ -15,7 +15,7 @@ scalar was expected, etc.) both become a gap in the returned list instead of an 
 `check.run()` calls this once per project with no try/except of its own, so a crash here would
 take down the whole `check` run, not just this project's row.
 """
-import os, time, tomllib
+import math, os, time, tomllib
 from . import drift
 
 _KNOWN_TABLES = {"agents", "skills", "mcp", "memory", "docs"}
@@ -32,11 +32,14 @@ _DOC_STATUSES = {"linked", "copy", "bridge", "diverged", "missing", "only-agents
 def load(root):
     """The `[desired]` table of `<root>/.project-os.toml`. Empty dict if the file is absent or
     has no `[desired]` table -- callers must treat that as silent opt-out, never a gap. If the
-    file exists but is not valid TOML, this must not raise: it returns `{"_malformed": True}` so
-    `gaps()` can surface it as a single gap instead of `check` crashing on a broken file. The
-    `[desired]` key itself can also be present but not a table at all (e.g. `desired = 1`) --
-    that is returned as-is (not coerced to `{}`) so `gaps()` can flag it too; only a genuinely
-    ABSENT or empty table collapses to `{}`, the silent opt-out case."""
+    file is not even valid TOML (a genuine syntax error), this must not raise: it returns
+    `{"_malformed": True}` so `gaps()` can surface it as a single `malformed` gap instead of
+    `check` crashing on a broken file. The `[desired]` key itself can also be present in
+    otherwise-VALID TOML but not be a table at all (e.g. `desired = 1` or `desired = "x"`) --
+    that is returned as-is (not coerced to `{}` and not treated as `_malformed`, since the file
+    parsed fine) so `gaps()` can flag it as a `bad_value` instead, a different diagnosis from a
+    syntax error; only a genuinely ABSENT or empty table collapses to `{}`, the silent opt-out
+    case."""
     p = os.path.join(root, ".project-os.toml")
     if not os.path.isfile(p):
         return {}
@@ -75,18 +78,23 @@ def _required_list(table, table_name, out):
 def gaps(cfg, project_entry, data):
     """Gap dicts for one project's declared [desired] table against the scan `data`. Each gap is
     {"kind": ..., ...fields for that kind}; empty list if there is no [desired] table (or it is
-    empty) -- that is the "opt-out, stay silent" case `check.py` relies on. Never raises: any
-    wrong-typed value anywhere in the table (a subtable that isn't a table, `required` that isn't
-    a list of str, `max_age_days` that isn't a non-negative number, `agents_md` that isn't a
-    string, or `[desired]` itself not being a table) becomes a `bad_value` gap naming the dotted
-    key instead of a crash, and a typo'd key INSIDE a known subtable is reported via the same
-    `unknown_key` gap as a typo'd top-level table -- it must never disappear silently."""
+    empty) -- that is the "opt-out, stay silent" case `check.py` relies on. Never raises: a
+    genuine TOML syntax error is the only case that becomes `malformed`; every wrong-typed value
+    in otherwise-valid TOML (a subtable that isn't a table, `required` that isn't a list of str,
+    `max_age_days` that isn't a finite non-negative number, `agents_md` that isn't a string, or
+    `[desired]` itself not being a table) becomes a `bad_value` gap naming the dotted key instead
+    of a crash -- `malformed` and `bad_value` are deliberately different diagnoses (syntax error
+    vs. wrong type) so the message points the user at the right fix. A typo'd key INSIDE a known
+    subtable is reported via the same `unknown_key` gap as a typo'd top-level table -- it must
+    never disappear silently."""
     root = project_entry["path"]
     desired = load(root)
     if not desired:
         return []
-    if not isinstance(desired, dict) or desired.get("_malformed"):
+    if isinstance(desired, dict) and desired.get("_malformed"):
         return [{"kind": "malformed"}]
+    if not isinstance(desired, dict):
+        return [{"kind": "bad_value", "field": "desired"}]
 
     out = []
     unknown = set(desired) - _KNOWN_TABLES
@@ -139,19 +147,31 @@ def gaps(cfg, project_entry, data):
         max_age = mem["max_age_days"]
         # bool is an int subclass in Python -- isinstance(True, int) is True -- so it must be
         # excluded explicitly, ahead of the numeric check, or `max_age_days = true` would pass.
-        if isinstance(max_age, bool) or not isinstance(max_age, (int, float)) or max_age < 0:
+        # nan/inf must be rejected too: `nan < 0` is False and every later comparison against a
+        # non-finite value (`age_days > max_age`) is also False, so without `math.isfinite` the
+        # staleness check would silently never fire again instead of erroring loudly now.
+        if (isinstance(max_age, bool) or not isinstance(max_age, (int, float))
+                or max_age < 0 or not math.isfinite(max_age)):
             out.append({"kind": "bad_value", "field": "memory.max_age_days"})
         else:
             mpath = os.path.join(root, ".claude", "MEMORY.md")
             if not os.path.isfile(mpath):
                 out.append({"kind": "memory_missing"})
             else:
-                # Compare fractional days, not the int-truncated value -- truncating first (the
-                # old behavior) tolerated up to just under a full extra day past max_age before
-                # ever reporting stale. Only the displayed value is rounded down to whole days.
-                age_days = (time.time() - os.path.getmtime(mpath)) / 86400
-                if age_days > max_age:
-                    out.append({"kind": "memory_stale", "age_days": int(age_days), "max_age_days": max_age})
+                try:
+                    mtime = os.path.getmtime(mpath)
+                except OSError:
+                    # TOCTOU: deleted between the isfile() check above and here. Same gap as if
+                    # isfile() itself had caught the deletion -- accurate at this instant.
+                    out.append({"kind": "memory_missing"})
+                else:
+                    # Compare fractional days, not an int-truncated value -- truncating first
+                    # tolerated up to just under a full extra day past max_age before ever
+                    # reporting stale. The displayed value is rounded to one decimal, not
+                    # truncated to a whole day, for the same reason (14.3 must not read as 14).
+                    age_days = (time.time() - mtime) / 86400
+                    if age_days > max_age:
+                        out.append({"kind": "memory_stale", "age_days": round(age_days, 1), "max_age_days": max_age})
 
     docs = subtable("docs")
     if docs is not None and "agents_md" in docs:

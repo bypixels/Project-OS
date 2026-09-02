@@ -7,7 +7,7 @@ from collections import Counter
 from unittest import mock
 import _helpers  # noqa
 from _env import Env, AGENT
-from project_os import scan, check, usage
+from project_os import scan, check, usage, desired
 
 
 class TestCheckUpstream(unittest.TestCase):
@@ -603,6 +603,108 @@ class TestCheckDesiredState(unittest.TestCase):
             f = self._desired_finding(findings)
             self.assertIsNotNone(f, findings)
             self.assertEqual(f["sev"], "warn")
+        finally:
+            env.cleanup()
+
+    def test_top_level_desired_scalar_is_bad_value_not_malformed(self):
+        """`desired = "x"` is perfectly valid TOML -- the file parses fine, it is just the
+        wrong type. Reporting it as "could not be parsed as valid TOML" (the `malformed` gap)
+        sends the user hunting a syntax error that doesn't exist; it must be `bad_value`
+        instead, same family as every other wrong-typed `[desired]` value."""
+        env = Env()
+        try:
+            self._write(env.alpha, 'desired = "x"\n')
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)
+            f = self._desired_finding(findings)
+            self.assertIsNotNone(f, findings)
+            self.assertNotIn("could not be parsed", f["detail"])
+            self.assertIn("wrong type", f["detail"])
+        finally:
+            env.cleanup()
+
+    def test_genuinely_malformed_toml_still_reports_malformed(self):
+        """Contrast with the case above: TOML that does NOT parse at all must keep the
+        `malformed` wording -- that one really is a syntax error."""
+        env = Env()
+        try:
+            self._write(env.alpha, "this is not [ valid toml at all\n===")
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)
+            f = self._desired_finding(findings)
+            self.assertIsNotNone(f, findings)
+            self.assertIn("could not be parsed", f["detail"])
+        finally:
+            env.cleanup()
+
+    def test_memory_max_age_days_nan_is_bad_value_not_silently_disabled(self):
+        """`nan` passes the old numeric filter (`nan < 0` is False) and every comparison against
+        it (`age_days > nan`) is also False -- so the staleness check silently never fires again,
+        forever. It must be rejected up front as `bad_value`, same as a string or a bool."""
+        env = Env()
+        try:
+            self._write(env.alpha, "[desired.memory]\nmax_age_days = nan\n")
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)
+            f = self._desired_finding(findings)
+            self.assertIsNotNone(f, findings)
+            self.assertIn("memory.max_age_days", f["detail"])
+        finally:
+            env.cleanup()
+
+    def test_memory_max_age_days_inf_is_bad_value_not_silently_disabled(self):
+        env = Env()
+        try:
+            self._write(env.alpha, "[desired.memory]\nmax_age_days = inf\n")
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)
+            f = self._desired_finding(findings)
+            self.assertIsNotNone(f, findings)
+            self.assertIn("memory.max_age_days", f["detail"])
+        finally:
+            env.cleanup()
+
+    def test_memory_stale_age_is_displayed_with_one_decimal_not_truncated(self):
+        """A 14.3-day-old MEMORY.md against max=14 must not read as `14 day(s) old (max 14)` --
+        that display truncation makes an expired file look fresh. The int-truncated int(age_days)
+        must become a one-decimal round(age_days, 1)."""
+        env = Env()
+        try:
+            mem = os.path.join(env.alpha, ".claude", "MEMORY.md")
+            old = time.time() - 14.3 * 86400
+            os.utime(mem, (old, old))
+            self._write(env.alpha, "[desired.memory]\nmax_age_days = 14\n")
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)
+            f = self._desired_finding(findings)
+            self.assertIsNotNone(f, findings)
+            self.assertIn("14.3", f["detail"])
+            self.assertNotIn("14 day(s) old (max 14)", f["detail"])
+        finally:
+            env.cleanup()
+
+    def test_memory_getmtime_toctou_reports_missing_not_crash(self):
+        """MEMORY.md passes `os.path.isfile` but is deleted before `os.path.getmtime` runs
+        (a real TOCTOU race, e.g. another process cleaning up) -- the OSError must not crash
+        `desired.gaps()`; it must fall back to the same `memory_missing` gap the file would
+        have gotten if `isfile` itself had caught the deletion.
+
+        Calls `desired.gaps()` directly (not `check.run()`): `harness.py`'s unrelated
+        `project_state()` also stats the same MEMORY.md path without a try/except, and going
+        through `check.run()` would trip over that pre-existing gap too -- out of scope here,
+        only `desired.py` is being fixed."""
+        env = Env()
+        try:
+            mem = os.path.join(env.alpha, ".claude", "MEMORY.md")
+            self._write(env.alpha, "[desired.memory]\nmax_age_days = 14\n")
+            data = scan.run(env.cfg)
+            scan.save(env.cfg, data)
+            p = next(pr for pr in data["projects"] if pr["name"] == "alpha")
+
+            with mock.patch("os.path.getmtime", side_effect=OSError("deleted between isfile() and getmtime()")):
+                gaps = desired.gaps(env.cfg, p, data)   # must not raise
+
+            self.assertEqual(gaps, [{"kind": "memory_missing"}])
         finally:
             env.cleanup()
 

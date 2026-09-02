@@ -1,4 +1,5 @@
 import os, json, tempfile, unittest
+from unittest import mock
 import _helpers  # noqa
 from project_os import harness as H
 
@@ -52,4 +53,23 @@ class TestHarness(unittest.TestCase):
         s = H.summarize([{"tokens_k": 200, "consequential": 2}, {"tokens_k": 100, "consequential": 0}, {"tokens_k": None, "consequential": 1}])
         self.assertEqual((s["runs"], s["consequential"], s["tokens_k_measured"], s["k_per_consequential"]), (3, 3, 300, 150))
     def test_missing_runlog(self): self.assertEqual(H.read_runlog("/no/x.md"), [])
+
+    def test_memory_getmtime_toctou_does_not_crash(self):
+        """MEMORY.md passes os.path.isfile (line 34/46) but is deleted before os.path.getmtime
+        runs on it (line 56) -- a real TOCTOU race. Must not crash project_state(); memory_days
+        must fall back to None, the same value it already gets when isfile() itself catches the
+        absence (see the ternary at line 56 today)."""
+        with tempfile.TemporaryDirectory() as d:
+            root = project(d)
+            mem = os.path.join(root, ".claude", "MEMORY.md")
+            real_getmtime = os.path.getmtime
+
+            def flaky_getmtime(path):
+                if path == mem:
+                    raise OSError("deleted between isfile() and getmtime()")
+                return real_getmtime(path)
+
+            with mock.patch("os.path.getmtime", side_effect=flaky_getmtime):
+                e = H.project_state(root)   # must not raise
+            self.assertIsNone(e["memory_days"])
 if __name__ == "__main__": unittest.main()

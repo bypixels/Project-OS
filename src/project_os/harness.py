@@ -27,6 +27,18 @@ def _is_helper(h):
     return h.startswith(("test-", "test_", "_", "lib-", "lib_", "common")) or h.endswith((".test.sh", "_test.sh"))
 
 
+def _memory_days(mem):
+    """Days since MEMORY.md's mtime, or None if it doesn't exist at all -- also None if it
+    existed at the isfile() check but was deleted before getmtime() ran (TOCTOU): same value
+    the caller already gets when isfile() itself catches the absence, never a crash."""
+    if not os.path.isfile(mem):
+        return None
+    try:
+        return int((time.time() - os.path.getmtime(mem)) / 86400)
+    except OSError:
+        return None
+
+
 def project_state(root):
     c = os.path.join(root, ".claude")
     has = {"CLAUDE.md": os.path.isfile(os.path.join(root, "CLAUDE.md")),
@@ -53,7 +65,7 @@ def project_state(root):
     return {"level": level, "has": has, "missing": missing, "hooks": on_disk,
             "hooks_active": sorted(h for h in on_disk if h in wired), "hooks_dead": dead,
             "hooks_broken": broken, "hooks_helpers": helpers, "rules": n_rules, "workflows": n_wf,
-            "memory_days": int((time.time() - os.path.getmtime(mem)) / 86400) if os.path.isfile(mem) else None,
+            "memory_days": _memory_days(mem),
             "runlog": os.path.isfile(os.path.join(c, "harness-runs.md"))}
 
 
