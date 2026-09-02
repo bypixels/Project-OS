@@ -8,11 +8,24 @@ Vocabulary (all sub-tables optional):
     [desired.mcp]     required = [...]   # by name in data["mcp"]["servers"]
     [desired.memory]  max_age_days = N   # <root>/.claude/MEMORY.md, live-read (like drift.rules_file)
     [desired.docs]    agents_md = "..."  # compared to drift.rules_file(root)["status"]
+
+`gaps()` never raises, no matter what `.project-os.toml` contains: syntactically invalid TOML
+and structurally valid-but-wrong-typed TOML (a string where a list was expected, a table where a
+scalar was expected, etc.) both become a gap in the returned list instead of an exception --
+`check.run()` calls this once per project with no try/except of its own, so a crash here would
+take down the whole `check` run, not just this project's row.
 """
 import os, time, tomllib
 from . import drift
 
 _KNOWN_TABLES = {"agents", "skills", "mcp", "memory", "docs"}
+_KNOWN_SUBKEYS = {
+    "agents": {"required"},
+    "skills": {"required"},
+    "mcp": {"required"},
+    "memory": {"max_age_days"},
+    "docs": {"agents_md"},
+}
 _DOC_STATUSES = {"linked", "copy", "bridge", "diverged", "missing", "only-agents", "broken-link", "unreadable"}
 
 
@@ -20,7 +33,10 @@ def load(root):
     """The `[desired]` table of `<root>/.project-os.toml`. Empty dict if the file is absent or
     has no `[desired]` table -- callers must treat that as silent opt-out, never a gap. If the
     file exists but is not valid TOML, this must not raise: it returns `{"_malformed": True}` so
-    `gaps()` can surface it as a single gap instead of `check` crashing on a broken file."""
+    `gaps()` can surface it as a single gap instead of `check` crashing on a broken file. The
+    `[desired]` key itself can also be present but not a table at all (e.g. `desired = 1`) --
+    that is returned as-is (not coerced to `{}`) so `gaps()` can flag it too; only a genuinely
+    ABSENT or empty table collapses to `{}`, the silent opt-out case."""
     p = os.path.join(root, ".project-os.toml")
     if not os.path.isfile(p):
         return {}
@@ -40,66 +56,116 @@ def _skill_names(rows):
     return {r["name"] for r in rows if not r.get("invalid")}
 
 
+def _required_list(table, table_name, out):
+    """Validates `table["required"]` (if present) as a list of str -- the only shape every
+    caller below may safely iterate. Appends a `bad_value` gap (dotted "<table_name>.required")
+    and returns None for anything else, INCLUDING a bare string: a string is iterable in Python,
+    so without this check `required = "reviewer"` would silently iterate its characters and
+    report each one as a missing agent named `r`, `e`, `v`, ... Returns `[]` (not a gap) when the
+    key is simply absent -- that means "no requirement declared", not "declared wrong"."""
+    if "required" not in table:
+        return []
+    val = table["required"]
+    if isinstance(val, list) and all(isinstance(x, str) for x in val):
+        return val
+    out.append({"kind": "bad_value", "field": f"{table_name}.required"})
+    return None
+
+
 def gaps(cfg, project_entry, data):
     """Gap dicts for one project's declared [desired] table against the scan `data`. Each gap is
     {"kind": ..., ...fields for that kind}; empty list if there is no [desired] table (or it is
-    empty) -- that is the "opt-out, stay silent" case `check.py` relies on."""
+    empty) -- that is the "opt-out, stay silent" case `check.py` relies on. Never raises: any
+    wrong-typed value anywhere in the table (a subtable that isn't a table, `required` that isn't
+    a list of str, `max_age_days` that isn't a non-negative number, `agents_md` that isn't a
+    string, or `[desired]` itself not being a table) becomes a `bad_value` gap naming the dotted
+    key instead of a crash, and a typo'd key INSIDE a known subtable is reported via the same
+    `unknown_key` gap as a typo'd top-level table -- it must never disappear silently."""
     root = project_entry["path"]
     desired = load(root)
     if not desired:
         return []
-    if desired.get("_malformed"):
+    if not isinstance(desired, dict) or desired.get("_malformed"):
         return [{"kind": "malformed"}]
 
     out = []
-    unknown = sorted(set(desired) - _KNOWN_TABLES)
-    if unknown:
-        out.append({"kind": "unknown_key", "keys": unknown})
+    unknown = set(desired) - _KNOWN_TABLES
 
-    ag = desired.get("agents")
-    if isinstance(ag, dict):
-        have = _agent_names(project_entry.get("agents", [])) | _agent_names(data.get("global", {}).get("agents", []))
-        for name in ag.get("required") or []:
-            if name not in have:
-                out.append({"kind": "agent", "name": name})
+    def subtable(name):
+        """desired[name] if it is a dict (and records any unknown keys inside it); appends a
+        `bad_value` gap and returns None if it is present but not a dict; None if absent."""
+        val = desired.get(name)
+        if val is None:
+            return None
+        if not isinstance(val, dict):
+            out.append({"kind": "bad_value", "field": name})
+            return None
+        unknown.update(f"{name}.{k}" for k in set(val) - _KNOWN_SUBKEYS[name])
+        return val
 
-    sk = desired.get("skills")
-    if isinstance(sk, dict):
-        have = _skill_names(project_entry.get("skills", [])) | _skill_names(data.get("global", {}).get("skills", []))
-        for name in sk.get("required") or []:
-            if name not in have:
-                out.append({"kind": "skill", "name": name})
+    ag = subtable("agents")
+    if ag is not None:
+        req = _required_list(ag, "agents", out)
+        if req:
+            have = _agent_names(project_entry.get("agents", [])) | _agent_names(data.get("global", {}).get("agents", []))
+            for name in req:
+                if name not in have:
+                    out.append({"kind": "agent", "name": name})
 
-    mcp = desired.get("mcp")
-    if isinstance(mcp, dict):
-        mcp_data = data.get("mcp", {}) or {}
-        checked = bool(mcp_data.get("checked"))
-        servers = {s["name"] for s in mcp_data.get("servers", [])}
-        for name in mcp.get("required") or []:
-            if not checked:
-                out.append({"kind": "mcp_unverifiable", "name": name})
-            elif name not in servers:
-                out.append({"kind": "mcp_missing", "name": name})
+    sk = subtable("skills")
+    if sk is not None:
+        req = _required_list(sk, "skills", out)
+        if req:
+            have = _skill_names(project_entry.get("skills", [])) | _skill_names(data.get("global", {}).get("skills", []))
+            for name in req:
+                if name not in have:
+                    out.append({"kind": "skill", "name": name})
 
-    mem = desired.get("memory")
-    if isinstance(mem, dict) and "max_age_days" in mem:
+    mcp = subtable("mcp")
+    if mcp is not None:
+        req = _required_list(mcp, "mcp", out)
+        if req:
+            mcp_data = data.get("mcp", {}) or {}
+            checked = bool(mcp_data.get("checked"))
+            servers = {s["name"] for s in mcp_data.get("servers", [])}
+            for name in req:
+                if not checked:
+                    out.append({"kind": "mcp_unverifiable", "name": name})
+                elif name not in servers:
+                    out.append({"kind": "mcp_missing", "name": name})
+
+    mem = subtable("memory")
+    if mem is not None and "max_age_days" in mem:
         max_age = mem["max_age_days"]
-        mpath = os.path.join(root, ".claude", "MEMORY.md")
-        if not os.path.isfile(mpath):
-            out.append({"kind": "memory_missing"})
+        # bool is an int subclass in Python -- isinstance(True, int) is True -- so it must be
+        # excluded explicitly, ahead of the numeric check, or `max_age_days = true` would pass.
+        if isinstance(max_age, bool) or not isinstance(max_age, (int, float)) or max_age < 0:
+            out.append({"kind": "bad_value", "field": "memory.max_age_days"})
         else:
-            age_days = int((time.time() - os.path.getmtime(mpath)) / 86400)
-            if age_days > max_age:
-                out.append({"kind": "memory_stale", "age_days": age_days, "max_age_days": max_age})
+            mpath = os.path.join(root, ".claude", "MEMORY.md")
+            if not os.path.isfile(mpath):
+                out.append({"kind": "memory_missing"})
+            else:
+                # Compare fractional days, not the int-truncated value -- truncating first (the
+                # old behavior) tolerated up to just under a full extra day past max_age before
+                # ever reporting stale. Only the displayed value is rounded down to whole days.
+                age_days = (time.time() - os.path.getmtime(mpath)) / 86400
+                if age_days > max_age:
+                    out.append({"kind": "memory_stale", "age_days": int(age_days), "max_age_days": max_age})
 
-    docs = desired.get("docs")
-    if isinstance(docs, dict) and "agents_md" in docs:
+    docs = subtable("docs")
+    if docs is not None and "agents_md" in docs:
         want = docs["agents_md"]
-        if want not in _DOC_STATUSES:
+        if not isinstance(want, str):
+            out.append({"kind": "bad_value", "field": "docs.agents_md"})
+        elif want not in _DOC_STATUSES:
             out.append({"kind": "docs_invalid_value", "value": want})
         else:
             actual = drift.rules_file(root)["status"]
             if actual != want:
                 out.append({"kind": "docs_mismatch", "expected": want, "actual": actual})
+
+    if unknown:
+        out.insert(0, {"kind": "unknown_key", "keys": sorted(unknown)})
 
     return out

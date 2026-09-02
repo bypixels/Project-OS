@@ -62,6 +62,12 @@ class TestRepoCheck(unittest.TestCase):
         parsed = tomllib.loads(RP.EXAMPLE_TOML)
         self.assertIn("contract", parsed)
         self.assertIn("[desired", RP.EXAMPLE_TOML)
+    def test_repo_check_malformed_toml_is_clean_fail(self):
+        with tempfile.TemporaryDirectory() as d:
+            mkrepo(d, [("a", "sonnet")], project_os_toml="this is not [ valid toml at all\n===")
+            r = RP.check_repo(d)   # must not raise
+            self.assertEqual(r["exit"], 2)
+            self.assertIn(".project-os.toml", r.get("error", ""))
 
 class TestSnapshot(unittest.TestCase):
     def test_export_compare(self):

@@ -9,11 +9,17 @@ from . import drift
 
 
 def load_repo_config(root):
+    """The repo's own `.project-os.toml`, or `{}` if absent. Returns `None` (never raises) if
+    the file exists but is not valid TOML -- `check_repo` turns that into a clean FAIL rather
+    than a raw traceback."""
     p = os.path.join(root, ".project-os.toml")
     if not os.path.isfile(p):
         return {}
-    with open(p, "rb") as f:
-        return tomllib.load(f)
+    try:
+        with open(p, "rb") as f:
+            return tomllib.load(f)
+    except Exception:
+        return None
 
 
 def check_repo(root):
@@ -22,6 +28,10 @@ def check_repo(root):
         return {"root": root, "agents_total": 0, "invalid": [], "warnings": [], "documents": [],
                 "agents_md": "none", "strict": False, "exit": 2, "error": f"repo path does not exist: {root}"}
     rc = load_repo_config(root)
+    if rc is None:
+        p = os.path.join(root, ".project-os.toml")
+        return {"root": root, "agents_total": 0, "invalid": [], "warnings": [], "documents": [],
+                "agents_md": "none", "strict": False, "exit": 2, "error": f".project-os.toml could not be parsed as valid TOML: {p}"}
     strict = bool((rc.get("check") or {}).get("strict", False))
     C = Contract({"contract": rc.get("contract", {})})
     agents_dir = os.path.join(root, ".claude", "agents")

@@ -590,6 +590,156 @@ class TestCheckDesiredState(unittest.TestCase):
         finally:
             env.cleanup()
 
+    # -- type confusion: valid TOML, wrong types must never crash check.run --------------------
+
+    def test_top_level_desired_scalar_does_not_crash(self):
+        env = Env()
+        try:
+            self._write(env.alpha, "desired = 1\n")
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)   # must not raise
+            f = self._desired_finding(findings)
+            self.assertIsNotNone(f, findings)
+            self.assertEqual(f["sev"], "warn")
+        finally:
+            env.cleanup()
+
+    def test_memory_max_age_days_string_is_bad_value_not_crash(self):
+        env = Env()
+        try:
+            self._write(env.alpha, '[desired.memory]\nmax_age_days = "14"\n')
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)   # must not raise
+            f = self._desired_finding(findings)
+            self.assertIsNotNone(f, findings)
+            self.assertIn("memory.max_age_days", f["detail"])
+        finally:
+            env.cleanup()
+
+    def test_memory_max_age_days_bool_is_bad_value(self):
+        env = Env()
+        try:
+            self._write(env.alpha, "[desired.memory]\nmax_age_days = true\n")
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)
+            f = self._desired_finding(findings)
+            self.assertIsNotNone(f, findings)
+            self.assertIn("memory.max_age_days", f["detail"])
+        finally:
+            env.cleanup()
+
+    def test_memory_max_age_days_negative_is_bad_value(self):
+        env = Env()
+        try:
+            self._write(env.alpha, "[desired.memory]\nmax_age_days = -5\n")
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)
+            f = self._desired_finding(findings)
+            self.assertIsNotNone(f, findings)
+            self.assertIn("memory.max_age_days", f["detail"])
+        finally:
+            env.cleanup()
+
+    def test_memory_max_age_fractional_days_are_not_truncated_before_comparing(self):
+        env = Env()
+        try:
+            mem = os.path.join(env.alpha, ".claude", "MEMORY.md")
+            old = time.time() - 14.9 * 86400   # int-truncates to 14 -- must still trip max=14
+            os.utime(mem, (old, old))
+            self._write(env.alpha, "[desired.memory]\nmax_age_days = 14\n")
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)
+            f = self._desired_finding(findings)
+            self.assertIsNotNone(f, findings)
+        finally:
+            env.cleanup()
+
+    def test_docs_agents_md_list_is_bad_value_not_unhashable_crash(self):
+        env = Env()
+        try:
+            self._write(env.alpha, '[desired.docs]\nagents_md = ["linked"]\n')
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)   # must not raise (unhashable list in set)
+            f = self._desired_finding(findings)
+            self.assertIsNotNone(f, findings)
+            self.assertIn("docs.agents_md", f["detail"])
+        finally:
+            env.cleanup()
+
+    def test_agents_required_int_is_bad_value_not_crash(self):
+        env = Env()
+        try:
+            self._write(env.alpha, "[desired.agents]\nrequired = 7\n")
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)   # must not raise (not iterable)
+            f = self._desired_finding(findings)
+            self.assertIsNotNone(f, findings)
+            self.assertIn("agents.required", f["detail"])
+        finally:
+            env.cleanup()
+
+    def test_agents_required_string_is_bad_value_not_iterated_as_chars(self):
+        env = Env()
+        try:
+            self._write(env.alpha, '[desired.agents]\nrequired = "reviewer"\n')
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)
+            f = self._desired_finding(findings)
+            self.assertIsNotNone(f, findings)
+            self.assertIn("agents.required", f["detail"])
+            self.assertNotIn("missing agent: `r`", f["detail"])
+        finally:
+            env.cleanup()
+
+    def test_agents_required_list_with_non_str_elements_is_bad_value(self):
+        env = Env()
+        try:
+            self._write(env.alpha, "[desired.agents]\nrequired = [1, 2]\n")
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)
+            f = self._desired_finding(findings)
+            self.assertIsNotNone(f, findings)
+            self.assertIn("agents.required", f["detail"])
+        finally:
+            env.cleanup()
+
+    def test_agents_subtable_wrong_type_is_bad_value(self):
+        env = Env()
+        try:
+            self._write(env.alpha, "[desired]\nagents = 7\n")
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)   # must not raise (AttributeError today)
+            f = self._desired_finding(findings)
+            self.assertIsNotNone(f, findings)
+            self.assertIn("agents", f["detail"])
+        finally:
+            env.cleanup()
+
+    def test_typo_inside_known_subtable_is_reported_not_silently_dropped(self):
+        env = Env()
+        try:
+            self._write(env.alpha, '[desired.agents]\nrequiered = ["ghost-agent"]\n')
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=True)
+            f = self._desired_finding(findings)
+            self.assertIsNotNone(f, findings)   # today: gaps() == [] -> silently "all good"
+            self.assertIn("agents.requiered", f["detail"])
+        finally:
+            env.cleanup()
+
+    def test_wrong_typed_desired_table_does_not_suppress_other_findings(self):
+        """A crash in desired.gaps() for one project must not take down check.run() for
+        everyone else -- other detectors (e.g. alpha's shadowing `reviewer` contract warning)
+        must still be reported."""
+        env = Env()
+        try:
+            self._write(env.alpha, '[desired.memory]\nmax_age_days = "14"\n')
+            scan.save(env.cfg, scan.run(env.cfg))
+            findings = check.run(env.cfg, quick=False)   # must not raise
+            self.assertTrue(any(x.get("projects") == ["alpha"] and "desired" not in x["title"].lower() for x in findings), findings)
+        finally:
+            env.cleanup()
+
 
 if __name__ == "__main__":
     unittest.main()
