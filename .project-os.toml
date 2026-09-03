@@ -1,0 +1,13 @@
+# .project-os.toml — the contract for THIS repository, enforced by `project-os check --repo .`
+# in CI (.github/workflows/ci.yml, job `contract`). project-os validates other repos' agent
+# contracts; this file is project-os declaring its own. CI mode reads this file and nothing else:
+# no home, no scan cache, no history.
+
+[contract]
+models = ["sonnet", "opus", "haiku"]
+critical = ["name", "description"]
+warn = ["model", "tools"]
+
+[check]
+strict = true   # warnings fail too. This repo ships no `.claude/agents/` yet, so the bar costs
+                # nothing today and is already set when the first agent lands.
