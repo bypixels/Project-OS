@@ -80,6 +80,10 @@ strict = false        # true: warnings also fail the check
 # max_age_days = 14
 # [desired.docs]
 # agents_md = "linked"
+# [desired.verification]
+# ci = true
+# tests = "tests"
+# gates = ["python -m unittest discover -s tests"]
 '''
 
 CI_YAML = '''# .github/workflows/project-os.yml

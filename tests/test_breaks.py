@@ -4,7 +4,7 @@ import copy, http.client, json, os, re, tempfile, threading, time, unittest
 from datetime import datetime, timedelta
 from unittest import mock
 import _helpers  # noqa
-from project_os import contract as C, docs as D, guard as G, harness as H, healthlog as HL, server as SRV, sessions as SESS, skills as SK, usage as U, worktrees as WT
+from project_os import contract as C, desired as DS, docs as D, guard as G, harness as H, healthlog as HL, server as SRV, sessions as SESS, skills as SK, usage as U, worktrees as WT
 from _env import Env
 
 class TestBreaks(unittest.TestCase):
@@ -717,4 +717,71 @@ class TestBreaks(unittest.TestCase):
                 self.assertIn("$(whoami)", r2["command"])              # canary red: unsafe path now emitted
             finally:
                 env.cleanup()
+    def test_desired_verification_path_confinement_guard(self):
+        # `[desired.verification] tests = "..."` is an untrusted path from the scanned repo's OWN
+        # .project-os.toml. _confined_path is the only thing stopping it from making gaps() stat
+        # a path outside that repo -- and from reporting the RESULT of that stat as a finding.
+        env = Env()
+        try:
+            open(os.path.join(env.alpha, ".project-os.toml"), "w").write(
+                '[desired.verification]\ntests = "../../.."\n')
+            from project_os import scan
+            data = scan.run(env.cfg); scan.save(env.cfg, data)
+            p = next(pr for pr in data["projects"] if pr["name"] == "alpha")
+            g = DS.gaps(env.cfg, p, data)
+            self.assertIn({"kind": "bad_value", "field": "verification.tests"}, g)   # guard present
+            self.assertFalse(any(x["kind"] == "tests_absent" for x in g), g)
+            with mock.patch.object(DS, "_confined_path", lambda root, rel: rel):     # guard disabled
+                g2 = DS.gaps(env.cfg, p, data)
+            self.assertFalse(any(x["kind"] == "bad_value" and x["field"] == "verification.tests"
+                                 for x in g2), g2)                                   # canary red: escape accepted
+        finally:
+            env.cleanup()
+    def test_desired_verification_confined_path_null_byte_guard(self):
+        # A declared `tests` path containing a NUL byte is valid TOML (a backslash-u-0000 escape
+        # inside a basic string) but makes os.path.realpath() raise ValueError, not OSError --
+        # a different exception type than the one _confined_path already caught before this
+        # guard existed. Without the try/except, this reaches gaps()'s caller uncaught and takes
+        # down the whole check run (check.py has no try/except of its own around gaps()).
+        env = Env()
+        try:
+            open(os.path.join(env.alpha, ".project-os.toml"), "w").write(
+                '[desired.verification]\ntests = "a\\u0000b"\n')
+            from project_os import scan
+            data = scan.run(env.cfg); scan.save(env.cfg, data)
+            p = next(pr for pr in data["projects"] if pr["name"] == "alpha")
+            g = DS.gaps(env.cfg, p, data)                                            # guard present: no crash
+            self.assertIn({"kind": "bad_value", "field": "verification.tests"}, g)
+
+            def _unguarded(root, rel):   # same body, minus the try/except -- the guard under test
+                base = os.path.realpath(root)
+                resolved = os.path.realpath(os.path.join(root, rel))
+                return resolved if (resolved == base or resolved.startswith(base + os.sep)) else None
+
+            with mock.patch.object(DS, "_confined_path", _unguarded):                # guard disabled
+                with self.assertRaises(ValueError):                                  # canary red: crash
+                    DS.gaps(env.cfg, p, data)
+        finally:
+            env.cleanup()
+    def test_desired_verification_blank_gate_guard(self):
+        # "" is a substring of every string in Python: `"" in text` is always True. Without a
+        # blank-gate check, an empty `gates` entry would silently be reported as "found" against
+        # any workflow file -- an assertion the config never actually made.
+        env = Env()
+        try:
+            wf = os.path.join(env.alpha, ".github", "workflows")
+            os.makedirs(wf)
+            open(os.path.join(wf, "ci.yml"), "w").write("steps:\n  - run: echo hi\n")
+            open(os.path.join(env.alpha, ".project-os.toml"), "w").write(
+                '[desired.verification]\ngates = [""]\n')
+            from project_os import scan
+            data = scan.run(env.cfg); scan.save(env.cfg, data)
+            p = next(pr for pr in data["projects"] if pr["name"] == "alpha")
+            g = DS.gaps(env.cfg, p, data)
+            self.assertEqual(g, [{"kind": "bad_value", "field": "verification.gates"}])   # guard present
+            with mock.patch.object(DS, "_is_blank_gate", return_value=False):        # guard disabled
+                g2 = DS.gaps(env.cfg, p, data)
+            self.assertEqual(g2, [])                                                 # canary red: blank gate "satisfied"
+        finally:
+            env.cleanup()
 if __name__ == "__main__": unittest.main()

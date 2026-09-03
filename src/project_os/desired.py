@@ -8,6 +8,9 @@ Vocabulary (all sub-tables optional):
     [desired.mcp]     required = [...]   # by name in data["mcp"]["servers"]
     [desired.memory]  max_age_days = N   # <root>/.claude/MEMORY.md, live-read (like drift.rules_file)
     [desired.docs]    agents_md = "..."  # compared to drift.rules_file(root)["status"]
+    [desired.verification]  ci = true, tests = "...", gates = [...]  # presence only -- a gate
+        found by substring in a workflow file proves the TEXT is there, never that it runs or
+        passes; see gaps()'s docstring for the full honesty doctrine this enforces.
 
 `gaps()` never raises, no matter what `.project-os.toml` contains: syntactically invalid TOML
 and structurally valid-but-wrong-typed TOML (a string where a list was expected, a table where a
@@ -18,15 +21,21 @@ take down the whole `check` run, not just this project's row.
 import math, os, time, tomllib
 from . import drift
 
-_KNOWN_TABLES = {"agents", "skills", "mcp", "memory", "docs"}
+_KNOWN_TABLES = {"agents", "skills", "mcp", "memory", "docs", "verification"}
 _KNOWN_SUBKEYS = {
     "agents": {"required"},
     "skills": {"required"},
     "mcp": {"required"},
     "memory": {"max_age_days"},
     "docs": {"agents_md"},
+    "verification": {"ci", "tests", "gates"},
 }
 _DOC_STATUSES = {"linked", "copy", "bridge", "diverged", "missing", "only-agents", "broken-link", "unreadable"}
+# Cap on how much of one workflow file gaps() reads -- a pathological (or hostile) huge file
+# under the repo's own .github/workflows/ must not be able to hang the scan. In TEXT mode
+# f.read(N) counts CHARACTERS, not bytes -- with multibyte UTF-8 the real byte cap can be up to
+# ~4x this number. Still bounded, so behavior is unaffected; the name says what it actually is.
+_WORKFLOW_MAX_CHARS = 1024 * 1024
 
 
 def load(root):
@@ -63,20 +72,88 @@ def _skill_names(rows):
     return {r["name"] for r in rows if not r.get("invalid")}
 
 
-def _required_list(table, table_name, out):
-    """Validates `table["required"]` (if present) as a list of str -- the only shape every
-    caller below may safely iterate. Appends a `bad_value` gap (dotted "<table_name>.required")
-    and returns None for anything else, INCLUDING a bare string: a string is iterable in Python,
-    so without this check `required = "reviewer"` would silently iterate its characters and
-    report each one as a missing agent named `r`, `e`, `v`, ... Returns `[]` (not a gap) when the
-    key is simply absent -- that means "no requirement declared", not "declared wrong"."""
-    if "required" not in table:
+def _required_list(table, table_name, out, key="required"):
+    """Validates `table[key]` (if present) as a list of str -- the only shape every caller below
+    may safely iterate. Appends a `bad_value` gap (dotted "<table_name>.<key>") and returns None
+    for anything else, INCLUDING a bare string: a string is iterable in Python, so without this
+    check `required = "reviewer"` (or `gates = "make test"`) would silently iterate its
+    characters and report each one as missing, one gap per letter. Returns `[]` (not a gap) when
+    the key is simply absent -- that means "nothing declared", not "declared wrong". `key`
+    defaults to "required" for the agents/skills/mcp callers; `verification` passes key="gates"
+    to reuse the exact same guard rather than duplicating it."""
+    if key not in table:
         return []
-    val = table["required"]
+    val = table[key]
     if isinstance(val, list) and all(isinstance(x, str) for x in val):
         return val
-    out.append({"kind": "bad_value", "field": f"{table_name}.required"})
+    out.append({"kind": "bad_value", "field": f"{table_name}.{key}"})
     return None
+
+
+def _confined_path(root, rel):
+    """Resolves `rel` (untrusted, declared in the repo's OWN .project-os.toml) under `root` and
+    returns the resolved absolute path only if it stays inside `root` -- an absolute `rel`, or
+    one that escapes via `..` once joined and normalized, resolves outside and gets None back.
+    Without this, a repo's own config file could make gaps() stat any path readable by this
+    process (`tests = "/etc"`, `tests = "../../.."`). Mirrors docs.py's `_confined` guard;
+    reimplemented locally rather than imported, to keep desired.py's only cross-module
+    dependency on drift.py (see the module docstring).
+
+    `rel` is an arbitrary TOML string, not just a plausible path: `tests = "a\\u0000b"` is a
+    perfectly valid TOML scalar that tomllib happily decodes to a string containing a NUL byte,
+    and os.path.realpath() raises ValueError (not OSError) on that -- ENAMETOOLONG and a handful
+    of other edge cases can too. The caller below (os.path.isdir()) already catches ValueError
+    itself, but that guard cannot save this one: the crash happens HERE, before isdir() ever
+    runs, so the try/except must live at this level or it reaches gaps()'s caller uncaught."""
+    try:
+        base = os.path.realpath(root)
+        p = os.path.realpath(os.path.join(root, rel))
+    except (OSError, ValueError):
+        return None
+    if p == base or p.startswith(base + os.sep):
+        return p
+    return None
+
+
+def _is_blank_gate(gate):
+    """An empty or whitespace-only gate string. `"" in text` is True for EVERY text in Python --
+    without this check a blank `gates` entry would silently match any workflow (or even none:
+    `any(... for text in [])` is also False, so it would depend on whether the dir happened to
+    have files), asserting nothing while looking like a satisfied requirement. Same defect class
+    `tests = ""` is already guarded against for the sibling key -- this closes the same hole for
+    `gates`."""
+    return not gate.strip()
+
+
+def _workflow_texts(root):
+    """Text of every *.yml/*.yaml file directly under <root>/.github/workflows/, read ONCE so
+    both the `ci` and `gates` checks below can reuse it without re-reading per gate. Returns []
+    if the directory is missing, not a directory, or unreadable -- the same empty result an
+    existing-but-empty directory would produce. This deliberately COLLAPSES three different
+    states (no directory / not a directory / present but unreadable) into one "found nothing"
+    signal: `ci_absent` and `gate_absent` therefore mean "no readable workflow says so", not
+    "no workflow says so" -- the i18n strings for both are worded "readable" specifically so the
+    claim stays true even when a workflow that WOULD satisfy the requirement exists but this
+    process could not read it (e.g. permissions). A single unreadable file inside an otherwise-
+    readable directory is treated the same way and contributes no text -- gaps() must never raise
+    on file content or I/O failure (see its docstring)."""
+    wf_dir = os.path.join(root, ".github", "workflows")
+    texts = []
+    try:
+        names = os.listdir(wf_dir)
+    except OSError:
+        return texts
+    for name in names:
+        if not name.endswith((".yml", ".yaml")):
+            continue
+        try:
+            # errors="replace" (not strict utf-8) so a binary/garbage workflow file decodes to
+            # some text instead of raising UnicodeDecodeError -- it just won't match any gate.
+            with open(os.path.join(wf_dir, name), "r", encoding="utf-8", errors="replace") as f:
+                texts.append(f.read(_WORKFLOW_MAX_CHARS))
+        except OSError:
+            continue
+    return texts
 
 
 def gaps(cfg, project_entry, data):
@@ -191,6 +268,50 @@ def gaps(cfg, project_entry, data):
             actual = drift.rules_file(root)["status"]
             if actual != want:
                 out.append({"kind": "docs_mismatch", "expected": want, "actual": actual})
+
+    ver = subtable("verification")
+    if ver is not None:
+        workflow_texts = None   # lazy: only read .github/workflows/ if ci or gates need it below
+
+        if "ci" in ver:
+            ci = ver["ci"]
+            # bool is an int subclass -- isinstance(True, int) is True -- so only a strict bool
+            # may pass; `ci = 1` must be bad_value, never a silent truthy pass. `ci = false` asserts
+            # nothing (the project opts OUT of requiring CI), so it stays completely silent.
+            if not isinstance(ci, bool):
+                out.append({"kind": "bad_value", "field": "verification.ci"})
+            elif ci:
+                workflow_texts = _workflow_texts(root)
+                if not workflow_texts:
+                    out.append({"kind": "ci_absent"})
+
+        if "tests" in ver:
+            tpath = ver["tests"]
+            if not isinstance(tpath, str) or not tpath:
+                out.append({"kind": "bad_value", "field": "verification.tests"})
+            else:
+                resolved = _confined_path(root, tpath)
+                if resolved is None:
+                    # Absolute, or escapes the repo root once joined and normalized -- a
+                    # confinement failure, never a "does not exist" claim about a path this
+                    # project has no business stat-ing.
+                    out.append({"kind": "bad_value", "field": "verification.tests"})
+                elif not os.path.isdir(resolved):
+                    out.append({"kind": "tests_absent", "path": tpath})
+
+        gates = _required_list(ver, "verification", out, key="gates")
+        if gates:
+            if workflow_texts is None:
+                workflow_texts = _workflow_texts(root)
+            for gate in gates:
+                if _is_blank_gate(gate):
+                    out.append({"kind": "bad_value", "field": "verification.gates"})
+                    continue
+                # Substring presence only -- it proves the command TEXT is in a workflow file,
+                # never that the workflow runs it or that it passes. Silence when found; the
+                # inverse claim is the whole point of this feature (see module docstring).
+                if not any(gate in text for text in workflow_texts):
+                    out.append({"kind": "gate_absent", "gate": gate})
 
     if unknown:
         out.insert(0, {"kind": "unknown_key", "keys": sorted(unknown)})
