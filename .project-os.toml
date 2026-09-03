@@ -11,3 +11,17 @@ warn = ["model", "tools"]
 [check]
 strict = true   # warnings fail too. This repo ships no `.claude/agents/` yet, so the bar costs
                 # nothing today and is already set when the first agent lands.
+
+# Read by plain `project-os check` against the local scan; ignored by `check --repo .`
+# (CI mode has no scan cache). Every gate below must appear verbatim in a workflow file --
+# that proves the TEXT is wired, never that it passes. Silence here is the healthy state.
+[desired.docs]
+agents_md = "linked"
+
+[desired.verification]
+ci = true
+tests = "tests"
+gates = [
+  "python -m unittest discover -s tests",
+  "project-os check --repo .",
+]
