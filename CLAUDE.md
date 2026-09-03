@@ -106,11 +106,20 @@ callers must render that as unknown (the UI's "n/a"), never as a bare zero.
 
 **Three comparison features, all read-only (2026-09).** (1) *Desired state*: a project's own
 `.project-os.toml` may carry a `[desired]` table (agents/skills/mcp required, memory
-max_age_days, docs agents_md strategy — see `repo.EXAMPLE_TOML`); `desired.gaps()` compares it
+max_age_days, docs agents_md strategy, verification ci/tests/gates — see `repo.EXAMPLE_TOML`);
+`desired.gaps()` compares it
 against the scan and check's detector 9b emits ONE warn finding per project. `gaps()` must never
 raise on ANY file content: syntax errors -> `malformed`, wrong-TYPED values (including falsy ones
 like `desired = false` and non-finite `max_age_days`) -> `bad_value` with the dotted key, typos
-inside subtables -> `unknown_key`. `check --repo` ignores `[desired]` (CI has no scan cache).
+inside subtables -> `unknown_key`. Every untrusted PATH out of that file goes through
+`_confined_path`, whose try/except is load-bearing, not defensive habit: `os.path.isdir()` catches
+a ValueError from a NUL byte but `os.path.realpath()` raises it, and an escape from `gaps()` takes
+down the whole `check` run, the UI health tab and the MCP health tool (break-tested).
+`[desired.verification]` reads `.github/workflows/*.yml|yaml` as TEXT — substring only, never a
+YAML parse (that would be a dependency) and never an execution (a scanned repo's config naming
+commands to run would be arbitrary code execution). It reports ABSENCE only: a gate found by
+substring proves the text is present, never that it runs, so a found gate is silence and no output
+may ever claim verification is healthy. `check --repo` ignores `[desired]` (CI has no scan cache).
 (2) *Since last check*: every finding carries a stable `id` (its i18n key — a source-scan test
 enforces uniqueness across detectors), `healthlog.append` stores the per-line identity map
 (`"ids"`, expanded `id@project`), and `healthlog.changes()` diffs a run against the previous line
